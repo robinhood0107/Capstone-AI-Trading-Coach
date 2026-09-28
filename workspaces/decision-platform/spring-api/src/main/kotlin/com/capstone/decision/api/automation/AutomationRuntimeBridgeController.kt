@@ -7,7 +7,10 @@ import com.capstone.decision.application.brokerage.BrokerageActor
 import com.capstone.decision.application.brokerage.BrokerageService
 import com.capstone.decision.application.decision.DecisionActor
 import com.capstone.decision.application.decision.DecisionService
+import com.capstone.decision.application.security.AppPrincipal
+import com.capstone.decision.application.security.AuthenticatedActorRef
 import com.capstone.decision.infrastructure.brokerage.MockCredentialSettingsService
+import com.capstone.decision.infrastructure.security.FullPasswordAccountRepository
 import com.capstone.decision.infrastructure.security.UserSecurityRepository
 import io.grpc.Status
 import io.grpc.StatusRuntimeException
@@ -19,6 +22,9 @@ import org.springframework.beans.factory.annotation.Value
 import org.springframework.http.HttpStatus
 import org.springframework.http.MediaType
 import org.springframework.http.ResponseEntity
+import org.springframework.security.authentication.UsernamePasswordAuthenticationToken
+import org.springframework.security.core.authority.SimpleGrantedAuthority
+import org.springframework.security.core.context.SecurityContextHolder
 import org.springframework.web.bind.annotation.PostMapping
 import org.springframework.web.bind.annotation.RequestBody
 import org.springframework.web.bind.annotation.RequestHeader
@@ -49,6 +55,7 @@ class AutomationRuntimeBridgeController(
     private val automationEvidenceService: AutomationEvidenceService,
     private val users: UserSecurityRepository,
     private val mockCredentials: ObjectProvider<MockCredentialSettingsService>,
+    private val runtimeSessions: ObjectProvider<FullPasswordAccountRepository>,
     @Value("\${AUTOMATION_RUNTIME_SHARED_SECRET:}") private val configuredSecret: String,
     @Value("\${app.brokerage.connected-owner-orders-enabled:false}")
     private val connectedOwnerOrdersEnabled: Boolean = false,
@@ -75,6 +82,10 @@ class AutomationRuntimeBridgeController(
             if (actor == null || actor.status != "ACTIVE") {
                 ResponseEntity.status(HttpStatus.NOT_FOUND).body(mapOf("status" to "NOT_FOUND"))
             } else {
+                // FULL runtime 은 로그인 토큰 없이 loopback+공유 비밀로만 온다. 아래 서비스들은 actor
+                // capability 를 DB 세션이 있는 인증 컨텍스트에서만 발급하므로, 컨텍스트가 비었을 때만
+                // 이 소유자의 짧은 세션을 열어 이번 요청 동안 채운다. LOCAL 은 로그인 토큰을 가져온다.
+                ensureOwnerContext(command.userId)
                 val requestId = "auto-rt-${UUID.randomUUID().toString().replace("-", "")}"
                 val result =
                     when (command.operation) {
@@ -130,10 +141,14 @@ class AutomationRuntimeBridgeController(
             // ORDER가 구분되지 않아, 실측에서 ORDER_SIZING이 막혔을 때 어느 호출이 원인인지
             // 로그만으로는 끝내 알 수 없었다. operation 이름은 고정된 enum 문자열이라
             // 계좌값이나 provider 본문을 노출하지 않는다.
+            // 고정 대문자 사유 코드(예: BROKERAGE_CREDENTIAL_NOT_READY)만 남긴다. 값이 섞일 수 있는
+            // 일반 메시지는 "-" 로 가린다. 사유 없이 클래스만 남기면 fail-closed 를 진단할 수 없었다.
+            val reasonCode = error.message?.takeIf { REASON_CODE.matches(it) } ?: "-"
             logger.warn(
-                "automation runtime bridge failed closed: operation={} {} caused by {}",
+                "automation runtime bridge failed closed: operation={} {} reason={} caused by {}",
                 failedOperation,
                 error.javaClass.simpleName,
+                reasonCode,
                 generateSequence(error.cause) { it.cause }.lastOrNull()?.javaClass?.simpleName ?: "-",
             )
             val orderFailureCode = if (failedOperation == "SUBMIT") safeKisOrderFailureCode(error) else null
@@ -145,6 +160,34 @@ class AutomationRuntimeBridgeController(
                 ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE).body(mapOf("status" to "FAILED"))
             }
         }
+    }
+
+    private fun ensureOwnerContext(ownerUserId: String) {
+        val current = SecurityContextHolder.getContext().authentication?.principal as? AppPrincipal
+        if (current?.userId == ownerUserId) return
+        val session =
+            runtimeSessions.ifAvailable?.issueAutomationRuntimeSession(ownerUserId, RUNTIME_SESSION_TTL_SECONDS)
+                ?: error("AUTOMATION_RUNTIME_SESSION_UNAVAILABLE")
+        check(session.userId == ownerUserId) { "AUTOMATION_RUNTIME_SESSION_MISMATCH" }
+        val context = SecurityContextHolder.createEmptyContext()
+        context.authentication =
+            UsernamePasswordAuthenticationToken(
+                AppPrincipal(
+                    userId = session.userId,
+                    username = session.username,
+                    role = session.role.name,
+                    securityVersion = session.securityVersion,
+                    actorRef =
+                        AuthenticatedActorRef(
+                            sessionHandle = session.sessionHandle,
+                            expectedUserId = session.userId,
+                            securityVersion = session.securityVersion,
+                        ),
+                ),
+                null,
+                listOf(SimpleGrantedAuthority("ROLE_${session.role.name}")),
+            )
+        SecurityContextHolder.setContext(context)
     }
 
     private fun authorized(
@@ -204,6 +247,8 @@ class AutomationRuntimeBridgeController(
     private companion object {
         const val AUTH_HEADER = "X-Automation-Runtime-Auth"
         val SECRET = Regex("^[A-Za-z0-9._~:-]{32,256}$")
+        val REASON_CODE = Regex("^[A-Z][A-Z0-9_]{3,80}$")
+        const val RUNTIME_SESSION_TTL_SECONDS = 120
     }
 }
 

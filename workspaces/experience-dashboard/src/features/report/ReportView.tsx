@@ -13,6 +13,7 @@ import { LatestRunFallback } from '@/shared/ui/LatestRunFallback';
 import { formatDecimal, formatKstDateTime, formatRatio, formatSignedRatio } from '@/shared/lib/format';
 import { derivedCardFormatter, loadBacktestReportView } from '@/features/backtest-report/viewModel';
 import { loadRiskResultView, type RiskResultView } from '@/features/order-review/viewModel';
+import { FillsPanel } from '@/features/order-review/FillsPanel';
 
 const CAPTURE_LIST = [
   { figure: '그림 4', title: 'RiskEngine 판단 흐름', where: '아래 판정 레일과 위반 목록' },
@@ -91,6 +92,9 @@ export function ReportView() {
                 <div><dt className="text-faint">원칙 버전</dt><dd>v{report.principleVersion}</dd></div>
                 <div><dt className="text-faint">거래비용</dt><dd>{report.costBps} bps</dd></div>
               </dl>
+              <p className="mt-3 text-[12px] text-muted">
+                실제 운용 손익은 source 종료일까지의 기록입니다. 이후 체결은 아래 최근 체결에서 따로 확인하세요.
+              </p>
               <p className="mt-4 rounded-tile border border-line px-4 py-3 text-[12px] text-muted">
                 모델 채택 상태: {report.modelAdoption.state} · 현재 {report.modelAdoption.currentModel}
                 {report.modelAdoption.candidateId === null ? ' · 두 기준을 모두 통과한 후보 없음' : ''}
@@ -117,6 +121,8 @@ export function ReportView() {
           );
         }}
       </AsyncBoundary>
+
+      <FillsPanel />
 
       <AsyncBoundary state={decision.state} onRetry={decision.reload}>
           {(view) => (

@@ -96,19 +96,23 @@ class SocialLoginHandoff(
             session.maxInactiveInterval = 120
             session.setAttribute(
                 PENDING_KEY,
-                LoginResponse(
-                    accessToken = issued.token,
-                    tokenType = "Bearer",
-                    expiresAt = issued.expiresAt,
-                    user = LoginUserResponse(account.userId, account.username, account.role),
+                StagedSocialLogin(
+                    login =
+                        LoginResponse(
+                            accessToken = issued.token,
+                            tokenType = "Bearer",
+                            expiresAt = issued.expiresAt,
+                            user = LoginUserResponse(account.userId, account.username, account.role),
+                        ),
+                    sessionHandle = account.sessionHandle,
                 ),
             )
         }
     }
 
-    fun consume(session: HttpSession): LoginResponse? =
+    fun consume(session: HttpSession): StagedSocialLogin? =
         synchronized(session) {
-            val response = session.getAttribute(PENDING_KEY) as? LoginResponse
+            val response = session.getAttribute(PENDING_KEY) as? StagedSocialLogin
             session.removeAttribute(PENDING_KEY)
             session.invalidate()
             response
@@ -128,4 +132,9 @@ class SocialLoginHandoff(
 data class SocialLoginLinkIntent(
     val userId: String,
     val provider: String,
+)
+
+data class StagedSocialLogin(
+    val login: LoginResponse,
+    val sessionHandle: String,
 )

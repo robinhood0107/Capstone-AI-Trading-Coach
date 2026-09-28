@@ -109,6 +109,38 @@ export interface RequestOptions {
   signal?: AbortSignal;
 }
 
+async function fetchWithAccess(
+  path: string,
+  options: RequestOptions,
+  headers: Record<string, string>,
+  requestId: string,
+): Promise<Response> {
+  const authenticated = !options.anonymous;
+  if (authenticated) {
+    const token = await session.ensureToken();
+    if (!token) throw new ApiFailure({ code: 'UNAUTHORIZED', message: 'No session token.' }, requestId);
+    headers.Authorization = `Bearer ${token}`;
+  }
+  const request = () => fetch(`${baseUrl()}${path}`, {
+    method: options.method ?? 'GET',
+    headers,
+    body: options.body === undefined ? undefined : JSON.stringify(options.body),
+    cache: 'no-store',
+    credentials: options.credentials ??
+      (process.env.NEXT_PUBLIC_MARS_PRODUCT === 'full' && path.startsWith('/api/v1/auth/')
+        ? 'same-origin' : 'omit'),
+    signal: options.signal ?? AbortSignal.timeout(timeoutFor(path)),
+  });
+  let response = await request();
+  if (authenticated && process.env.NEXT_PUBLIC_MARS_PRODUCT === 'full' && response.status === 401) {
+    const renewed = await session.refresh();
+    if (!renewed) throw new ApiFailure({ code: 'UNAUTHORIZED', message: 'Session expired.' }, requestId);
+    headers.Authorization = `Bearer ${renewed}`;
+    response = await request();
+  }
+  return response;
+}
+
 /**
  * 중요: 서버 CORS 설정이 허용하는 요청 헤더는 아래 네 개뿐이다.
  *   Authorization, Content-Type, X-Request-Id, X-Idempotency-Key
@@ -132,27 +164,14 @@ export async function apiFetch<T>(path: string, options: RequestOptions = {}): P
     'X-Request-Id': requestId,
     Accept: 'application/json',
   };
-  if (!options.anonymous) {
-    const token = session.token();
-    if (!token) {
-      throw new ApiFailure({ code: 'UNAUTHORIZED', message: 'No session token.' }, requestId);
-    }
-    headers.Authorization = `Bearer ${token}`;
-  }
   if (options.body !== undefined) headers['Content-Type'] = 'application/json';
   if (options.idempotencyKey) headers['X-Idempotency-Key'] = options.idempotencyKey;
 
   let response: Response;
   try {
-    response = await fetch(`${baseUrl()}${path}`, {
-      method,
-      headers,
-      body: options.body === undefined ? undefined : JSON.stringify(options.body),
-      cache: 'no-store',
-      credentials: options.credentials ?? 'omit',
-      signal: options.signal ?? AbortSignal.timeout(timeoutFor(path)),
-    });
+    response = await fetchWithAccess(path, options, headers, requestId);
   } catch (cause) {
+    if (cause instanceof ApiFailure) throw cause;
     // 연결 실패와 타임아웃은 분석 서비스(Python)와 무관하다. 예전 코드가
     // PYTHON_SERVICE_UNAVAILABLE 을 붙여서 원인 진단을 어렵게 만들었다.
     throw new ApiFailure(
@@ -197,24 +216,13 @@ export async function apiFetchBare<T>(path: string, options: RequestOptions = {}
     'X-Request-Id': requestId,
     Accept: 'application/json',
   };
-  const token = session.token();
-  if (!token) {
-    throw new ApiFailure({ code: 'UNAUTHORIZED', message: 'No session token.' }, requestId);
-  }
-  headers.Authorization = `Bearer ${token}`;
   if (options.body !== undefined) headers['Content-Type'] = 'application/json';
 
   let response: Response;
   try {
-    response = await fetch(`${baseUrl()}${path}`, {
-      method,
-      headers,
-      body: options.body === undefined ? undefined : JSON.stringify(options.body),
-      cache: 'no-store',
-      credentials: 'omit',
-      signal: options.signal ?? AbortSignal.timeout(timeoutFor(path)),
-    });
+    response = await fetchWithAccess(path, options, headers, requestId);
   } catch (cause) {
+    if (cause instanceof ApiFailure) throw cause;
     throw new ApiFailure(
       {
         code: 'NETWORK_UNAVAILABLE',

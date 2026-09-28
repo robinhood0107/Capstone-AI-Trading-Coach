@@ -105,7 +105,7 @@ class FlywayMigrationIntegrationTest(
         // must appear alongside the SQL migrations; missing numbers are not failed migrations.
         val numericVersions = versions.map(String::toInt)
         assertEquals(numericVersions.sorted().distinct(), numericVersions)
-        assertEquals("218", versions.last())
+        assertEquals("230", versions.last())
 
         val requiredTables =
             listOf(

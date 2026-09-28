@@ -51,6 +51,7 @@ class GrpcAutomationEvidenceProviderConditionTest {
                 enabled = true,
                 modelId = "gemini-3.5-flash",
                 localRoot = "/tmp/strong-llm",
+                serviceAccountJsonB64 = "fixture-service-account",
             )
 
         @Bean

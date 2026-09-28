@@ -7,6 +7,7 @@ import com.capstone.decision.api.common.ErrorCode
 import com.capstone.decision.api.common.RequestIds
 import com.capstone.decision.application.security.AppPrincipal
 import com.capstone.decision.infrastructure.security.AuthenticatedAccount
+import com.capstone.decision.infrastructure.security.FullBrowserRefreshCookieService
 import com.capstone.decision.infrastructure.security.FullPasswordAccountService
 import com.capstone.decision.infrastructure.security.JwtService
 import com.capstone.decision.infrastructure.security.LoginAttemptLimiter
@@ -40,6 +41,7 @@ class FullPasswordAuthController(
     private val accounts: FullPasswordAccountService,
     private val jwtService: JwtService,
     private val loginAttemptLimiter: LoginAttemptLimiter,
+    private val refreshCookies: FullBrowserRefreshCookieService,
 ) {
     @Operation(operationId = "loginFullPasswordAccount")
     @SecurityRequirements
@@ -65,7 +67,7 @@ class FullPasswordAuthController(
         }
         loginAttemptLimiter.recordSuccess(servletRequest.remoteAddr, request.identifier)
         response.setHeader("Cache-Control", "no-store")
-        return accountLoginResponse(jwtService, account, servletRequest)
+        return accountLoginResponse(jwtService, account, servletRequest, response, refreshCookies)
     }
 }
 
@@ -78,6 +80,7 @@ class PasswordAccountController(
     private val jwtService: JwtService,
     private val loginAttemptLimiter: LoginAttemptLimiter,
     private val socialLogin: ObjectProvider<SocialLoginHandoff>,
+    private val refreshCookies: ObjectProvider<FullBrowserRefreshCookieService>,
 ) {
     @Operation(operationId = "readAuthenticationOptions")
     @SecurityRequirements
@@ -120,7 +123,7 @@ class PasswordAccountController(
             }
         loginAttemptLimiter.recordSuccess(servletRequest.remoteAddr, request.email)
         response.setHeader("Cache-Control", "no-store")
-        return accountLoginResponse(jwtService, account, servletRequest)
+        return accountLoginResponse(jwtService, account, servletRequest, response, refreshCookies.ifAvailable)
     }
 
     @Operation(operationId = "addPasswordLoginToAccount")
@@ -140,7 +143,7 @@ class PasswordAccountController(
                 throw ApiException(ErrorCode.VALIDATION_ERROR)
             }
         response.setHeader("Cache-Control", "no-store")
-        return accountLoginResponse(jwtService, account, servletRequest)
+        return accountLoginResponse(jwtService, account, servletRequest, response, refreshCookies.ifAvailable)
     }
 
     /**
@@ -177,7 +180,7 @@ class PasswordAccountController(
         }
         loginAttemptLimiter.recordSuccess(servletRequest.remoteAddr, principal.userId)
         response.setHeader("Cache-Control", "no-store")
-        return accountLoginResponse(jwtService, account, servletRequest)
+        return accountLoginResponse(jwtService, account, servletRequest, response, refreshCookies.ifAvailable)
     }
 }
 
@@ -185,8 +188,11 @@ private fun accountLoginResponse(
     jwtService: JwtService,
     account: AuthenticatedAccount,
     request: HttpServletRequest,
+    response: HttpServletResponse,
+    refreshCookies: FullBrowserRefreshCookieService?,
 ): ApiResponse<LoginResponse> {
     val issued = jwtService.issue(account)
+    refreshCookies?.issue(account.sessionHandle, response)
     return ApiResponseFactory.success(
         requestId = RequestIds.currentOrCreate(request),
         data =

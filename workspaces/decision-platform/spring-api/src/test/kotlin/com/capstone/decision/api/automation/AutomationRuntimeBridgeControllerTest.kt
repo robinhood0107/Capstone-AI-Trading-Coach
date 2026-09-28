@@ -7,23 +7,31 @@ import com.capstone.decision.application.brokerage.BrokerageService
 import com.capstone.decision.application.brokerage.MockBalanceProjection
 import com.capstone.decision.application.decision.DecisionService
 import com.capstone.decision.infrastructure.brokerage.MockCredentialSettingsService
+import com.capstone.decision.infrastructure.security.AuthenticatedAccount
 import com.capstone.decision.infrastructure.security.DemoRole
+import com.capstone.decision.infrastructure.security.FullPasswordAccountRepository
 import com.capstone.decision.infrastructure.security.UserSecurityActorRecord
 import com.capstone.decision.infrastructure.security.UserSecurityRepository
 import io.mockk.every
 import io.mockk.mockk
 import io.mockk.verify
 import jakarta.servlet.http.HttpServletRequest
+import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import org.springframework.beans.factory.ObjectProvider
+import org.springframework.security.core.context.SecurityContextHolder
 import java.time.Instant
+import java.time.OffsetDateTime
 
 class AutomationRuntimeBridgeControllerTest {
     private val decisionService = mockk<DecisionService>()
     private val brokerageService = mockk<BrokerageService>()
     private val users = mockk<UserSecurityRepository>()
     private val mockCredentials = mockk<ObjectProvider<MockCredentialSettingsService>>(relaxed = true)
+    private val runtimeSessions = mockk<ObjectProvider<FullPasswordAccountRepository>>()
+    private val accountRepository = mockk<FullPasswordAccountRepository>()
     private val evidenceService = mockk<AutomationEvidenceService>()
     private val request = mockk<HttpServletRequest>()
     private val controller =
@@ -35,8 +43,29 @@ class AutomationRuntimeBridgeControllerTest {
             evidenceService,
             users,
             mockCredentials,
+            runtimeSessions,
             SECRET,
         )
+
+    @BeforeEach
+    fun setUpRuntimeSession() {
+        SecurityContextHolder.clearContext()
+        every { runtimeSessions.ifAvailable } returns accountRepository
+        every { accountRepository.issueAutomationRuntimeSession(USER_ID, any()) } returns
+            AuthenticatedAccount(
+                USER_ID,
+                "runtime-user",
+                DemoRole.USER,
+                7,
+                "sid1_" + "a".repeat(64),
+                OffsetDateTime.now().plusMinutes(5),
+            )
+    }
+
+    @AfterEach
+    fun clearRuntimeSession() {
+        SecurityContextHolder.clearContext()
+    }
 
     @Test
     fun `loopback secret delegates balance to existing Spring brokerage service`() {
@@ -58,6 +87,7 @@ class AutomationRuntimeBridgeControllerTest {
         val response = controller.command(SECRET, balanceBody(USER_ID), request)
 
         assertEquals(200, response.statusCode.value())
+        verify(exactly = 1) { accountRepository.issueAutomationRuntimeSession(USER_ID, any()) }
         verify(exactly = 1) { brokerageService.getOwnedBalance(match { it.userId == USER_ID }, ACCOUNT_ID) }
     }
 

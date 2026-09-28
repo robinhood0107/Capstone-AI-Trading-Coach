@@ -2,6 +2,7 @@ package com.capstone.decision.infrastructure.security
 
 import com.capstone.decision.api.auth.SocialLoginExchangeController
 import com.capstone.decision.api.common.ApiException
+import io.mockk.mockk
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertThrows
@@ -48,6 +49,7 @@ class SocialLoginHandoffTest {
         val controller =
             SocialLoginExchangeController(
                 handoff,
+                mockk(relaxed = true),
                 FullSocialLoginProperties("https://mars.example.test", "a".repeat(64)),
             )
         val rejected =
@@ -90,6 +92,7 @@ class SocialLoginHandoffTest {
         val controller =
             SocialLoginExchangeController(
                 handoff,
+                mockk(relaxed = true),
                 FullSocialLoginProperties("https://mars.example.test", "a".repeat(64)),
             )
         val request =

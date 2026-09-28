@@ -5,6 +5,7 @@ import com.capstone.decision.api.common.ApiResponseFactory
 import com.capstone.decision.api.common.RequestIds
 import com.capstone.decision.application.decision.DecisionActor
 import com.capstone.decision.application.decision.DecisionAuditProjection
+import com.capstone.decision.application.decision.DecisionInputMetricsProjection
 import com.capstone.decision.application.decision.DecisionProjection
 import com.capstone.decision.application.decision.DecisionService
 import com.capstone.decision.application.security.AppPrincipal
@@ -111,6 +112,22 @@ class DecisionController(
         return ApiResponseFactory.success(
             requestId = RequestIds.currentOrCreate(request),
             data = service.getOwned(principal.userId, parsedId),
+        )
+    }
+
+    @Operation(summary = "저장된 판정에 실제 사용된 owner 전용 수치 입력을 조회한다.")
+    @GetMapping("/{decisionId}/inputs")
+    fun getDecisionInputs(
+        @AuthenticationPrincipal principal: AppPrincipal,
+        @Parameter(schema = OasSchema(pattern = "^dec_[0-9a-f]{32}$"))
+        @PathVariable decisionId: String,
+        request: HttpServletRequest,
+    ): ApiResponse<DecisionInputMetricsProjection> {
+        parser.requireNoQuery(request)
+        val parsedId = parser.parseDecisionId(decisionId)
+        return ApiResponseFactory.success(
+            requestId = RequestIds.currentOrCreate(request),
+            data = service.getOwnedInputMetrics(principal.userId, parsedId),
         )
     }
 

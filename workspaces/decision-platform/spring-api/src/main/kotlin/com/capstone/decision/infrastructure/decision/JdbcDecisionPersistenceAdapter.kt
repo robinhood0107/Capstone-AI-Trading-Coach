@@ -3,6 +3,7 @@ package com.capstone.decision.infrastructure.decision
 import com.capstone.decision.application.decision.DecisionAuditPayloadProjection
 import com.capstone.decision.application.decision.DecisionAuditProjection
 import com.capstone.decision.application.decision.DecisionIdempotencyConflictException
+import com.capstone.decision.application.decision.DecisionInputMetricProjection
 import com.capstone.decision.application.decision.DecisionPersistencePort
 import com.capstone.decision.application.decision.DecisionPersistenceReplayException
 import com.capstone.decision.application.decision.DecisionProjection
@@ -131,6 +132,25 @@ class JdbcDecisionPersistenceAdapter(
             ) { result ->
                 projectionFactory.fromCanonicalJson(result.getString("result_canonical_json"))
             }.singleOrNull()
+
+    override fun findOwnedInputMetrics(
+        actorUserId: String,
+        decisionId: String,
+    ): List<DecisionInputMetricProjection> =
+        actorScopedReadQuery.query(
+            actorUserId = actorUserId,
+            requestedDecisionId = decisionId,
+            sql = "SELECT metric,value,unit,availability,observed_at FROM read_decision_input_metrics_owner_v1(?)",
+            binder = { statement -> statement.setString(1, decisionId) },
+        ) { result ->
+            DecisionInputMetricProjection(
+                metric = result.getString("metric"),
+                value = result.getBigDecimal("value"),
+                unit = result.getString("unit"),
+                availability = result.getString("availability"),
+                observedAt = result.getString("observed_at"),
+            )
+        }
 
     override fun findOwnedAudit(
         actorUserId: String,

@@ -1,10 +1,10 @@
 'use client';
 
-import type { ReactNode } from 'react';
+import { useEffect, type ReactNode } from 'react';
 import Image from 'next/image';
 import { usePathname } from 'next/navigation';
 import { apiMode } from '@/shared/api/client';
-import { useSession } from '@/shared/api/session';
+import { session, useSession } from '@/shared/api/session';
 import { NavRail } from '@/shared/ui/NavRail';
 import { StatusBar } from '@/shared/ui/StatusBar';
 import { LoginCard } from '@/shared/ui/LoginCard';
@@ -34,11 +34,32 @@ function DemoShell({ children }: { children: ReactNode }) {
 }
 
 function AuthenticatedAppShell({ children }: { children: ReactNode }) {
-  const { authenticated } = useSession();
+  const { authenticated, restoring, restoreError } = useSession();
   const pathname = usePathname();
+
+  useEffect(() => {
+    if (!BARE_ROUTES.has(pathname)) session.restoreOnMount();
+  }, [pathname]);
 
   // `/intro` 는 자기가 소개 전체를 그린다. 크롬을 씌우면 `<main>` 최대 폭에 갇힌다.
   if (BARE_ROUTES.has(pathname)) return <>{children}</>;
+
+  if (restoring && apiMode() !== 'mock') {
+    return <main className="flex min-h-screen items-center justify-center text-[14px] text-muted">로그인 상태를 확인하고 있습니다.</main>;
+  }
+  if (restoreError && apiMode() !== 'mock') {
+    return <main className="flex min-h-screen flex-col items-center justify-center gap-4 text-[14px] text-muted">
+      <p>로그인 상태를 확인하지 못했습니다.</p>
+      <button type="button" className="rounded-control bg-brand px-5 py-3 text-on-brand"
+        onClick={() => { void session.refresh().catch(() => {}); }}>
+        다시 확인
+      </button>
+      <button type="button" className="rounded-control border border-line px-5 py-3 text-ink"
+        onClick={() => session.clear()}>
+        다시 로그인
+      </button>
+    </main>;
+  }
 
   // mock 모드는 서버가 없으므로 로그인 자체를 건너뛴다.
   if (apiMode() !== 'mock' && !authenticated) {

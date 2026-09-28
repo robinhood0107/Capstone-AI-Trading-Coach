@@ -50,6 +50,15 @@ export const RULE_LABELS: Record<PrincipleRuleId, RuleLabel> = {
   },
 };
 
+const EXTRA_RULE_NAMES: Record<string, string> = {
+  data_freshness_guard: '데이터 최신성',
+  ad_leading_room_guard: '광고성 선행매매 점검',
+  high_volatility_guard: '높은 변동성 점검',
+  hmm_risk_off_guard: '위험회피 국면 점검',
+  mean_reversion_warning: '평균회귀 경고',
+  etf_etn_risk_check: 'ETF·ETN 위험 점검',
+};
+
 export function ruleName(ruleId: string): string {
-  return RULE_LABELS[ruleId as PrincipleRuleId]?.name ?? ruleId;
+  return RULE_LABELS[ruleId as PrincipleRuleId]?.name ?? EXTRA_RULE_NAMES[ruleId] ?? ruleId;
 }

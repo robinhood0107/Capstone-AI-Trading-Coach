@@ -36,7 +36,8 @@ test('expired decisions and internal evidence codes are not presented as orderab
   const signal = read('src/features/model-evaluation/viewModel.ts');
 
   assert.match(view, /view\.detail\.expired[\s\S]*'불가 · 재평가 필요'/);
-  assert.match(view, /reason\.code === 'NOT_APPLICABLE_V1' \? null/);
-  assert.match(model, /'이 주문의 평가 대상이 아닌 기준입니다\.'/);
+  assert.match(view, /<summary className="cursor-pointer">관련 규칙·원문 보기<\/summary>/);
+  assert.match(model, /first\.code === 'NOT_APPLICABLE_V1'/);
+  assert.match(model, /해당하지 않는 기준 \$\{items\.length\}개/);
   assert.match(signal, /'현재 운용은 규칙 신호와 LSTM·Ridge의 1일 예측을 함께 사용합니다\.'/);
 });

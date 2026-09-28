@@ -87,6 +87,23 @@ class FullPasswordAccountRepository(
                 ttlSeconds,
             ).singleOrNull()
 
+    /** FULL 자동운용 bridge 전용. 활성 소유자에게 짧은 세션을 연다. 비활성·없는 사용자는 null. */
+    fun issueAutomationRuntimeSession(
+        userId: String,
+        ttlSeconds: Int,
+    ): AuthenticatedAccount? =
+        jdbcTemplate()
+            .query(
+                """
+                select session_handle, actor_user_id, username, actor_role,
+                       actor_security_version, expires_at
+                from issue_automation_runtime_session_v1(?,?)
+                """.trimIndent(),
+                ACCOUNT_ROW_MAPPER,
+                userId,
+                ttlSeconds,
+            ).singleOrNull()
+
     private fun jdbcTemplate(): JdbcTemplate =
         JdbcTemplate(
             authDatabaseProvider.ifAvailable?.dataSource

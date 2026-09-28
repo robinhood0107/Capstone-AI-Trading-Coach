@@ -19,6 +19,7 @@ class MarsFullAuthContractTest(unittest.TestCase):
             set(document["paths"]),
             {
                 "/api/v1/auth/login",
+                "/api/v1/auth/refresh",
                 "/api/v1/auth/options",
                 "/api/v1/auth/signup",
                 "/api/v1/auth/password",
@@ -32,6 +33,10 @@ class MarsFullAuthContractTest(unittest.TestCase):
                 "/api/v1/auth/oidc/exchange",
                 "/api/v1/auth/logout",
             },
+        )
+        self.assertEqual(
+            document["paths"]["/api/v1/auth/refresh"]["post"]["security"],
+            [],
         )
         self.assertEqual(
             document["paths"]["/api/v1/auth/identities/{provider}/link/start"]["post"]["security"],

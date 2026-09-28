@@ -105,6 +105,8 @@ _LEGACY_AI_SETTINGS_SHA256 = hashlib.sha256(
 # tick 이 일시 실패했을 때의 재시도. 창(09:30~15:20)을 다 쓰지 않으면서도 몇 분간의 브리지
 # 장애는 넘길 수 있는 크기다. 이 한도를 넘으면 run 을 그 자리에 두고 물러난다.
 _TICK_RETRY_SECONDS = 20.0
+_CONTINUATION_TRANSIENT_RETRIES = 10
+_CONTINUATION_TRANSIENT_WAIT_SECONDS = 60.0
 _MAX_TICK_FAILURES = 15
 _WALL_CLOCK_CHECK_SECONDS = 30.0
 # 다시 켰을 때 빠진 일별 배치를 한 tick 에 몇 세션까지 소급할지. 09:30 창을 먹지 않는 크기로
@@ -605,6 +607,39 @@ class PostgresAutomationRuntimeRepository:
             strategy_id=str(row["strategy_id"]),
             baseline_account_digest=str(row["baseline_account_digest"]),
             replayed=bool(row["replayed"]),
+            session_date=session_date,
+            claim_token_hash=claim_token_hash,
+        )
+
+    def resume_continuation(
+        self,
+        user_id: str,
+        session_date: date,
+        claim_token_hash: str,
+    ) -> RuntimeClaim | None:
+        """오늘 terminal 이 된 run 의 claim 을 continuation 용으로 다시 잡는다(15:20 까지)."""
+
+        _require_user_id(user_id)
+        _require_hash(claim_token_hash)
+        with self._connect(row_factory=dict_row) as connection, connection.cursor() as cursor:
+            cursor.execute(
+                "select * from p1_resume_automation_continuation_v1(%s,%s,%s)",
+                (user_id, session_date, claim_token_hash),
+            )
+            row = cursor.fetchone()
+        if row is None:
+            return None
+        if str(row["user_id"]) != user_id:
+            raise AutomationRuntimeError("AUTOMATION_OWNER_CLAIM_MISMATCH")
+        return RuntimeClaim(
+            user_id=user_id,
+            run_id=str(row["run_id"]),
+            control_version=int(row["control_version"]),
+            account_id=str(row["account_id"]),
+            principle_id=str(row["principle_id"]),
+            strategy_id=str(row["strategy_id"]),
+            baseline_account_digest=str(row["baseline_account_digest"]),
+            replayed=True,
             session_date=session_date,
             claim_token_hash=claim_token_hash,
         )
@@ -1221,6 +1256,8 @@ class AutomationRuntimeService:
         self._connectivity_check = connectivity_check
         self._performance_report_refresh = performance_report_refresh
         self._portfolio_runner = portfolio_runner
+        # 재기동 뒤 continuation 을 이어받은 (owner, session). 한 프로세스에서 한 번만 잇는다.
+        self._resumed_continuations: set[tuple[str, date]] = set()
         self._owner_user_id = os.environ.get("P1_AUTOMATION_OWNER_USER_ID", "").strip()
         self._stop = threading.Event()
 
@@ -1563,6 +1600,8 @@ class AutomationRuntimeService:
                     return "RETRY", now + timedelta(seconds=60)
                 self._repository.resume_data_gap(owner_user_id, session_date)
                 return "RETRY", now + timedelta(seconds=1)
+            if self._resume_continuations(owner_user_id, session_date, claim_hash):
+                return "DONE", None
             if self._advance_schedule_to(session_date, owner_user_id):
                 return "RETRY", now + timedelta(seconds=1)
             return "IDLE", now + timedelta(seconds=60)
@@ -1573,6 +1612,41 @@ class AutomationRuntimeService:
         return outcome, None if outcome == "DONE" else datetime.now(UTC).astimezone(
             _KST
         ) + timedelta(seconds=15)
+
+    def _resume_continuations(
+        self, owner_user_id: str, session_date: date, claim_hash: str
+    ) -> bool:
+        """terminal 뒤 continuation 도중 프로세스가 죽었으면 오늘 남은 결정 시점을 잇는다.
+
+        run 이 terminal 이 되면 claim 이 RELEASED 되고 11:00·14:00 은 그 뒤에 돈다. 재기동한
+        프로세스는 claim 을 못 잡아 그날 남은 시점을 버렸다. 이미 지난 시점은 가장 최근 것
+        하나만 지금 돌린다 - 계획은 현재 상태로 세워지므로 지난 시점을 여러 번 돌려도 같다.
+        """
+
+        key = (owner_user_id, session_date)
+        if self._portfolio_runner is None or key in self._resumed_continuations:
+            return False
+        resumer = getattr(self._repository, "resume_continuation", None)
+        if not callable(resumer):
+            return False
+        try:
+            claim = resumer(owner_user_id, session_date, claim_hash)
+        except (AutomationRuntimeError, psycopg.Error) as error:
+            print(f"AUTOMATION_CONTINUATION_RESUME=FAILED error={type(error).__name__}", flush=True)
+            return False
+        if claim is None:
+            return False
+        self._resumed_continuations.add(key)
+        print(
+            f"AUTOMATION_CONTINUATION_RESUME=RESUMED session={session_date.isoformat()}", flush=True
+        )
+        state = self._repository.read_state(claim)
+        port = self._port_factory.build(claim, state)
+        try:
+            self._drive_continuations(claim=claim, state=state, port=port, resume=True)
+        finally:
+            port.close()
+        return True
 
     def _recover_stranded_session(self, owner_user_id: str | None = None) -> None:
         """마감을 못 끝내고 죽은 직전 세션을 이어받아 정산한다.
@@ -1754,7 +1828,7 @@ class AutomationRuntimeService:
         return armed
 
     def _drive_continuations(
-        self, *, claim: RuntimeClaim, state: dict[str, Any], port: Any
+        self, *, claim: RuntimeClaim, state: dict[str, Any], port: Any, resume: bool = False
     ) -> bool:
         """결정 시점마다 남은 세션 예산으로 빈 슬롯을 채운다. 계속해도 되면 True.
 
@@ -1769,10 +1843,21 @@ class AutomationRuntimeService:
         runner = self._portfolio_runner
         if runner is None:
             return True
-        for boundary in _DECISION_TIMES:
+        boundaries = _DECISION_TIMES
+        if resume:
+            now_kst = datetime.now(UTC).astimezone(_KST)
+            passed = [
+                b
+                for b in _DECISION_TIMES
+                if datetime.combine(claim.session_date, b, _KST) <= now_kst
+            ]
+            boundaries = tuple(passed[-1:]) + tuple(b for b in _DECISION_TIMES if b not in passed)
+        for boundary in boundaries:
             target = datetime.combine(claim.session_date, boundary, _KST)
             if datetime.now(UTC).astimezone(_KST) < target and self._wait_until(target):
                 return False
+            transient_failures = 0
+            continuation = None
             while True:
                 now_kst = datetime.now(UTC).astimezone(_KST)
                 # 매수 창이 닫힌 뒤에도 이미 제출된 주문은 반드시 대사한다.
@@ -1803,7 +1888,22 @@ class AutomationRuntimeService:
                         f"detail={_bounded_error_detail(error)}",
                         flush=True,
                     )
-                    return False
+                    # KIS·DB 연결의 일시 장애 한 번으로 그날 남은 결정 시점과 다음 세션 스케줄
+                    # (roll_schedule)까지 버리던 문제. 같은 시점을 잠시 뒤 다시 시도하고, 끝내
+                    # 안 되면 그 시점만 건너뛴다. 원인 모를 오류는 예전처럼 닫는다.
+                    if not _transient_continuation_error(error):
+                        return False
+                    transient_failures += 1
+                    if transient_failures > _CONTINUATION_TRANSIENT_RETRIES:
+                        print(
+                            f"AUTOMATION_PORTFOLIO=SKIPPED_AFTER_TRANSIENT "
+                            f"decision={boundary.isoformat(timespec='minutes')}",
+                            flush=True,
+                        )
+                        break
+                    if self._stop.wait(_CONTINUATION_TRANSIENT_WAIT_SECONDS):
+                        return False
+                    continue
                 print(
                     f"AUTOMATION_PORTFOLIO={continuation.status} "
                     f"decision={boundary.isoformat(timespec='minutes')} "
@@ -1821,6 +1921,8 @@ class AutomationRuntimeService:
                     break
                 if self._stop.wait(_TICK_RETRY_SECONDS):
                     return False
+            if continuation is None:
+                continue
             if continuation.status in {"SUBMIT_RESPONSE_UNRESOLVED", "EXECUTION_STATE_INVALID"}:
                 reason_code = continuation.failure_code or "KIS_ORDER_RESULT_UNCERTAIN"
                 if reason_code not in {"KIS_ORDER_REJECTED", "KIS_ORDER_RESULT_UNCERTAIN"}:
@@ -1976,6 +2078,19 @@ def _is_already_published(error: BaseException) -> bool:
     while cause is not None and id(cause) not in seen:
         seen.add(id(cause))
         if getattr(cause, "sqlstate", None) == "23505":
+            return True
+        cause = cause.__cause__ or cause.__context__
+    return False
+
+
+def _transient_continuation_error(error: BaseException) -> bool:
+    """KIS 전송 장애와 DB 연결 끊김만 일시 장애로 본다. 주문 결과가 불확실한 오류는 아니다."""
+
+    from app.data.kis.http_client import KISTransportError
+
+    cause: BaseException | None = error
+    while cause is not None:
+        if isinstance(cause, (KISTransportError, psycopg.OperationalError)):
             return True
         cause = cause.__cause__ or cause.__context__
     return False

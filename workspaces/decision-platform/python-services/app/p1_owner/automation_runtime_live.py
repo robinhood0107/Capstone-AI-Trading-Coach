@@ -581,6 +581,11 @@ class LiveAutomationPort:
         order_book_source: KisOrderBookSource | None = None,
     ) -> None:
         self._claim = claim
+        # 포트폴리오 재평가가 위험지표 분모(세션 기준 자본)를 만들 때 쓴다.
+        baseline = state.get("expectedAccountProjection", state.get("baselineAccountProjection"))
+        self._baseline_projection: dict[str, Any] = (
+            dict(baseline) if isinstance(baseline, dict) else {}
+        )
         self._corpus_source: CorpusDocumentSource = corpus_source or EmptyCorpusDocumentSource()
         self._bridge = bridge
         self._quote_source = quote_source
@@ -998,6 +1003,27 @@ class LiveAutomationPort:
     def portfolio_evaluate(self, intent: ExactOrderIntent, ordinal: int) -> str | None:
         """각 exact intent를 기존 Decision/RiskEngine에서 다시 평가하며 HOLD는 주문으로 승격하지 않는다."""
 
+        # RiskEngine 은 관측 표에서 잔고·위험지표·시세를 읽는다. 단일 주문 엔진은 평가 직전에
+        # 같은 tick 안에서 발행하는데 이 경로에는 없어서, 포트폴리오 주문은 BALANCE_STALE·
+        # PRICE_MISSING·RISK_SNAPSHOT_MISSING 으로 늘 HOLD 됐다. 같은 발행을 여기서도 한다.
+        self._require_capacity(1)
+        balance = self._execution_source.balance(self._claim.account_id)
+        self.physical_calls += 1
+        if balance.get("accountId") != self._claim.account_id:
+            raise AutomationRuntimeError("AUTOMATION_BALANCE_IDENTITY_MISMATCH")
+        self._latest_balance = dict(balance)
+        # 재기동 뒤 이어받은 실행은 계획 단계를 거치지 않아 주문 종목 시세가 캐시에 없다.
+        # 없으면 시세 관측이 빠져 PRICE_MISSING 으로 HOLD 된다.
+        self._quote(intent.symbol)
+        marker = publish_runtime_observations(
+            owner_user_id=self._claim.user_id,
+            account_id=self._claim.account_id,
+            balance=balance,
+            quotes=self._observation_quotes(intent.symbol, balance),
+            baseline_equity_krw=_projection_equity(self._baseline_projection, balance),
+            trading_date=self._claim.session_date.isoformat(),
+        )
+        print(f"AUTOMATION_PORTFOLIO_OBSERVATION={marker}", flush=True)
         response = self._bridge.command(
             "EVALUATE",
             self._claim.user_id,
@@ -1639,12 +1665,32 @@ def _projection_equity(expected: Mapping[str, Any], balance: Mapping[str, Any]) 
     """세션 기준 자본. 위험지표의 분모다.
 
     durable state 의 projection 은 평가액이 없는 identity(현금 + 수량)이므로 기준 현금에
-    현재 포지션 평가액을 더한다. 주문 전에는 포지션이 그대로이므로 이것이 그날 개장 자본이고,
-    매수로 현금이 포지션으로 바뀌어도 합이 유지되어 매수 자체가 손실로 잡히지 않는다.
+    **기준 수량 × 현재 단가**를 더한다. 예전에는 현재 보유 평가액 전체를 더해, 세션 중에 산
+    종목이 기준 현금(매수 전)과 평가액에 두 번 들어갔다. 그래서 자본의 3% 넘게 산 뒤에는
+    daily_loss_guard 가 가짜 손실로 모든 평가(손절 매도 포함)를 BLOCK 했다(2026-09-28 실측
+    −4.65%). 기준 수량의 단가를 알 수 없으면(오늘 전량 매도) 예전 식으로 물러난다 - 그 경우
+    오차는 이익 쪽이라 가짜 차단을 만들지 않는다.
     """
 
     baseline_cash = int(expected.get("cashKrw", 0))
-    equity = baseline_cash + _open_position_value(dict(balance))
+    unit_prices: dict[str, int] = {}
+    for item in balance.get("positions") or []:
+        if not isinstance(item, Mapping):
+            continue
+        quantity = int(item.get("quantity", 0) or 0)
+        value = item.get("marketValueKrw")
+        if quantity > 0 and isinstance(value, int) and not isinstance(value, bool) and value >= 0:
+            unit_prices[str(item.get("symbol", ""))] = value // quantity
+    baseline_positions = [
+        item for item in expected.get("positions") or [] if isinstance(item, Mapping)
+    ]
+    if all(str(item.get("symbol", "")) in unit_prices for item in baseline_positions):
+        equity = baseline_cash + sum(
+            int(item.get("quantity", 0) or 0) * unit_prices[str(item.get("symbol", ""))]
+            for item in baseline_positions
+        )
+    else:
+        equity = baseline_cash + _open_position_value(dict(balance))
     # 분모가 0 이면 비율이 정의되지 않는다. 그 경우는 관측을 만들지 않는 편이 정직하다.
     return equity if equity > 0 else 0
 

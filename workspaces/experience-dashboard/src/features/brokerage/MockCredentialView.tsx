@@ -117,11 +117,10 @@ function MockCredentialForm({
     const confirmation = priorFillNeedsReview
       ? '이전 1주 인증 주문이 체결된 것으로 보입니다. KIS 모의계좌에서 해당 주문과 보유수량을 확인·정리한 뒤 진행해 주세요. 새로 1주 테스트 주문을 시작할까요?'
       : 'KIS 모의계좌에서 삼성전자 1주를 현재 하한가로 매수 주문한 뒤 즉시 취소하고 체결·잔고를 확인합니다. 하한가 주문도 체결될 수 있으며, 체결되면 계좌에 1주가 남을 수 있습니다. 진행할까요?';
-    if (
-      !window.confirm(
-        confirmation,
-      )
-    ) return;
+    if (!window.confirm(confirmation)) {
+      setOutcome('주문 경로 시험을 진행하지 않았습니다. KIS 주문은 보내지 않았습니다.');
+      return;
+    }
     setPending(true);
     setOutcome(null);
     setError(null);

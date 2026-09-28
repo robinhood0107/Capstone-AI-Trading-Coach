@@ -366,12 +366,16 @@ class RagV2RuntimeService(
             scope,
             externalQueryConsentGranted,
         )
-        // Local retrieval may miss while bounded Vertex web search still finds citable sources. Allow
-        // generation to try that path, but do not accept its MODEL_KNOWLEDGE-only result below.
+        // Retrieval controls which evidence accompanies the request; it does not decide whether
+        // Vertex gets to answer. Keep the deterministic sensitive-data boundary, then let Vertex
+        // produce the response whether retrieval found citations or not.
         if (
-            evaluation.generationStatus != RagGenerationStatus.RETRIEVAL_ONLY &&
-            !(vertexEnabled && isInsufficientRetrieval(evaluation))
+            vertexEnabled &&
+            evaluation.generationStatus != RagGenerationStatus.BLOCKED_SENSITIVE
         ) {
+            return generateWithVertex(ownerUserId, requestId, command, scope, evaluation)
+        }
+        if (evaluation.generationStatus != RagGenerationStatus.RETRIEVAL_ONLY) {
             return terminalAnswer(
                 requestId = requestId,
                 generationStatus = evaluation.generationStatus,
@@ -379,9 +383,6 @@ class RagV2RuntimeService(
                 retrievalFailure = evaluation.retrievalFailure,
                 guardrailFlags = evaluation.guardrailFlags,
             )
-        }
-        if (vertexEnabled) {
-            return generateWithVertex(ownerUserId, requestId, command, scope, evaluation)
         }
 
         return persistRetrievalOnlyAnswer(ownerUserId, requestId, command, scope, evaluation)
@@ -539,18 +540,6 @@ class RagV2RuntimeService(
                 ),
             )
         requireVertexGenerationBoundary(generation, evidence)
-        if (generation.answerBasis == StrongLlmAnswerBasis.MODEL_KNOWLEDGE) {
-            if (evaluation.citations.isNotEmpty()) {
-                return persistRetrievalOnlyAnswer(ownerUserId, requestId, command, scope, evaluation)
-            }
-            return terminalAnswer(
-                requestId = requestId,
-                generationStatus = RagGenerationStatus.RETRIEVAL_FAILURE,
-                citationCoverage = 0.0,
-                retrievalFailure = true,
-                guardrailFlags = listOf("INSUFFICIENT_EVIDENCE"),
-            )
-        }
         if (generation.generationStatus != RagGenerationStatus.ANSWERED) {
             // 생성 모델이 부족 응답을 내거나 strict quote/citation 검증에서 닫혀도, 이미 profile-selected
             // retrieval과 DB canonicalization을 통과한 출처까지 버릴 이유는 없다. 생성 실패를 다른 모델로
@@ -1286,7 +1275,7 @@ class RagV2RuntimeService(
             addAll(warnings)
         }
 
-    /** 검색 결과 0건은 FULL RAG에서 근거 부족으로 닫고, MCP web research에서만 추가 검색에 쓴다. */
+    /** MCP web research만 검색 결과 0건을 추가 검색 가능한 scope로 연다. */
     private fun isInsufficientRetrieval(evaluation: RagV2EvaluationResult): Boolean =
         evaluation.generationStatus == RagGenerationStatus.RETRIEVAL_FAILURE &&
             evaluation.retrievalFailure &&

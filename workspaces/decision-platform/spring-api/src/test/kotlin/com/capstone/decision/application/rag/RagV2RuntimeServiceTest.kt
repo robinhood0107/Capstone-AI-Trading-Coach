@@ -428,7 +428,7 @@ class RagV2RuntimeServiceTest {
     }
 
     @Test
-    fun `enabled Strong LLM abstains when retrieval has no evidence`() {
+    fun `enabled Strong LLM answer is returned when retrieval has no evidence`() {
         val jdbc = mockk<NamedParameterJdbcTemplate>()
         val provider = mockk<ObjectProvider<NamedParameterJdbcTemplate>>()
         val crypto = mockk<RagHistoryCryptoPort>()
@@ -439,6 +439,7 @@ class RagV2RuntimeServiceTest {
         val scope = scope(profile = "voyage_context_4_1024_v1")
         val command = command()
         val createdAt = Instant.parse("2026-08-14T12:00:00Z")
+        val generatedAnswer = "분산투자는 여러 투자에 위험을 나누는 일반적인 개념입니다."
 
         every { provider.getIfAvailable() } returns jdbc
         every { vertexGeneration.isActivationEnabled() } returns true
@@ -484,13 +485,28 @@ class RagV2RuntimeServiceTest {
         every { vertexGeneration.generate(capture(generatedCommand)) } returns
             RagV2VertexGenerationResult(
                 generationStatus = RagGenerationStatus.ANSWERED,
-                answer = "분산투자는 여러 투자에 위험을 나누는 일반적인 개념입니다.",
+                answer = generatedAnswer,
                 citationIds = emptyList(),
                 failureCode = "",
                 answerBasis = StrongLlmAnswerBasis.MODEL_KNOWLEDGE,
                 validationStatus = StrongLlmValidationStatus.VALID,
                 citationCoverage = 0.0,
             )
+        every { crypto.encrypt(any(), command.question, generatedAnswer) } returns encrypted()
+        every {
+            jdbc.queryForObject(
+                "SELECT transaction_timestamp()",
+                emptyMap<String, Any>(),
+                OffsetDateTime::class.java,
+            )
+        } returns OffsetDateTime.ofInstant(createdAt, ZoneOffset.UTC)
+        every {
+            jdbc.queryForObject(
+                match { it.contains("persist_s4_9_strong_llm_history_v2") },
+                any<Map<String, *>>(),
+                String::class.java,
+            )
+        } returns "[]"
 
         val answer =
             service(
@@ -501,19 +517,21 @@ class RagV2RuntimeServiceTest {
                 vertexGeneration = vertexGeneration,
             ).ask("usr_demo_user", REQUEST_ID, command, scope.scopeClaimId)
 
-        assertThat(answer.generationStatus).isEqualTo(RagGenerationStatus.RETRIEVAL_FAILURE)
-        assertThat(answer.answer).isNull()
+        assertThat(answer.generationStatus).isEqualTo(RagGenerationStatus.ANSWERED)
+        assertThat(answer.answer).isEqualTo(generatedAnswer)
+        assertThat(answer.answerId).startsWith("rag_")
         assertThat(answer.citationCoverage).isZero()
-        assertThat(answer.retrievalFailure).isTrue()
+        assertThat(answer.retrievalFailure).isFalse()
         assertThat(answer.citations).isEmpty()
+        assertThat(answer.guardrailFlags).containsExactly("MODEL_KNOWLEDGE_ONLY")
         assertThat(generatedCommand.captured.evidence).isEmpty()
         verify(exactly = 1) { vertexGeneration.generate(any()) }
         verify(exactly = 0) { vertexEvidence.resolve(any(), any(), any(), any()) }
-        verify(exactly = 0) { crypto.encrypt(any(), any(), any()) }
+        verify(exactly = 1) { crypto.encrypt(any(), command.question, generatedAnswer) }
     }
 
     @Test
-    fun `model-only generation preserves retrieved citations instead of returning an ungrounded answer`() {
+    fun `model-only Vertex answer is returned without attaching unrelated retrieved citations`() {
         val jdbc = mockk<NamedParameterJdbcTemplate>()
         val provider = mockk<ObjectProvider<NamedParameterJdbcTemplate>>()
         val crypto = mockk<RagHistoryCryptoPort>()
@@ -523,6 +541,7 @@ class RagV2RuntimeServiceTest {
         val scope = scope()
         val command = command()
         val createdAt = Instant.parse("2026-08-14T12:00:00Z")
+        val generatedAnswer = "분산투자는 여러 투자에 위험을 나누는 일반적인 개념입니다."
 
         every { provider.getIfAvailable() } returns jdbc
         every { vertexGeneration.isActivationEnabled() } returns true
@@ -571,13 +590,14 @@ class RagV2RuntimeServiceTest {
         every { vertexGeneration.generate(any()) } returns
             RagV2VertexGenerationResult(
                 generationStatus = RagGenerationStatus.ANSWERED,
-                answer = "분산투자는 여러 투자에 위험을 나누는 일반적인 개념입니다.",
+                answer = generatedAnswer,
                 citationIds = emptyList(),
                 failureCode = "",
                 answerBasis = StrongLlmAnswerBasis.MODEL_KNOWLEDGE,
                 validationStatus = StrongLlmValidationStatus.VALID,
                 citationCoverage = 0.0,
             )
+        every { crypto.encrypt(any(), command.question, generatedAnswer) } returns encrypted()
         every {
             jdbc.queryForObject(
                 "SELECT transaction_timestamp()",
@@ -585,24 +605,13 @@ class RagV2RuntimeServiceTest {
                 OffsetDateTime::class.java,
             )
         } returns OffsetDateTime.ofInstant(createdAt, ZoneOffset.UTC)
-        every { crypto.encrypt(any(), command.question, "") } returns encrypted()
         every {
             jdbc.queryForObject(
-                match { it.contains("persist_rag_v2_immutable_retrieval_history") },
+                match { it.contains("persist_s4_9_strong_llm_history_v2") },
                 any<Map<String, *>>(),
                 String::class.java,
             )
-        } returns
-            """
-            [{
-              "citationKind":"PUBLIC_WEB",
-              "citationId":"cit_1",
-              "sourceId":"src_exact_001",
-              "title":"Canonical title",
-              "canonicalUrl":"https://example.org/canonical",
-              "locator":{"section":"Canonical section"}
-            }]
-            """.trimIndent()
+        } returns "[]"
 
         val answer =
             service(
@@ -613,18 +622,14 @@ class RagV2RuntimeServiceTest {
                 vertexGeneration = vertexGeneration,
             ).ask("usr_demo_user", REQUEST_ID, command, scope.scopeClaimId)
 
-        assertThat(answer.generationStatus).isEqualTo(RagGenerationStatus.RETRIEVAL_ONLY)
-        assertThat(answer.answer).isNull()
+        assertThat(answer.generationStatus).isEqualTo(RagGenerationStatus.ANSWERED)
+        assertThat(answer.answer).isEqualTo(generatedAnswer)
         assertThat(answer.answerId).startsWith("rag_")
-        assertThat(
-            answer.citations
-                .single()
-                .path("citationId")
-                .stringValue(),
-        ).isEqualTo("cit_1")
-        assertThat(answer.guardrailFlags).isEmpty()
+        assertThat(answer.citationCoverage).isZero()
+        assertThat(answer.citations).isEmpty()
+        assertThat(answer.guardrailFlags).containsExactly("MODEL_KNOWLEDGE_ONLY")
         verify(exactly = 1) { vertexGeneration.generate(any()) }
-        verify(exactly = 1) { crypto.encrypt(any(), command.question, "") }
+        verify(exactly = 1) { crypto.encrypt(any(), command.question, generatedAnswer) }
     }
 
     @Test
@@ -775,6 +780,47 @@ class RagV2RuntimeServiceTest {
             )
         } returns listOf(RagV2PreparedScope(scope, Instant.parse("2026-08-03T10:32:00Z")))
         every { evaluation.evaluate(command, any()) } returns unavailableEvaluation()
+        every {
+            jdbc.query(
+                match { it.contains("read_rag_v2_immutable_effective_consent") },
+                any<Map<String, *>>(),
+                any<RowMapper<RagV2RuntimeService.RagV2StoredEffectiveConsent>>(),
+            )
+        } returns
+            listOf(
+                RagV2RuntimeService.RagV2StoredEffectiveConsent(
+                    consentEventId = "rce_${"a".repeat(32)}",
+                    action = "GRANT",
+                    policyDigest = "a".repeat(64),
+                    processorSetDigest = "b".repeat(64),
+                ),
+            )
+        val generatedAnswer = "Vertex는 검색 결과가 없어도 질문에 답합니다."
+        every { vertexGeneration.generate(any()) } returns
+            RagV2VertexGenerationResult(
+                generationStatus = RagGenerationStatus.ANSWERED,
+                answer = generatedAnswer,
+                citationIds = emptyList(),
+                failureCode = "",
+                answerBasis = StrongLlmAnswerBasis.MODEL_KNOWLEDGE,
+                validationStatus = StrongLlmValidationStatus.VALID,
+                citationCoverage = 0.0,
+            )
+        every {
+            jdbc.queryForObject(
+                "SELECT transaction_timestamp()",
+                emptyMap<String, Any>(),
+                OffsetDateTime::class.java,
+            )
+        } returns OffsetDateTime.parse("2026-08-03T10:30:00Z")
+        every { crypto.encrypt(any(), command.question, generatedAnswer) } returns encrypted()
+        every {
+            jdbc.queryForObject(
+                match { it.contains("persist_s4_9_strong_llm_history_v2") },
+                any<Map<String, *>>(),
+                String::class.java,
+            )
+        } returns "[]"
 
         val answer =
             service(
@@ -789,7 +835,9 @@ class RagV2RuntimeServiceTest {
                 vertexScopeClaimId = scope.scopeClaimId,
             )
 
-        assertThat(answer.generationStatus).isEqualTo(RagGenerationStatus.GENERATION_UNAVAILABLE)
+        assertThat(answer.generationStatus).isEqualTo(RagGenerationStatus.ANSWERED)
+        assertThat(answer.answer).isEqualTo(generatedAnswer)
+        verify(exactly = 1) { vertexGeneration.generate(any()) }
         verify(exactly = 1) { evaluation.evaluate(command, any()) }
         verify(exactly = 0) {
             jdbc.query(

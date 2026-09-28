@@ -2,6 +2,13 @@
 
 이 문서는 [Keep a Changelog](https://keepachangelog.com/ko/1.1.0/) 형식을 따르고, 버전은 [유의적 버전](https://semver.org/lang/ko/)을 따릅니다. 버전 하나가 GitHub Release `vX.Y.Z` 하나와 Docker Hub 이미지 태그 `vX.Y.Z-<part>` 한 벌에 대응합니다.
 
+## [1.0.9] - 2026-09-28
+
+### 수정
+
+- FULL RAG는 검색 근거가 없거나 인용이 없는 경우에도 기존 LangChain/Vertex 경로에서 생성한 답변을 반환하고, 외부 인용이 없으면 Vertex AI Gemini 생성 답변으로 표시
+- 고정 질문의 출처 답변은 Vertex가 답을 생성하지 못했을 때만 사용하며, 생성 답변을 인용 0건이라는 이유로 고정 답변으로 덮지 않음
+
 ## [1.0.8] - 2026-09-28
 
 ### 수정

@@ -525,7 +525,7 @@ class InfrastructureSecurityIntegrationTest {
             ).use { connection ->
                 connection.createStatement().use { statement ->
                     assertEquals(
-                        "2",
+                        "1",
                         queryScalar(statement, "select count(*)::text from read_demo_credentials()"),
                     )
                     val denied = assertThrows<SQLException> { statement.executeQuery("select * from users") }
@@ -541,7 +541,7 @@ class InfrastructureSecurityIntegrationTest {
                         queryScalar(
                             statement,
                             "select session_handle from authenticate_demo_actor_session_v1(" +
-                                "'demo-admin','${SpringApiIntegrationTestBase.TEST_ADMIN_PASSWORD}',3600)",
+                                "'demo-user','${SpringApiIntegrationTestBase.TEST_USER_PASSWORD}',3600)",
                         )
                     val callerSelectedActor =
                         assertThrows<SQLException> {
@@ -762,7 +762,7 @@ class InfrastructureSecurityIntegrationTest {
                             }
                         }
                         assertEquals(emptyList<String>(), execute("LIST_ASYNC_JOBS"))
-                        assertEquals(listOf("usr_demo_admin"), execute("READ_ASYNC_JOB"))
+                        assertEquals(listOf("usr_demo_user"), execute("READ_ASYNC_JOB"))
                         assertEquals(emptyList<String>(), execute("READ_ASYNC_JOB"))
                     }
                 val selectedActor =
@@ -821,7 +821,7 @@ class InfrastructureSecurityIntegrationTest {
             queryScalar(
                 statement,
                 "select session_handle from authenticate_demo_actor_session_v1(" +
-                    "'demo-admin','${SpringApiIntegrationTestBase.TEST_ADMIN_PASSWORD}',3600)",
+                    "'demo-user','${SpringApiIntegrationTestBase.TEST_USER_PASSWORD}',3600)",
             )
 
         fun registrationFailure(sessionHandle: String): SQLException =
@@ -851,24 +851,44 @@ class InfrastructureSecurityIntegrationTest {
         assertEquals("42501", registrationFailure(expired).sqlState)
 
         val stale = createSession()
+        val originalVersion =
+            DriverManager.getConnection(postgres.jdbcUrl, postgres.username, adminPassword).use { admin ->
+                admin.createStatement().use {
+                    queryScalar(
+                        it,
+                        "select security_version::text from users where user_id='usr_demo_user'",
+                    ).toLong()
+                }
+            }
         DriverManager.getConnection(postgres.jdbcUrl, postgres.username, adminPassword).use { admin ->
-            admin.createStatement().use { it.executeUpdate("update users set security_version=2 where user_id='usr_demo_admin'") }
+            admin.createStatement().use {
+                it.executeUpdate(
+                    "update users set security_version=${originalVersion + 1} where user_id='usr_demo_user'",
+                )
+            }
         }
         try {
             assertEquals("42501", registrationFailure(stale).sqlState)
         } finally {
             DriverManager.getConnection(postgres.jdbcUrl, postgres.username, adminPassword).use { admin ->
-                admin.createStatement().use { it.executeUpdate("update users set security_version=1 where user_id='usr_demo_admin'") }
+                admin.createStatement().use {
+                    it.executeUpdate(
+                        "update users set security_version=$originalVersion where user_id='usr_demo_user'",
+                    )
+                }
             }
         }
 
-        val userSession =
-            queryScalar(
-                statement,
-                "select session_handle from authenticate_demo_actor_session_v1(" +
-                    "'demo-user','${SpringApiIntegrationTestBase.TEST_USER_PASSWORD}',3600)",
-            )
-        assertEquals("42501", registrationFailure(userSession).sqlState)
+        DriverManager.getConnection(postgres.jdbcUrl, postgres.username, adminPassword).use { admin ->
+            admin.createStatement().use { it.executeUpdate("update users set role='USER' where user_id='usr_demo_user'") }
+        }
+        try {
+            assertEquals("42501", registrationFailure(createSession()).sqlState)
+        } finally {
+            DriverManager.getConnection(postgres.jdbcUrl, postgres.username, adminPassword).use { admin ->
+                admin.createStatement().use { it.executeUpdate("update users set role='ADMIN' where user_id='usr_demo_user'") }
+            }
+        }
     }
 
     private fun mutateSession(

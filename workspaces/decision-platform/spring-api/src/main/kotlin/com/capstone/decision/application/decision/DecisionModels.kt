@@ -93,6 +93,19 @@ data class DecisionRiskItemProjection(
     val sourceRefs: List<String>,
 )
 
+data class DecisionInputMetricProjection(
+    val metric: String,
+    val value: BigDecimal?,
+    val unit: String?,
+    val availability: String,
+    val observedAt: String?,
+)
+
+data class DecisionInputMetricsProjection(
+    val decisionId: String,
+    val items: List<DecisionInputMetricProjection>,
+)
+
 data class DecisionAuditProjection(
     val auditId: String,
     val action: String,

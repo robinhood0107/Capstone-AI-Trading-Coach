@@ -66,6 +66,25 @@ const RISK_CODE: Record<string, CodeLabel> = {
   KILL_SWITCH_ACTIVE: { label: '긴급 정지 켜짐', meaning: '사람이 긴급 정지를 켜 두어 주문이 나가지 않습니다.' },
 };
 
+const DECISION_REASON_CODE: Record<string, string> = {
+  BALANCE_STALE: '잔고 관측이 오래됨',
+  BALANCE_PARTIAL: '잔고 관측이 불완전함',
+  RISK_SNAPSHOT_MISSING: '위험지표 스냅샷 없음',
+  RISK_SNAPSHOT_VERSION_MISMATCH: '위험지표 버전이 맞지 않음',
+  PORTFOLIO_CONTEXT_UNAVAILABLE: '계좌 문맥을 확인할 수 없음',
+  BROKERAGE_UNAVAILABLE: '증권사 연결 확인 불가',
+  MARGIN_CONTEXT_UNAVAILABLE: '증거금 정보 없음',
+  PRICE_MISSING: '현재가 관측 없음',
+  PRICE_STALE: '현재가 관측이 오래됨',
+  NOT_APPLICABLE_V1: '이번 주문에 해당하지 않는 기준',
+};
+
+export function decisionReasonLabel(code: string): string {
+  const normalized = code.startsWith('RISK_') ? code.slice(5) : code;
+  if (normalized === 'DAILY_LOSS' || normalized.startsWith('DAILY_LOSS_')) return '일일 손실 한도 초과';
+  return DECISION_REASON_CODE[normalized] ?? RISK_CODE[normalized]?.label ?? code;
+}
+
 function lookup(table: Record<string, CodeLabel>, code: string | null | undefined): CodeLabel {
   if (!code) return { label: '미상' };
   return table[code] ?? { label: code };
@@ -74,7 +93,10 @@ function lookup(table: Record<string, CodeLabel>, code: string | null | undefine
 export const orderStatusLabel = (code: string | null | undefined): CodeLabel =>
   lookup(ORDER_STATUS, code);
 export const severityLabel = (code: string | null | undefined): CodeLabel => lookup(SEVERITY, code);
-export const riskCodeLabel = (code: string | null | undefined): CodeLabel => lookup(RISK_CODE, code);
+export const riskCodeLabel = (code: string | null | undefined): CodeLabel => {
+  if (!code) return { label: '미상' };
+  return RISK_CODE[code] ?? { label: decisionReasonLabel(code) };
+};
 
 /** 켜짐/꺼짐을 한국어로. 영문 ACTIVE/OFF 가 화면에 그대로 나오고 있었다. */
 export const onOffLabel = (active: boolean): CodeLabel =>

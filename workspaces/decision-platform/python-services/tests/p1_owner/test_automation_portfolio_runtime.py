@@ -159,18 +159,28 @@ def test_a_candidate_dropped_for_no_remaining_return_leaves_a_funnel_row() -> No
 
     from app.p1_owner.automation_portfolio_runtime import PortfolioContinuationRunner
 
-    recorded: list[tuple[str, str]] = []
+    from app.p1_owner.automation import remaining_return_detail
+
+    recorded: list[tuple[str, str, str | None]] = []
 
     class _Repository:
-        def record_stage_outcomes(self, claim: object, symbol: str, reason: str) -> int:
+        def record_stage_outcomes(
+            self, claim: object, symbol: str, reason: str, detail: str | None = None
+        ) -> int:
             del claim
-            recorded.append((symbol, reason))
+            recorded.append((symbol, reason, detail))
             return 1
 
+    detail = remaining_return_detail("사유", 101_000.0, 100_000)
     runner = PortfolioContinuationRunner(_Repository())
-    runner._record_candidate_drop(object(), "066570", "NO_REMAINING_RETURN")
+    runner._record_candidate_drop(object(), "066570", "NO_REMAINING_RETURN", detail)
 
-    assert recorded == [("066570", "NO_REMAINING_RETURN")]
+    assert recorded == [("066570", "NO_REMAINING_RETURN", detail)]
+    # 화면이 "왜 안 샀는지"를 숫자로 보여 줄 수 있어야 한다.
+    assert detail == (
+        "사유 · 예측 종가 101,000원, 매수 지정가 100,000원, "
+        "기대 상승 +1.00% − 왕복 비용 0.35% = 잔여 +0.65%"
+    )
 
 
 def test_recording_a_candidate_drop_never_breaks_the_session() -> None:

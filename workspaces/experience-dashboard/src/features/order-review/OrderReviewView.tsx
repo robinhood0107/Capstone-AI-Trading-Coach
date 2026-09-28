@@ -10,7 +10,7 @@ import { DecisionBadge, DecisionRail, decisionGloss } from '@/shared/ui/Decision
 import { useResource } from '@/shared/lib/useResource';
 import { ID_PATTERN } from '@/shared/api/endpoints';
 import { formatKstDateTime, formatRatio } from '@/shared/lib/format';
-import { loadRiskResultView, type ReasonDisposition } from './viewModel';
+import { decisionMetricName, displayDecisionInputMetric, loadRiskResultView, type ReasonDisposition } from './viewModel';
 import { OrderTicket } from './OrderTicket';
 import { FillsPanel } from './FillsPanel';
 import type { DecisionRiskItemProjection } from '@/shared/api/wire';
@@ -24,7 +24,7 @@ const DISPOSITION_META: Record<ReasonDisposition, { title: string; note: string;
   WARNING: { title: '경고', note: '진행은 가능하지만 확인이 필요합니다.', accent: 'border-warn' },
   ABSTENTION: {
     title: '평가하지 않음',
-    note: '근거가 없어 비교를 건너뛴 항목입니다. 위반이 아닙니다.',
+    note: '이번 주문에 해당하지 않거나 근거가 없어 비교하지 않은 항목입니다. 위반이 아닙니다.',
     accent: 'border-line',
   },
 };
@@ -105,10 +105,17 @@ export function OrderReviewView() {
             <div className="space-y-6">
               <Panel
                 contract="dashboard-risk-result.v1"
-                title="이 주문을 내도 되는지"
-                hint={decisionGloss(view.action)}
+                title={view.detail?.expired ? '지난 판정 · 다시 평가 필요' : '이 주문을 내도 되는지'}
+                hint={view.detail?.expired
+                  ? `당시 결과는 ${view.action}였지만 현재 주문에 사용할 수 없습니다.`
+                  : decisionGloss(view.action)}
                 actions={<DecisionBadge status={view.action} />}
               >
+                {view.detail?.expired ? (
+                  <p className="mb-4 border-l-2 border-hold bg-hold/5 px-3 py-2 text-[13px] text-ink">
+                    이 기록은 과거 판정입니다. 현재 주문은 새 판정을 받은 뒤에만 제출할 수 있습니다.
+                  </p>
+                ) : null}
                 <DecisionRail status={view.action} />
 
                 {view.detail ? (
@@ -148,17 +155,12 @@ export function OrderReviewView() {
                   </p>
                 ) : null}
 
-                {view.detail?.expired ? (
-                  <p className="mt-3 border-l-2 border-hold bg-hold/5 px-3 py-2 text-[13px] leading-6 text-ink">
-                    이 판정은 유효시간이 지났습니다. 주문을 제출하려면 다시 평가해야 합니다.
-                  </p>
-                ) : null}
               </Panel>
 
               <Panel
                 contract="dashboard-risk-result.v1 · reasons / principles"
                 title="서버가 준 판정 요약"
-                hint="아래 문장은 서버가 이미 정리해 내려준 값입니다. 화면에서 다시 만들지 않습니다."
+                hint="서버 판정의 같은 사유를 묶고 관련 규칙을 함께 표시합니다."
               >
                 <div className="grid gap-6 md:grid-cols-2">
                   <div>
@@ -167,7 +169,6 @@ export function OrderReviewView() {
                       {view.summaryReasons.length === 0 ? (
                         <li className="text-[13px] text-faint">표시할 사유가 없습니다.</li>
                       ) : (
-                        // 서버가 준 문장 목록이다. 같은 문장이 두 번 올 수 있어 순번을 섞는다.
                         view.summaryReasons.map((reason, index) => (
                           <li key={`${index}:${reason}`} className="text-[13px] leading-6 text-ink">
                             · {reason}
@@ -248,14 +249,19 @@ export function OrderReviewView() {
                                     <p className="text-[13px] font-medium leading-5 text-ink">
                                       {reason.headline}
                                     </p>
-                                    <p className="mt-0.5 text-[13px] leading-5 text-muted">
-                                      {reason.detail}
-                                    </p>
-                                    {reason.code === 'NOT_APPLICABLE_V1' ? null : (
-                                      <p className="mt-1 font-mono text-[11px] uppercase tracking-[0.06em] text-faint">
-                                        {reason.code}
-                                      </p>
-                                    )}
+                                    {reason.detail ? (
+                                      <p className="mt-0.5 text-[13px] leading-5 text-muted">{reason.detail}</p>
+                                    ) : null}
+                                    <details className="mt-1 text-[11px] leading-5 text-faint">
+                                      <summary className="cursor-pointer">관련 규칙·원문 보기</summary>
+                                      {reason.ruleNames.length > 0 ? (
+                                        <p>관련 규칙: {reason.ruleNames.join(', ')}</p>
+                                      ) : null}
+                                      <p className="font-mono">{reason.code}</p>
+                                      {reason.rawMessages.map((message) => (
+                                        <p key={message}>{message}</p>
+                                      ))}
+                                    </details>
                                   </li>
                                 ))
                               )}
@@ -264,6 +270,31 @@ export function OrderReviewView() {
                         );
                       })}
                     </div>
+                  </Panel>
+
+                  <Panel
+                    contract="decision input snapshot"
+                    title="판정에 실제로 쓰인 입력값"
+                    hint="저장된 당시 값과 관측 시각입니다. 현재 잔고나 현재가로 읽지 마세요."
+                  >
+                    {view.detail.inputMetricsUnavailable ? (
+                      <p className="text-[13px] text-muted">입력값을 불러오지 못했습니다. 다시 조회해 주세요.</p>
+                    ) : view.detail.inputMetrics.length === 0 ? (
+                      <p className="text-[13px] text-muted">이 판정에 저장된 입력값이 없습니다.</p>
+                    ) : (
+                      <dl className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                        {view.detail.inputMetrics.map((item) => {
+                          const display = displayDecisionInputMetric(item);
+                          return <div key={item.metric} className="border-t border-line pt-2">
+                            <dt className="text-[12px] text-muted">{display.name}</dt>
+                            <dd className="tnum mt-1 text-[14px] font-medium text-ink">{display.value}</dd>
+                            {item.observedAt ? (
+                              <p className="mt-1 text-[11px] text-faint">관측 {formatKstDateTime(item.observedAt) ?? '시각 미상'}</p>
+                            ) : null}
+                          </div>;
+                        })}
+                      </dl>
+                    )}
                   </Panel>
 
                   <div className="grid gap-6 lg:grid-cols-2">
@@ -302,11 +333,11 @@ export function OrderReviewView() {
 
                     <Panel
                       contract="riskDecision.riskItems"
-                      title="판정에 쓰인 값"
-                      hint="근거가 없는 항목은 목록에 아예 나타나지 않습니다. 0으로 채우지 않습니다."
+                      title="별도 위험 항목"
+                      hint="위험 항목 기록이며 위의 판정 입력값과 별개입니다."
                     >
                       {view.detail.riskItems.length === 0 ? (
-                        <p className="text-[13px] text-muted">기록된 근거 값이 없습니다.</p>
+                        <p className="text-[13px] text-muted">별도로 기록된 위험 항목은 없습니다.</p>
                       ) : (
                         <ul className="divide-y divide-line/60">
                           {view.detail.riskItems.map((item, index) => (
@@ -345,9 +376,10 @@ function RiskItemRow({ item }: { item: DecisionRiskItemProjection }) {
   return (
     <li className="flex items-center justify-between gap-4 py-2.5">
       <div className="min-w-0">
-        <p className="text-[13px] text-ink">{item.metric}</p>
-        <p className="font-mono text-[11px] uppercase tracking-[0.06em] text-faint">
-          {item.source} · {item.severity}
+            <p className="text-[13px] text-ink">{decisionMetricName(item.metric)}</p>
+            <p className="text-[11px] text-faint">
+              {item.source === 'PORTFOLIO' ? '계좌' : item.source === 'KIS' ? '증권사' : item.source}
+              {' · '}{severityLabel(item.severity).label}
         </p>
       </div>
       <Numeric value={item.value} format={(v) => formatRatio(v, 3)} className="text-[14px]" />

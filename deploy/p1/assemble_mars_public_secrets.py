@@ -75,7 +75,17 @@ FULL_FROM_BASE = {
     "AUTOMATION_RUNTIME_SHARED_SECRET": "automation-runtime.env",
     # 비동기 worker, 세계 뉴스 보존, owner 별 리포트 갱신이 쓰는 decision_worker DSN.
     "ASYNC_WORKER_DATABASE_DSN": "python.env",
+    # 주문 직전 잔고·위험지표·시세 관측을 남기는 좁은 writer 셋. 없으면 RiskEngine 입력이
+    # 비어 매수가 매일 HOLD 된다.
+    "DECISION_PORTFOLIO_WRITER_DATABASE_DSN": "automation-observation.env",
+    "DECISION_RISK_WRITER_DATABASE_DSN": "automation-observation.env",
+    "DECISION_MARKET_WRITER_DATABASE_DSN": "automation-observation.env",
 }
+# 공시 투영 read-only role. p1ctl init 이 DSN 을 쓰지 않으므로 postgres.env 비밀번호로 만든다.
+# 없으면 뉴스 거부권 근거가 0개가 되어 조용히 ABSTAIN 한다.
+DISCLOSURE_READER_DSN = (
+    "postgresql://decision_disclosure_reader:{}@postgres:5432/capstone_p1?sslmode=disable"
+)
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 ROOT_ENV = PROJECT_ROOT / ".env"
 VERTEX_ACCOUNT_B64 = "MARS_VERTEX_SERVICE_ACCOUNT_JSON_B64"
@@ -265,14 +275,15 @@ def main() -> int:
         payloads["disclosure-collector.env"] = (
             "\n".join(disclosure_lines) + "\n"
         ).encode("utf-8")
-        # FULL migration rejects the fixed demo password bundles; the operator keeps the
-        # password already stored in the migrated database.
-        migration_lines = [
-            line
-            for line in payloads["migration.env"].decode("utf-8").splitlines()
-            if not line.startswith("DEMO_")
-        ]
-        payloads["migration.env"] = ("\n".join(migration_lines) + "\n").encode("utf-8")
+    # Every public product migration rejects the fixed demo password bundles
+    # (PUBLIC_PASSWORD_CREDENTIALS_FORBIDDEN). FULL keeps the password already stored in the
+    # migrated database; DEMO has no password login at all.
+    migration_lines = [
+        line
+        for line in payloads["migration.env"].decode("utf-8").splitlines()
+        if not line.startswith("DEMO_")
+    ]
+    payloads["migration.env"] = ("\n".join(migration_lines) + "\n").encode("utf-8")
     other_product = "full" if args.product == "demo" else "demo"
     other_postgres = release_dir / f"{other_product}-secrets/postgres.env"
     if (
@@ -288,6 +299,9 @@ def main() -> int:
     if args.product == "full":
         for key, filename in FULL_FROM_BASE.items():
             merged[key] = env_file(base / filename)[key]
+        merged["DECISION_DISCLOSURE_READER_DATABASE_DSN"] = DISCLOSURE_READER_DSN.format(
+            env_file(base / "postgres.env")["POSTGRES_DISCLOSURE_READER_PASSWORD"]
+        )
         for key in (
             "GOOGLE_OIDC_CLIENT_ID",
             "GOOGLE_OIDC_CLIENT_SECRET",

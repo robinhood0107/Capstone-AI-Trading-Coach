@@ -30,6 +30,30 @@ class PublicSurfaceGateTest {
     }
 
     @Test
+    fun `full lets only the loopback automation runtime reach its bridge command`() {
+        fun status(
+            mode: PublicSurfaceMode,
+            method: String,
+            path: String,
+            remote: String,
+        ): Pair<Int, Boolean> {
+            val request = MockHttpServletRequest(method, path).apply { remoteAddr = remote }
+            val response = MockHttpServletResponse()
+            val chain = MockFilterChain()
+            PublicSurfaceGate(mode).doFilter(request, response, chain)
+            return response.status to (chain.request != null)
+        }
+        for (loopback in listOf("127.0.0.1", "::1", "0:0:0:0:0:0:0:1")) {
+            assertEquals(200 to true, status(PublicSurfaceMode.FULL, "POST", "/internal/automation-runtime/command", loopback))
+        }
+        // 웹 프록시·다른 container·다른 method·다른 경로·DEMO 는 모두 닫힌다.
+        assertEquals(404 to false, status(PublicSurfaceMode.FULL, "POST", "/internal/automation-runtime/command", "172.18.0.5"))
+        assertEquals(404 to false, status(PublicSurfaceMode.FULL, "GET", "/internal/automation-runtime/command", "127.0.0.1"))
+        assertEquals(404 to false, status(PublicSurfaceMode.FULL, "POST", "/internal/automation-runtime/run", "127.0.0.1"))
+        assertEquals(404 to false, status(PublicSurfaceMode.DEMO, "POST", "/internal/automation-runtime/command", "127.0.0.1"))
+    }
+
+    @Test
     fun `full permits every owner scoped user feature and the admin console while demo denies them`() {
         val allowed =
             listOf(
@@ -71,6 +95,7 @@ class PublicSurfaceGateTest {
         val allowed =
             listOf(
                 "POST" to "/api/v1/auth/login",
+                "POST" to "/api/v1/auth/refresh",
                 "POST" to "/api/v1/auth/signup",
                 "PUT" to "/api/v1/auth/password",
                 "POST" to "/api/v1/auth/password",

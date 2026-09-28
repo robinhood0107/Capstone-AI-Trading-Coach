@@ -54,7 +54,7 @@ export function FillsPanel() {
           <Panel
             contract="GET /api/v1/brokerage/mock/accounts/{accountId}/fills"
             title="최근 체결"
-            hint={`최근 ${FILL_WINDOW_MAX_DAYS}일 동안 실제로 체결된 것만 표시합니다.`}
+            hint={`최근 ${FILL_WINDOW_MAX_DAYS}일 체결 기록입니다. 부분 체결의 가격은 증권사가 제공한 누적 평균가일 수 있습니다.`}
           >
             <p className="h-8 overflow-hidden text-[11px] text-muted" role="status">{refreshError ?? '\u00a0'}</p>
             {data.fills.length === 0 ? (
@@ -69,7 +69,7 @@ export function FillsPanel() {
                       <th className="pb-2 font-normal">종목</th>
                       <th className="pb-2 font-normal">구분</th>
                       <th className="pb-2 text-right font-normal">수량</th>
-                      <th className="pb-2 text-right font-normal">체결가</th>
+                      <th className="pb-2 text-right font-normal">기록된 가격</th>
                       <th className="pb-2 text-right font-normal">체결시각</th>
                     </tr>
                   </thead>

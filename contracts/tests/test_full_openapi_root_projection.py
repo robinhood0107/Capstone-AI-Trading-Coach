@@ -26,7 +26,8 @@ class FullOpenApiRootProjectionTest(unittest.TestCase):
 
         auth = json.loads((ROOT / "openapi/mars-full-auth.v1.openapi.json").read_text())
         admin = json.loads((ROOT / "openapi/mars-full-admin.v1.openapi.json").read_text())
-        for document in (auth, admin):
+        inputs = json.loads((ROOT / "openapi/mars-full-decision-inputs.v1.openapi.json").read_text())
+        for document in (auth, admin, inputs):
             for path, item in document["paths"].items():
                 for method, operation in item.items():
                     if method not in {"get", "post", "put", "patch", "delete", "head", "options", "trace"}:

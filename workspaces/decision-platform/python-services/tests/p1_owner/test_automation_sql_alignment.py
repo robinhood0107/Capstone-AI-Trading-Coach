@@ -276,11 +276,13 @@ _FINISH_EXECUTION = "p1_finish_automation_portfolio_execution_v2"
 
 
 def _finish_execution_body(body: str) -> str:
-    """`CREATE ... FUNCTION` 부터 `END $finish$;` 까지만 잘라낸다."""
+    """마지막 finish 함수의 dollar-quote 이름과 무관하게 본문만 잘라낸다."""
 
     start = body.index("FUNCTION public." + _FINISH_EXECUTION + "(")
     start = body.rindex("CREATE", 0, start)
-    end = body.index("END $finish$;", start) + len("END $finish$;")
+    ending = re.search(r"END \$(?:finish|function)\$;", body[start:])
+    assert ending is not None
+    end = start + ending.end()
     return body[start:end]
 
 
@@ -296,9 +298,13 @@ def test_the_replaced_finish_function_kept_every_other_settlement_guard() -> Non
             encoding="utf-8"
         )
     )
-    version, latest_body = _latest_definition(_FINISH_EXECUTION)
-    assert version >= 173, f"expected the partial-fill definition, found V{version}"
-    latest = _finish_execution_body(latest_body)
+    # V175 까지는 V163 의 정산 가드를 유지한 채 부분체결과 ordinal 상한만 바꿨다.
+    # V226 은 수령증 검증과 누적 체결 금액 계산을 추가하므로 전체 행 비교 대상이 아니다.
+    latest = _finish_execution_body(
+        (_MIGRATIONS / "V175__automation_portfolio_ordinal_ceiling_alignment.sql").read_text(
+            encoding="utf-8"
+        )
+    )
 
     before = original.splitlines()
     after = latest.splitlines()
@@ -324,6 +330,18 @@ def test_the_replaced_finish_function_kept_every_other_settlement_guard() -> Non
         assert old_marker in before[index], f"line {index}: V163 lost {old_marker!r}"
         assert new_marker in after[index], f"line {index}: V173 missing {new_marker!r}"
 
+    version, latest_body = _latest_definition(_FINISH_EXECUTION)
+    assert version >= 226
+    current = _finish_execution_body(latest_body)
+    for guard in (
+        "p_filled_quantity<execution.applied_filled_quantity",
+        "automation portfolio order receipt mismatch",
+        "automation portfolio fill receipt mismatch",
+        "delta_notional<=0",
+        "realized_delta:=delta_notional",
+    ):
+        assert guard in current
+
 
 def test_the_finish_function_is_replaced_not_dropped() -> None:
     """DROP 은 V163 의 OWNER/GRANT 를 조용히 버려 첫 정산부터 42501 을 만든다."""
@@ -342,9 +360,9 @@ def test_the_finish_function_keeps_pgcrypto_on_search_path() -> None:
     """
 
     _, body = _latest_definition(_FINISH_EXECUTION)
-    inline = "SET search_path=pg_catalog,public" in body
-    reissued = "SET search_path TO pg_catalog,public" in body
-    assert inline or reissued, "pgcrypto search_path is not restored after CREATE OR REPLACE"
+    assert re.search(r"SET search_path(?:=| TO )\s*'?pg_catalog'?\s*,\s*'?public'?", body), (
+        "pgcrypto search_path is not restored after CREATE OR REPLACE"
+    )
 
 
 _STAGE_PLAN = "p1_stage_automation_portfolio_plan_v1"

@@ -785,6 +785,18 @@ export async function mockTransport<T>(
     return ok(signal, requestId) as ApiEnvelope<T>;
   }
 
+  if (target.startsWith('/api/v1/decisions/') && target.endsWith('/inputs')) {
+    const decisionId = target.split('/')[4] ?? '';
+    if (!ID_PATTERN.decisionId.test(decisionId)) {
+      return fail('VALIDATION_ERROR', '판정 ID 형식이 올바르지 않습니다.', requestId);
+    }
+    if (!fixtures.decisions[decisionId]) return fail('NOT_FOUND', '해당 판정을 찾을 수 없습니다.', requestId);
+    return ok({ decisionId, items: [
+      { metric: 'current_price_krw', value: 134700, unit: 'KRW', availability: 'AVAILABLE', observedAt: new Date().toISOString() },
+      { metric: 'disclosure_risk_score', value: null, unit: null, availability: 'NOT_APPLICABLE', observedAt: null },
+    ] }, requestId) as ApiEnvelope<T>;
+  }
+
   if (target.startsWith('/api/v1/decisions/')) {
     const decisionId = target.split('/').pop() ?? '';
     if (!ID_PATTERN.decisionId.test(decisionId)) {

@@ -128,6 +128,7 @@ class PreS5VertexActivationReaderTest {
                     enabled = true,
                     modelId = configuredModelId,
                     localRoot = root.toString(),
+                    serviceAccountJsonB64 = "fixture-service-account",
                     headCommit = "1".repeat(40),
                     treeDigest = "2".repeat(64),
                     ciDigest = "3".repeat(64),

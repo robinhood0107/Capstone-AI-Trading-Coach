@@ -24,6 +24,7 @@ from app.p1_owner.automation_runtime_live import (
     FailClosedVertexVetoTransport,
     LiveAutomationPort,
     SpringAutomationBridgeClient,
+    _projection_equity,
     _quote_flag,
     _stored_evidence_payload,
 )
@@ -721,3 +722,22 @@ def test_a_bound_provider_makes_abstain_block_again() -> None:
     inputs = port.inputs(state=state, run=run, now=run.started_at)
 
     assert inputs.news_veto_provider_bound is True
+
+
+def test_session_baseline_equity_does_not_count_a_same_day_buy_twice() -> None:
+    """세션 중 매수가 기준 자본에 두 번 들어가 daily_loss_guard 가 가짜 손실로 막던 결함.
+
+    2026-09-28 에 486만 원을 산 뒤 매도 재평가가 -4.65% 손실로 BLOCK 됐다.
+    """
+
+    baseline = {"cashKrw": 90_000_000, "positions": [{"symbol": "055550", "quantity": 45}]}
+    after_buy = {
+        "cashKrw": 85_136_400,
+        "positions": [
+            {"symbol": "055550", "quantity": 45, "marketValueKrw": 45 * 110_000},
+            {"symbol": "086790", "quantity": 36, "marketValueKrw": 36 * 135_100},
+        ],
+    }
+
+    # 기준 = 매수 전 현금 + 기준 수량 x 현재 단가. 오늘 산 종목은 들어가지 않는다.
+    assert _projection_equity(baseline, after_buy) == 90_000_000 + 45 * 110_000

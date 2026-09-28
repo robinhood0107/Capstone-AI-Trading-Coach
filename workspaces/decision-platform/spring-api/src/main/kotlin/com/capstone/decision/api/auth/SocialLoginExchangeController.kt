@@ -5,6 +5,7 @@ import com.capstone.decision.api.common.ApiResponse
 import com.capstone.decision.api.common.ApiResponseFactory
 import com.capstone.decision.api.common.ErrorCode
 import com.capstone.decision.api.common.RequestIds
+import com.capstone.decision.infrastructure.security.FullBrowserRefreshCookieService
 import com.capstone.decision.infrastructure.security.FullSocialLoginProperties
 import com.capstone.decision.infrastructure.security.SocialLoginHandoff
 import io.swagger.v3.oas.annotations.Operation
@@ -22,6 +23,7 @@ import org.springframework.web.bind.annotation.RestController
 @RequestMapping("/api/v1/auth/oidc")
 class SocialLoginExchangeController(
     private val handoff: SocialLoginHandoff,
+    private val refreshCookies: FullBrowserRefreshCookieService,
     properties: FullSocialLoginProperties,
 ) {
     private val publicOrigin = properties.validatedOrigin()
@@ -41,11 +43,12 @@ class SocialLoginExchangeController(
             throw ApiException(ErrorCode.FORBIDDEN)
         }
         val session = request.getSession(false) ?: throw ApiException(ErrorCode.UNAUTHORIZED)
-        val login = handoff.consume(session) ?: throw ApiException(ErrorCode.UNAUTHORIZED)
+        val staged = handoff.consume(session) ?: throw ApiException(ErrorCode.UNAUTHORIZED)
+        refreshCookies.issue(staged.sessionHandle, response)
         response.setHeader("Cache-Control", "no-store")
         return ApiResponseFactory.success(
             requestId = RequestIds.currentOrCreate(request),
-            data = login,
+            data = staged.login,
         )
     }
 }

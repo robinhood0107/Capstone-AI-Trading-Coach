@@ -1,5 +1,6 @@
 package com.capstone.decision.application.automation
 
+import com.capstone.decision.TestVertexServiceAccount
 import com.capstone.decision.application.security.ActorRlsScopePort
 import com.capstone.decision.application.strongllm.StrongLlmCredentialPort
 import com.capstone.decision.application.strongllm.StrongLlmSealedCredential
@@ -13,7 +14,6 @@ import org.springframework.jdbc.core.RowMapper
 import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate
 import org.springframework.transaction.PlatformTransactionManager
 import tools.jackson.databind.json.JsonMapper
-import java.util.Base64
 
 /** AI 검토 한 번의 자격증명 선택: 자기 키 → (허용된 배포에서만) 운영자 → 부르지 않음. */
 class AutomationEvidenceCredentialResolutionTest {
@@ -21,14 +21,7 @@ class AutomationEvidenceCredentialResolutionTest {
     private val port = mockk<StrongLlmCredentialPort>()
     private val sealed =
         StrongLlmSealedCredential("kek-v1", ByteArray(12), ByteArray(32), ByteArray(16), ByteArray(12), ByteArray(8), ByteArray(16), "")
-    private val ownServiceAccount =
-        Base64.getEncoder().encodeToString(
-            (
-                """{"type":"service_account","project_id":"p","private_key_id":"abcd1234",""" +
-                    """"private_key":"-----BEGIN PRIVATE KEY-----\nA\n-----END PRIVATE KEY-----\n",""" +
-                    """"client_email":"a@p.iam.gserviceaccount.com","token_uri":"https://oauth2.googleapis.com/token"}"""
-            ).toByteArray(),
-        )
+    private val ownServiceAccount = TestVertexServiceAccount.base64
     private val settings =
         AutomationEvidenceSettings("a".repeat(64), "vertex", null, null, null, null, null, "ko", 50, true, "low")
 

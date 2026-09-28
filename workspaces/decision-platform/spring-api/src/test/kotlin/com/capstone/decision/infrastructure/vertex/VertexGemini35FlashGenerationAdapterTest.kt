@@ -167,6 +167,7 @@ class VertexGemini35FlashGenerationAdapterTest {
                 RagV2VertexProperties(
                     enabled = true,
                     localRoot = "/tmp/capstone-rag-control",
+                    serviceAccountJsonB64 = "fixture-service-account",
                     headCommit = "1".repeat(40),
                     treeDigest = "2".repeat(64),
                     ciDigest = "3".repeat(64),

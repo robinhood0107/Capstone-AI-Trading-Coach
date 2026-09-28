@@ -1,9 +1,10 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import type { LoginUserResponse } from './wire';
+import { isEnvelope } from './envelope';
+import type { LoginResponse, LoginUserResponse } from './wire';
 
-// FULL bearer tokens exist only in this JavaScript module and disappear on reload.
+// FULL access tokens stay in memory. A same-origin HttpOnly cookie restores them after reload.
 // The private LOCAL product keeps its existing tab-scoped session behavior.
 interface SessionState {
   token: string | null;
@@ -49,6 +50,10 @@ function persist(next: SessionState): void {
 
 const state: SessionState = restore();
 const listeners = new Set<() => void>();
+let restoreStarted = false;
+let restorePending = process.env.NEXT_PUBLIC_MARS_PRODUCT === 'full' && process.env.NEXT_PUBLIC_API_MODE !== 'mock';
+let restoreError = false;
+let refreshPromise: Promise<string | null> | null = null;
 
 function emit(): void {
   listeners.forEach((listener) => listener());
@@ -60,6 +65,8 @@ export const session = {
     state.expiresAt = expiresAt;
     state.user = user;
     persist(state);
+    restorePending = false;
+    restoreError = false;
     emit();
   },
   clear(): void {
@@ -67,6 +74,8 @@ export const session = {
     state.expiresAt = null;
     state.user = null;
     persist(state);
+    restorePending = false;
+    restoreError = false;
     emit();
   },
   token(): string | null {
@@ -81,6 +90,62 @@ export const session = {
   isAuthenticated(): boolean {
     return state.token !== null && state.expiresAt !== null && Date.parse(state.expiresAt) > Date.now();
   },
+  restoring(): boolean { return restorePending; },
+  restoreError(): boolean { return restoreError; },
+  async refresh(): Promise<string | null> {
+    if (process.env.NEXT_PUBLIC_MARS_PRODUCT !== 'full' || process.env.NEXT_PUBLIC_API_MODE === 'mock' || typeof window === 'undefined') return null;
+    if (refreshPromise) return refreshPromise;
+    restorePending = true;
+    restoreError = false;
+    emit();
+    refreshPromise = (async () => {
+      try {
+        const response = await fetch('/api/v1/auth/refresh', {
+          method: 'POST',
+          credentials: 'same-origin',
+          cache: 'no-store',
+          headers: { Accept: 'application/json' },
+          signal: AbortSignal.timeout(15_000),
+        });
+        if (response.status === 401) {
+          session.clear();
+          return null;
+        }
+        if (!response.ok) throw new Error('Session refresh unavailable');
+        const payload: unknown = await response.json();
+        if (!isEnvelope(payload) || !payload.success || !payload.data) {
+          throw new Error('Session refresh response invalid');
+        }
+        const data = payload.data as Partial<LoginResponse>;
+        if (typeof data.accessToken !== 'string' || typeof data.expiresAt !== 'string' ||
+            !data.user || typeof data.user.userId !== 'string' ||
+            (data.user.role !== 'USER' && data.user.role !== 'ADMIN')) {
+          throw new Error('Session refresh response invalid');
+        }
+        session.set(data.accessToken, data.expiresAt, data.user as LoginUserResponse);
+        return data.accessToken;
+      } catch (error) {
+        restorePending = false;
+        restoreError = true;
+        emit();
+        throw error;
+      } finally {
+        refreshPromise = null;
+      }
+    })();
+    return refreshPromise;
+  },
+  async ensureToken(): Promise<string | null> {
+    const current = session.token();
+    if (current) return current;
+    if (process.env.NEXT_PUBLIC_MARS_PRODUCT !== 'full') return null;
+    return session.refresh();
+  },
+  restoreOnMount(): void {
+    if (restoreStarted || process.env.NEXT_PUBLIC_MARS_PRODUCT !== 'full' || process.env.NEXT_PUBLIC_API_MODE === 'mock') return;
+    restoreStarted = true;
+    void session.refresh().catch(() => { /* AppShell shows a retry control. */ });
+  },
   subscribe(listener: () => void): () => void {
     listeners.add(listener);
     return () => {
@@ -94,13 +159,17 @@ export function useSession() {
   const [snapshot, setSnapshot] = useState({
     authenticated: false,
     user: null as LoginUserResponse | null,
+    restoring: process.env.NEXT_PUBLIC_MARS_PRODUCT === 'full' && process.env.NEXT_PUBLIC_API_MODE !== 'mock',
+    restoreError: false,
   });
 
   useEffect(() => {
     const sync = () =>
-      setSnapshot({ authenticated: session.isAuthenticated(), user: session.user() });
+      setSnapshot({ authenticated: session.isAuthenticated(), user: session.user(),
+        restoring: session.restoring(), restoreError: session.restoreError() });
+    const unsubscribe = session.subscribe(sync);
     sync();
-    return session.subscribe(sync);
+    return unsubscribe;
   }, []);
 
   return snapshot;

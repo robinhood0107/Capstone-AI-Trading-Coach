@@ -124,6 +124,18 @@ class DecisionService(
             throw DecisionTechnicalException(exception)
         }
 
+    fun getOwnedInputMetrics(
+        actorUserId: String,
+        decisionId: String,
+    ): DecisionInputMetricsProjection {
+        getOwned(actorUserId, decisionId)
+        return try {
+            DecisionInputMetricsProjection(decisionId, persistencePort.findOwnedInputMetrics(actorUserId, decisionId))
+        } catch (exception: Exception) {
+            throw DecisionTechnicalException(exception)
+        }
+    }
+
     fun getOwnedAudit(
         actorUserId: String,
         decisionId: String,

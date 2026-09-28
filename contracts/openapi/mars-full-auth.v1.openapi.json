@@ -6,6 +6,18 @@
   },
   "servers": [{"url": "https://mars.royaljellynas.org"}],
   "paths": {
+    "/api/v1/auth/refresh": {
+      "post": {
+        "operationId": "refreshFullBrowserSession",
+        "summary": "Restore a FULL access token from the same-origin HttpOnly refresh cookie",
+        "responses": {
+          "200": {"description": "New short-lived access token and renewed refresh cookie", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/LoginEnvelope"}}}},
+          "401": {"description": "Refresh cookie is missing, expired or revoked"},
+          "403": {"description": "Request origin rejected"}
+        },
+        "security": []
+      }
+    },
     "/api/v1/auth/login": {
       "post": {
         "operationId": "loginFullPasswordAccount",

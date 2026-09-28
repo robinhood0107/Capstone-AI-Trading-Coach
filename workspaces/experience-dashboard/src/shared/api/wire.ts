@@ -328,6 +328,19 @@ export interface DecisionProjection {
   riskDecision: RiskDecisionProjection;
 }
 
+export interface DecisionInputMetricProjection {
+  metric: string;
+  value: number | null;
+  unit: string | null;
+  availability: string;
+  observedAt: string | null;
+}
+
+export interface DecisionInputMetricsProjection {
+  decisionId: string;
+  items: DecisionInputMetricProjection[];
+}
+
 /** 판정과 제출이 같은 모양을 쓴다. 두 곳에서 따로 만들면 어긋난다. */
 export interface OrderIntent {
   symbol: string;

@@ -399,6 +399,7 @@ class SecurityConfig {
                         "/api/v1/auth/login",
                         "/api/v1/auth/signup",
                         "/api/v1/auth/options",
+                        "/api/v1/auth/refresh",
                     ).permitAll()
                 authorize
                     .anyRequest()
@@ -411,12 +412,12 @@ class SecurityConfig {
 
     @Bean
     fun corsConfigurationSource(): CorsConfigurationSource {
-        // README의 loopback 접속 주소만 열어 same-origin rewrite와 로컬 smoke를 함께 만족한다.
-        // FULL 은 사용자가 여는 공개 주소에서 같은 출처로 들어오므로 그 주소 하나를 더한다.
+        // 같은 PC 에서 여는 loopback 주소는 localhost·127.0.0.1 과 포트에 관계없이 연다(개인 3000,
+        // FULL 3002, DEMO 3001). 외부에서는 이 출처를 만들 수 없다. FULL 은 공개 주소 하나를 더한다.
         val configuration =
             CorsConfiguration().apply {
-                allowedOrigins =
-                    listOf("http://localhost:3000", "http://127.0.0.1:3000") +
+                allowedOriginPatterns =
+                    listOf("http://localhost:[*]", "http://127.0.0.1:[*]", "http://[::1]:[*]") +
                     listOf(publicOrigin).filter { it.isNotBlank() }
                 allowedMethods = listOf("GET", "POST", "PUT", "PATCH", "DELETE")
                 allowedHeaders =

@@ -16,6 +16,11 @@ interface DecisionPersistencePort {
         decisionId: String,
     ): DecisionProjection?
 
+    fun findOwnedInputMetrics(
+        actorUserId: String,
+        decisionId: String,
+    ): List<DecisionInputMetricProjection>
+
     fun findOwnedAudit(
         actorUserId: String,
         decisionId: String,

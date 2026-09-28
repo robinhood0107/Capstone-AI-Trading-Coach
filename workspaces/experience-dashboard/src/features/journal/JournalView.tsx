@@ -9,6 +9,7 @@ import { AsyncBoundary } from '@/shared/ui/AsyncBoundary';
 import { Button } from '@/shared/ui/Button';
 import { Panel } from '@/shared/ui/Panel';
 import type { JournalEntry, JournalLinks } from '@/shared/api/wire';
+import { FillsPanel } from '@/features/order-review/FillsPanel';
 import { takeJournalHandoff } from '@/shared/lib/journalHandoff';
 
 interface Draft {
@@ -121,6 +122,10 @@ export function JournalView() {
 
   return (
     <div className="grid gap-6 xl:grid-cols-[minmax(0,0.8fr)_minmax(0,1.2fr)]">
+      <div className="xl:col-span-2">
+        <FillsPanel />
+        <p className="mt-2 text-[12px] text-muted">체결 내역은 원장 기록이며, 아래 학습일지는 직접 작성하는 기록입니다.</p>
+      </div>
       <AsyncBoundary state={resource.state} onRetry={resource.reload}>
         {(items) => (
           <Panel title="최근 기록" hint="최신 20개 기록입니다.">

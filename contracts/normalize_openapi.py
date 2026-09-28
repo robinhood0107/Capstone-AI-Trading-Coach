@@ -39,6 +39,7 @@ DEFAULT_INPUT = (
 DEFAULT_EXPECTED = REPO_ROOT / "contracts" / "openapi" / "openapi.json"
 FULL_AUTH_OVERLAY = REPO_ROOT / "contracts" / "openapi" / "mars-full-auth.v1.openapi.json"
 FULL_ADMIN_OVERLAY = REPO_ROOT / "contracts" / "openapi" / "mars-full-admin.v1.openapi.json"
+FULL_DECISION_INPUTS_OVERLAY = REPO_ROOT / "contracts" / "openapi" / "mars-full-decision-inputs.v1.openapi.json"
 OAS_BASE_DIALECT = "https://spec.openapis.org/oas/3.1/dialect/base"
 CANONICAL_GENERATED_SERVER = {
     "description": "Generated server url",
@@ -405,7 +406,7 @@ def _project_full_only_operations(
     expected_paths = _object(expected.get("paths"), "expected paths")
     full_operations: set[tuple[str, str]] = set()
     full_only_schema_roots: set[str] = set()
-    for path in (FULL_AUTH_OVERLAY, FULL_ADMIN_OVERLAY):
+    for path in (FULL_AUTH_OVERLAY, FULL_ADMIN_OVERLAY, FULL_DECISION_INPUTS_OVERLAY):
         overlay = json.loads(path.read_text(encoding="utf-8"))
         for endpoint, item in _object(overlay.get("paths"), f"{path.name} paths").items():
             for method in item:

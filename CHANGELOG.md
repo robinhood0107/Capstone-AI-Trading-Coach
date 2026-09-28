@@ -2,6 +2,13 @@
 
 이 문서는 [Keep a Changelog](https://keepachangelog.com/ko/1.1.0/) 형식을 따르고, 버전은 [유의적 버전](https://semver.org/lang/ko/)을 따릅니다. 버전 하나가 GitHub Release `vX.Y.Z` 하나와 Docker Hub 이미지 태그 `vX.Y.Z-<part>` 한 벌에 대응합니다.
 
+## [1.0.7] - 2026-09-28
+
+### 수정
+
+- 라이브 RAG 응답이 조언 차단이나 검색 출처 전용 응답일 때 저장된 예시 답변으로 덮여 원래 결과와 인용이 사라지던 문제. 저장 답변 대체는 명시적 mock 모드의 전송 실패에만 사용
+- 금융 Agent의 추천 질문에서 출처가 없는 일반 지식 질문을 출처가 저장된 설명 질문으로 교체
+
 ## [1.0.0] - 2026-09-27
 
 첫 정식 버전입니다.
@@ -90,3 +97,4 @@
 [1.0.4]: https://github.com/robinhood0107/Capstone-AI-Trading-Coach/releases/tag/v1.0.4
 [1.0.5]: https://github.com/robinhood0107/Capstone-AI-Trading-Coach/releases/tag/v1.0.5
 [1.0.6]: https://github.com/robinhood0107/Capstone-AI-Trading-Coach/releases/tag/v1.0.6
+[1.0.7]: https://github.com/robinhood0107/Capstone-AI-Trading-Coach/releases/tag/v1.0.7

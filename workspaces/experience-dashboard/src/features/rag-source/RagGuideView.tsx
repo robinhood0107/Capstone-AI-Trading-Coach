@@ -31,8 +31,8 @@ import {
 
 const EXAMPLES = [
   '금 ETF의 롤오버 위험은 무엇인가요?',
-  'MDD와 Sharpe는 각각 무엇을 말해주나요?',
-  '삼성전자 지금 사도 되나요?',
+  'ETF와 ETN은 무엇이 다른가요?',
+  '변동성 돌파 전략이 뭔가요?',
 ];
 
 const STATUS_TONE: Record<string, string> = {

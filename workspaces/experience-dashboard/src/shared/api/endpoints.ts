@@ -1,4 +1,4 @@
-import { apiFetch, apiFetchBare, newIdempotencyKey } from './client';
+import { apiFetch, apiFetchBare, apiMode, newIdempotencyKey } from './client';
 import type { ApiResult } from './envelope';
 import type {
   ArmAutomationV2Request,
@@ -384,13 +384,12 @@ export const api = {
   },
 
   /**
-   * 설명 생성은 외부 provider 를 거치므로 네트워크나 일일 상한으로 그 자리에서 닫힐 수
-   * 있다. 시연 중에 그러면 화면이 비어 버리므로, 같은 질문의 저장된 답이 있으면 그것을
-   * 대신 내보낸다. 저장된 답은 이 시스템이 실제로 낸 응답이고, 모르는 질문에는 아무것도
-   * 돌려주지 않는다.
+   * 저장 답변은 명시적 mock 모드에서 전송 실패를 메우는 시연용 대체다. 서버 응답의
+   * BLOCKED_ADVICE, RETRIEVAL_ONLY, GENERATION_UNAVAILABLE을 덮으면 차단을 우회하거나
+   * 현재 검색 인용을 잃으므로, 서버 응답은 본문이 비어도 그대로 반환한다.
    */
   async ragV2Ask(request: RagAskRequest): Promise<RagV2Answer> {
-    const cached = findCachedRagAnswer(request.question);
+    const cached = apiMode() === 'mock' ? findCachedRagAnswer(request.question) : undefined;
     const fromCache = (requestId: string): RagV2Answer =>
       ({
         requestId,
@@ -408,9 +407,6 @@ export const api = {
         method: 'POST',
         body: request,
       });
-      if (cached && !answer.answer) {
-        return fromCache(answer.requestId);
-      }
       return answer;
     } catch (error) {
       if (cached) {

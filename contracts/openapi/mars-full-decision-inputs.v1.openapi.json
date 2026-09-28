@@ -1,0 +1,55 @@
+{
+  "openapi": "3.1.1",
+  "info": {"title": "MARS FULL decision input metrics", "version": "1.0.6"},
+  "servers": [{"url": "https://mars.royaljellynas.org"}],
+  "paths": {
+    "/api/v1/decisions/{decisionId}/inputs": {
+      "get": {
+        "operationId": "getDecisionInputs",
+        "summary": "Read numeric inputs actually stored with an owner decision",
+        "parameters": [{"name": "decisionId", "in": "path", "required": true, "schema": {"type": "string", "pattern": "^dec_[0-9a-f]{32}$"}}],
+        "responses": {
+          "200": {"description": "Owner scoped, bounded metric projection", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/ApiResponseDecisionInputMetricsProjection"}}}},
+          "401": {"description": "Authentication required"},
+          "404": {"description": "Owned decision not found"}
+        },
+        "security": [{"bearerAuth": []}]
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {"bearerAuth": {"type": "http", "scheme": "bearer", "bearerFormat": "JWT"}},
+    "schemas": {
+      "ApiResponseDecisionInputMetricsProjection": {
+        "type": "object",
+        "required": ["success", "requestId", "data", "warnings", "error"],
+        "properties": {
+          "success": {"type": "boolean"},
+          "requestId": {"type": "string"},
+          "data": {"$ref": "#/components/schemas/DecisionInputMetricsProjection"},
+          "warnings": {"type": "array", "items": {"type": "object"}},
+          "error": {"type": ["object", "null"]}
+        }
+      },
+      "DecisionInputMetricsProjection": {
+        "type": "object",
+        "required": ["decisionId", "items"],
+        "properties": {
+          "decisionId": {"type": "string", "pattern": "^dec_[0-9a-f]{32}$"},
+          "items": {"type": "array", "maxItems": 64, "items": {"$ref": "#/components/schemas/DecisionInputMetricProjection"}}
+        }
+      },
+      "DecisionInputMetricProjection": {
+        "type": "object",
+        "required": ["metric", "value", "unit", "availability", "observedAt"],
+        "properties": {
+          "metric": {"type": "string", "pattern": "^[a-z][a-z0-9_]{1,63}$"},
+          "value": {"type": ["number", "null"]},
+          "unit": {"type": ["string", "null"]},
+          "availability": {"type": "string"},
+          "observedAt": {"type": ["string", "null"], "format": "date-time"}
+        }
+      }
+    }
+  }
+}

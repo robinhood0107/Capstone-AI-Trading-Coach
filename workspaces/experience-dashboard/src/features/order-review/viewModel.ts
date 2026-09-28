@@ -12,9 +12,11 @@ import type {
   DashboardRiskResultView,
   DecisionAction,
   DecisionProjection,
+  DecisionInputMetricProjection,
   DecisionRiskItemProjection,
 } from '@/shared/api/wire';
 import { ruleName } from '@/shared/lib/ruleLabels';
+import { decisionReasonLabel } from '@/shared/lib/labels';
 import { formatCount, formatKrw, formatRatio } from '@/shared/lib/format';
 import { fromDashboard, type ViewState } from '@/shared/lib/viewState';
 
@@ -22,18 +24,66 @@ import { fromDashboard, type ViewState } from '@/shared/lib/viewState';
 export type ReasonDisposition = 'VIOLATION' | 'ISSUE' | 'WARNING' | 'ABSTENTION';
 
 export interface ReasonRow {
-  /**
-   * 목록 키로 쓸 고유값.
-   *
-   * `code` 는 고유하지 않다 — 실제 판정 하나에서 `BALANCE_STALE` 이 2번,
-   * `RISK_SNAPSHOT_MISSING` 이 3번, `NOT_APPLICABLE_V1` 이 6번 왔다(규칙마다 하나씩 나온다).
-   * `code + detail` 도 겹친다(문구가 같다). 그래서 여기서 만들어 들고 다닌다.
-   */
   id: string;
   disposition: ReasonDisposition;
   code: string;
   headline: string;
   detail: string;
+  count: number;
+  ruleNames: string[];
+  rawMessages: string[];
+}
+
+interface ReasonInput {
+  disposition: ReasonDisposition;
+  code: string;
+  ruleId?: string;
+  message: string;
+  metricDetail?: string;
+}
+
+export function groupDecisionReasons(inputs: ReasonInput[]): ReasonRow[] {
+  const groups = new Map<string, ReasonInput[]>();
+  for (const input of inputs) {
+    const key = `${input.disposition}:${input.code}`;
+    groups.set(key, [...(groups.get(key) ?? []), input]);
+  }
+  return [...groups].map(([id, items]) => {
+    const first = items[0]!;
+    const ruleNames = [...new Set(items.flatMap((item) => item.ruleId ? [ruleName(item.ruleId)] : []))];
+    const metricDetails = [...new Set(items.flatMap((item) => item.metricDetail ? [item.metricDetail] : []))];
+    const detail = first.code === 'NOT_APPLICABLE_V1'
+      ? `해당하지 않는 기준 ${items.length}개`
+      : [
+          ruleNames.length > 0
+            ? `${items.length}개 규칙 (${ruleNames.join(', ')})`
+            : items.length > 1 ? `${items.length}건` : '',
+          ...metricDetails,
+        ].filter(Boolean).join(' · ');
+    return {
+      id,
+      disposition: first.disposition,
+      code: first.code,
+      headline: first.disposition === 'VIOLATION'
+        ? `${ruleName(first.code)} 기준을 넘었습니다`
+        : decisionReasonLabel(first.code),
+      detail,
+      count: items.length,
+      ruleNames,
+      rawMessages: [...new Set(items.map((item) => item.message).filter(Boolean))],
+    };
+  });
+}
+
+function displaySummaryReasons(reasons: string[], detail: RiskResultView['detail']): string[] {
+  if (detail && detail.reasons.length > 0) {
+    return detail.reasons.map((reason) =>
+      reason.detail ? `${reason.headline} · ${reason.detail}` : reason.headline);
+  }
+  return [...new Set(reasons.map((reason) =>
+    reason === 'Required evaluation input is unavailable.'
+      ? '평가에 필요한 입력을 확인할 수 없음'
+      : decisionReasonLabel(reason)))];
 }
 
 export interface ViolatedPrinciple {
@@ -62,6 +112,8 @@ export interface RiskResultView {
     reasons: ReasonRow[];
     violatedPrinciples: ViolatedPrinciple[];
     riskItems: DecisionRiskItemProjection[];
+    inputMetrics: DecisionInputMetricProjection[];
+    inputMetricsUnavailable: boolean;
     semanticInputHash: string;
     snapshotArtifactHash: string;
   } | null;
@@ -82,49 +134,43 @@ function metricOf(ruleId: string): string {
   return map[ruleId] ?? ruleId;
 }
 
-function buildDetail(projection: DecisionProjection): NonNullable<RiskResultView['detail']> {
+function buildDetail(
+  projection: DecisionProjection,
+  inputMetrics: DecisionInputMetricProjection[],
+  inputMetricsUnavailable: boolean,
+): NonNullable<RiskResultView['detail']> {
   const risk = projection.riskDecision;
 
-  const reasons: ReasonRow[] = [
-    ...risk.violations.map<ReasonRow>((violation, index) => ({
-      id: `VIOLATION:${violation.ruleId}:${index}`,
+  const reasons = groupDecisionReasons([
+    ...risk.violations.map<ReasonInput>((violation) => ({
       disposition: 'VIOLATION',
       code: violation.ruleId,
-      headline: `${ruleName(violation.ruleId)} 기준을 넘었습니다`,
-      detail: `현재 ${formatMetric(metricOf(violation.ruleId), violation.metricValue)} · 기준 ${formatMetric(
+      ruleId: violation.ruleId,
+      message: violation.message,
+      metricDetail: `현재 ${formatMetric(metricOf(violation.ruleId), violation.metricValue)} · 기준 ${formatMetric(
         metricOf(violation.ruleId),
         violation.threshold,
       )}`,
     })),
-    ...risk.issues.map<ReasonRow>((issue, index) => ({
-      // 같은 code 가 규칙마다 하나씩 온다. ruleId 로 갈리고, 그것도 없으면 순번으로 갈린다.
-      id: `ISSUE:${issue.ruleId ?? ''}:${issue.code}:${index}`,
+    ...risk.issues.map<ReasonInput>((issue) => ({
       disposition: 'ISSUE',
       code: issue.code,
-      headline: '필수 근거가 없어 판단을 미뤘습니다',
-      detail: issue.message,
+      ruleId: issue.ruleId,
+      message: issue.message,
     })),
-    ...risk.warnings.map<ReasonRow>((warning, index) => ({
-      id: `WARNING:${warning.code}:${index}`,
+    ...risk.warnings.map<ReasonInput>((warning) => ({
       disposition: 'WARNING',
       code: warning.code,
-      headline: '확인이 필요한 사항',
-      detail: warning.message,
+      ruleId: warning.ruleId,
+      message: warning.message,
     })),
-    ...risk.abstentions.map<ReasonRow>((abstention, index) => ({
-      id: `ABSTENTION:${abstention.ruleId ?? ''}:${abstention.code}:${index}`,
+    ...risk.abstentions.map<ReasonInput>((abstention) => ({
       disposition: 'ABSTENTION',
       code: abstention.code,
-      headline:
-        abstention.disposition === 'NOT_APPLICABLE'
-          ? '이번 주문에는 해당하지 않는 기준'
-          : '근거가 없어 비교하지 않은 기준',
-      detail:
-        abstention.disposition === 'NOT_APPLICABLE'
-          ? '이 주문의 평가 대상이 아닌 기준입니다.'
-          : abstention.message,
+      ruleId: abstention.ruleId,
+      message: abstention.message,
     })),
-  ];
+  ]);
 
   return {
     canSubmitOrder: risk.canSubmitOrder,
@@ -142,9 +188,48 @@ function buildDetail(projection: DecisionProjection): NonNullable<RiskResultView
       severity: violation.severity === 'BLOCK' ? 'BLOCK' : 'WARN',
     })),
     riskItems: risk.riskItems,
+    inputMetrics,
+    inputMetricsUnavailable,
     semanticInputHash: risk.semanticInputHash,
     snapshotArtifactHash: risk.snapshotArtifactHash,
   };
+}
+
+const INPUT_METRIC_NAMES: Record<string, string> = {
+  annualized_volatility: '연환산 변동성',
+  asset_weight: '종목 비중',
+  current_price_krw: '현재가',
+  daily_loss_rate: '일일 손실률',
+  daily_order_count: '오늘 주문 횟수',
+  disclosure_risk_score: '공시 위험 점수',
+  etf_etn_product_risk_score: 'ETF·ETN 상품 위험 점수',
+  gold_etf_etn_weight: '금 ETF 비중',
+  hmm_risk_off_probability: '위험회피 국면 확률',
+  margin_requirement_krw: '증거금',
+  mdd: '최대낙폭',
+  mean_reversion_abs_z_score: '평균회귀 편차',
+  negative_news_score: '부정 뉴스 점수',
+  order_amount_krw: '주문 금액',
+  owner_position_quantity: '보유 수량',
+  portfolio_equity_krw: '계좌 평가금액',
+};
+
+export function decisionMetricName(metric: string): string {
+  return INPUT_METRIC_NAMES[metric] ?? metric;
+}
+
+export function displayDecisionInputMetric(item: DecisionInputMetricProjection): { name: string; value: string } {
+  const name = decisionMetricName(item.metric);
+  if (item.availability !== 'AVAILABLE' || item.value === null) {
+    const status = item.availability === 'NOT_APPLICABLE' ? '이번 주문에 해당하지 않음'
+      : item.availability === 'STALE' ? '관측이 오래됨' : '관측 없음';
+    return { name, value: status };
+  }
+  if (item.unit === 'KRW') return { name, value: formatKrw(item.value) };
+  if (item.unit === 'RATIO') return { name, value: formatRatio(item.value) };
+  if (item.unit === 'COUNT') return { name, value: `${formatCount(item.value)}건` };
+  if (item.unit === 'QUANTITY') return { name, value: `${formatCount(item.value)}주` };
+  return { name, value: String(item.value) };
 }
 
 export async function loadRiskResultView(decisionId: string): Promise<ViewState<RiskResultView>> {
@@ -154,8 +239,15 @@ export async function loadRiskResultView(decisionId: string): Promise<ViewState<
   let detail: RiskResultView['detail'] = null;
   let detailUnavailableReason: string | null = null;
   try {
-    const projection = await api.decision(decisionId);
-    detail = buildDetail(projection.data);
+    const [projection, inputs] = await Promise.allSettled([
+      api.decision(decisionId), api.decisionInputs(decisionId),
+    ]);
+    if (projection.status === 'rejected') throw projection.reason;
+    detail = buildDetail(
+      projection.value.data,
+      inputs.status === 'fulfilled' ? inputs.value.data.items : [],
+      inputs.status === 'rejected',
+    );
   } catch {
     detailUnavailableReason =
       '판정 상세(위반 값과 근거)를 불러오지 못했습니다. 요약 사유는 아래에 그대로 표시됩니다.';
@@ -166,7 +258,7 @@ export async function loadRiskResultView(decisionId: string): Promise<ViewState<
     (view) => ({
       decisionId: view.decisionId,
       action: view.action,
-      summaryReasons: view.reasons,
+      summaryReasons: displaySummaryReasons(view.reasons, detail),
       summaryPrinciples: view.principles,
       summaryRiskItems: view.riskItems,
       detail,

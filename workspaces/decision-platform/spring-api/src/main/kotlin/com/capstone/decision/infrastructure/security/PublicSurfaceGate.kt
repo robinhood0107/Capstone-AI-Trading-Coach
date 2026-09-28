@@ -66,6 +66,7 @@ internal class PublicSurfaceGate(
                     "GET" to "/api/v1/auth/oidc/callback/kakao",
                     "POST" to "/api/v1/auth/oidc/exchange",
                     "POST" to "/api/v1/auth/logout",
+                    "POST" to "/api/v1/auth/refresh",
                     "POST" to "/api/v1/auth/login",
                     "POST" to "/api/v1/auth/signup",
                     "PUT" to "/api/v1/auth/password",
@@ -108,6 +109,13 @@ internal class PublicSurfaceGate(
                 FULL_USER_FEATURES.any { (methods, prefix) ->
                     request.method in methods && (request.requestURI == prefix || request.requestURI.startsWith("$prefix/"))
                 }
+        // 같은 container 의 automation runtime 만 부르는 bridge. controller 가 loopback 과 공유 비밀을
+        // 다시 확인한다. 웹 프록시나 다른 container 에서 온 요청은 remoteAddr 가 loopback 이 아니다.
+        val fullRuntimeBridgeAllowed =
+            mode == PublicSurfaceMode.FULL &&
+                request.method == "POST" &&
+                request.requestURI == "/internal/automation-runtime/command" &&
+                request.remoteAddr in LOOPBACK_ADDRESSES
         if (
             mode != PublicSurfaceMode.LOCAL &&
             !health &&
@@ -115,6 +123,7 @@ internal class PublicSurfaceGate(
             !fullAllowed &&
             !fullAgentAllowed &&
             !fullAutomationAllowed &&
+            !fullRuntimeBridgeAllowed &&
             !demoAllowed
         ) {
             response.sendError(HttpServletResponse.SC_NOT_FOUND)
@@ -155,6 +164,7 @@ internal class PublicSurfaceGate(
         val FULL_PROVIDER_LINK_START = Regex("^/api/v1/auth/identities/(google|kakao)/link/start$")
         val FULL_PROVIDER_UNLINK = Regex("^/api/v1/auth/identities/(google|kakao)$")
         val FULL_AUTOMATION_RUN_DETAIL = Regex("^/api/v3/automation/runs/auto_run_[A-Za-z0-9_-]{8,96}$")
+        val LOOPBACK_ADDRESSES = setOf("127.0.0.1", "::1", "0:0:0:0:0:0:0:1")
     }
 }
 

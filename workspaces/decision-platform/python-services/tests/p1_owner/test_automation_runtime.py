@@ -1060,6 +1060,47 @@ def test_continuation_after_the_buy_deadline_may_reconcile_but_not_plan_new_orde
     assert runner.calls[0]["allowNewOrders"] is False
 
 
+def test_restart_after_terminal_resumes_the_remaining_decision_times_once() -> None:
+    """terminal 뒤 claim 이 RELEASED 인 채 재기동해도 오늘 남은 결정 시점을 잇는다.
+
+    2026-09-28 에 api 재기동으로 11:00·14:00 이 통째로 사라졌다. 지난 시점은 가장 최근
+    하나만 돌리고, 같은 프로세스에서 두 번 잇지 않는다.
+    """
+
+    runner = _RecordingPortfolioRunner()
+    service = _continuation_service("SKIPPED_NO_ACTION", runner)
+    released = _claim()
+    service._repository.resume_continuation = (  # type: ignore[attr-defined]
+        lambda user_id, session_date, claim_hash: released
+    )
+
+    first = service._resume_continuations(
+        released.user_id, released.session_date, "sha256:" + "d" * 64
+    )
+    second = service._resume_continuations(
+        released.user_id, released.session_date, "sha256:" + "d" * 64
+    )
+
+    assert (first, second) == (True, False)
+    assert len(runner.calls) == 1
+
+
+def test_restart_without_a_released_claim_does_not_resume() -> None:
+    runner = _RecordingPortfolioRunner()
+    service = _continuation_service("SKIPPED_NO_ACTION", runner)
+    service._repository.resume_continuation = (  # type: ignore[attr-defined]
+        lambda user_id, session_date, claim_hash: None
+    )
+
+    assert (
+        service._resume_continuations(
+            "usr_automation_runtime_0001", date(2026, 8, 28), "sha256:" + "d" * 64
+        )
+        is False
+    )
+    assert runner.calls == []
+
+
 class _RecoveringRepository:
     """놓친 세션을 마감하고 연쇄를 잇는 저장소.
 

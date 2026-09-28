@@ -2532,6 +2532,20 @@ BEGIN
 END
 $p1_v94_automation_continuity_privileges$;
 
+-- V112 table grants outlive later changes to p1_arm_automation_v3's function signature.
+-- Keep them independent of the function-specific V113 compatibility block below.
+DO $p1_v112_automation_evidence_table_privileges$
+BEGIN
+    IF to_regclass('public.automation_v3_usage') IS NOT NULL THEN
+        GRANT SELECT, INSERT, UPDATE ON TABLE public.automation_v3_usage TO decision_app;
+        GRANT SELECT, INSERT ON TABLE
+            public.automation_candidate_screenings,
+            public.automation_candidate_evidence
+        TO decision_app;
+    END IF;
+END
+$p1_v112_automation_evidence_table_privileges$;
+
 DO $p1_v113_automation_v3_privileges$
 BEGIN
     IF to_regprocedure('public.p1_arm_automation_v3(text,text,text,integer,integer,text,text,boolean)') IS NOT NULL THEN
@@ -2931,5 +2945,58 @@ BEGIN
  END IF;
 END
 $p1_v155_v159_privileges$;
+-- Preserve the exact migration-granted routines when role bootstrap runs on an existing volume.
+-- Older compatibility blocks depend on signatures that later migrations replaced.
+DO $restore_runtime_function_grants$
+DECLARE item record;
+BEGIN
+    FOR item IN SELECT * FROM (VALUES
+        ('public.acknowledge_bound_mock_certification_recovery_v1(text,text,bigint)','decision_app'),
+        ('public.begin_bound_mock_certification_v1(text,text,bigint,text)','decision_app'),
+        ('public.begin_bound_mock_connection_attempt_v1(text,text,bigint)','decision_app'),
+        ('public.complete_bound_mock_certification_v1(text,text,bigint,text,text,text,date,integer,integer,integer)','decision_app'),
+        ('public.disconnect_bound_mock_broker_credential_v1(text,text,bigint)','decision_app'),
+        ('public.finish_bound_mock_certification_v1(text,text,bigint,text,text,text,text,date,integer,integer,integer)','decision_app'),
+        ('public.mark_bound_mock_broker_connected_v1(text,text,bigint)','decision_app'),
+        ('public.p1_arm_automation_full_v1(text,text,text,integer,integer,text,text,boolean,boolean)','decision_app'),
+        ('public.p1_arm_automation_v3(text,text,text,integer,integer,text,text,boolean,boolean)','decision_app'),
+        ('public.p1_automation_ai_judgement_runtime_scope_v1(text)','decision_app'),
+        ('public.p1_automation_principle_drift_v1(text)','decision_app'),
+        ('public.p1_complete_automation_ai_provider_v1(text,text,text,text,integer,integer,text,text)','decision_app'),
+        ('public.p1_fail_automation_ai_provider_v1(text,text,text,text)','decision_app'),
+        ('public.p1_full_owner_account_history_integrity_v218(text,text)','decision_app'),
+        ('public.p1_full_owner_connection_readiness_v1(text,text)','decision_app'),
+        ('public.p1_full_owner_order_failure_code_v217(text)','decision_app'),
+        ('public.p1_full_owner_order_path_verified_v1(text,text)','decision_app'),
+        ('public.p1_operator_vertex_fallback_enabled_v1()','decision_app'),
+        ('public.p1_owner_bound_mock_account_v1(text)','decision_app'),
+        ('public.p1_put_automation_policy_v2(text,text,bigint,integer,integer,integer,integer,integer,boolean,integer,text,text)','decision_app'),
+        ('public.p1_read_automation_market_history_status_owner_v1(text)','decision_app'),
+        ('public.p1_read_mock_credential_identity_envelope_v218(text)','decision_app'),
+        ('public.p1_read_owner_mock_credential_state_for_automation_v218(text)','decision_app'),
+        ('public.p1_register_mock_account_identity_before_disconnect_v218(text,text,text)','decision_app'),
+        ('public.p1_reserve_automation_ai_provider_v1(text,text,text,text,integer)','decision_app'),
+        ('public.p1_resolve_or_bind_mock_account_identity_v218(text,text,text,text)','decision_app'),
+        ('public.put_bound_mock_broker_credential_v2(text,text,text,bytea,bytea,bytea,bytea,bytea,bytea,text,text)','decision_app'),
+        ('public.put_strong_llm_owner_settings_v2(text,text,text,text,text,text,text,text,integer,boolean,text)','decision_app'),
+        ('public.read_bound_mock_balance_confirmation_v1(text)','decision_app'),
+        ('public.read_bound_mock_broker_envelope_v3(text,text)','decision_app'),
+        ('public.read_bound_mock_broker_summary_v3(text)','decision_app'),
+        ('public.read_decision_input_metrics_owner_v1(text)','decision_app'),
+        ('public.read_owner_ai_usage_v1(text)','decision_app'),
+        ('public.record_agent_ai_usage_v1(text,text,text,integer)','decision_app'),
+        ('public.record_bound_mock_balance_observation_v1(text,text,bigint,bigint,jsonb)','decision_app'),
+        ('public.record_full_owner_mock_connection_proof_v1(text,text,bigint,text)','decision_app'),
+        ('public.record_operator_ai_gross_usage_v1(text,text,text,text,bigint)','decision_app'),
+        ('public.record_operator_ai_gross_usage_v1(text,text,text,text,bigint)','decision_rag_writer'),
+        ('public.record_s4_9_operator_voyage_gross_usage_v1(text,text,text,bigint)','decision_rag_writer'),
+        ('public.p1_read_after_hours_replay_bars_v1(text)','decision_replay')
+    ) AS grants(signature, grantee) LOOP
+        IF to_regprocedure(item.signature) IS NOT NULL THEN
+            EXECUTE format('GRANT EXECUTE ON FUNCTION %s TO %I', item.signature, item.grantee);
+        END IF;
+    END LOOP;
+END
+$restore_runtime_function_grants$;
 COMMIT;
 SQL

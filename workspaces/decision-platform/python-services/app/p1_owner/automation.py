@@ -1783,7 +1783,11 @@ class AutomationEngine:
                         candidate.symbol,
                         "DROPPED",
                         "NO_REMAINING_RETURN",
-                        "예상 상승분이 이미 현재가에 반영돼 왕복 비용을 넘지 못한다",
+                        remaining_return_detail(
+                            "예상 상승분이 이미 현재가에 반영돼 왕복 비용을 넘지 못한다",
+                            candidate.forecast_close,
+                            _limit_price(quote, "BUY"),
+                        ),
                     )
                     continue
                 eligible.append(candidate)
@@ -1957,7 +1961,13 @@ class AutomationEngine:
                         quote.symbol,
                         "DROPPED",
                         "NO_REMAINING_RETURN",
-                        "선택 뒤 호가가 올라 잔여 수익률이 왕복 비용 아래로 내려갔다",
+                        remaining_return_detail(
+                            "선택 뒤 호가가 올라 잔여 수익률이 왕복 비용 아래로 내려갔다",
+                            candidate.forecast_close,
+                            limit_price,
+                        )
+                        if math.isfinite(net)
+                        else "선택 뒤 잔여 수익률을 계산할 수 없다",
                     )
                     self._transition(run, "SKIPPED_NO_ACTION", "RUN_TRANSITIONED", now)
                     return
@@ -2548,6 +2558,18 @@ def remaining_expected_return(candidate: SignalCandidate, buy_limit_price: int) 
     ):
         raise AutomationError("remaining return input unavailable")
     return candidate.forecast_close / buy_limit_price - 1.0 - _ROUND_TRIP_COST_BPS / 10_000
+
+
+def remaining_return_detail(prefix: str, forecast_close: float, buy_limit_price: int) -> str:
+    """NO_REMAINING_RETURN 의 근거 숫자를 사람이 읽는 한 줄로 남긴다."""
+
+    gross = forecast_close / buy_limit_price - 1.0
+    net = gross - _ROUND_TRIP_COST_BPS / 10_000
+    return (
+        f"{prefix} · 예측 종가 {forecast_close:,.0f}원, 매수 지정가 {buy_limit_price:,}원, "
+        f"기대 상승 {gross * 100:+.2f}% − 왕복 비용 {_ROUND_TRIP_COST_BPS / 100:.2f}% "
+        f"= 잔여 {net * 100:+.2f}%"
+    )
 
 
 def _estimated_net_return_bps(entry_average_fill_price_krw: int, sell_limit_price_krw: int) -> int:

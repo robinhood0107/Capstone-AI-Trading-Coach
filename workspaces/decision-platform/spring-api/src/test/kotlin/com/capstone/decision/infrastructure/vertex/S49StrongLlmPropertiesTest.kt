@@ -12,6 +12,7 @@ class S49StrongLlmPropertiesTest {
                 enabled = true,
                 modelId = "gemini-3.5-flash",
                 localRoot = "/tmp/strong-llm",
+                serviceAccountJsonB64 = "fixture-service-account",
             )
 
         assertThatCode(properties::validateEnabled).doesNotThrowAnyException()
@@ -24,6 +25,7 @@ class S49StrongLlmPropertiesTest {
                 enabled = true,
                 modelId = "gemini-3.5-flash",
                 localRoot = "/tmp/strong-llm",
+                serviceAccountJsonB64 = "fixture-service-account",
                 ownerConsentPolicySha256 = "invalid",
             )
 

@@ -18,6 +18,7 @@ import type {
   DashboardRagSourcesView,
   DashboardRiskResultView,
   DecisionProjection,
+  DecisionInputMetricsProjection,
   EvaluateOrderRequest,
   KillSwitchState,
   LatestArtifactRun,
@@ -342,6 +343,10 @@ export const api = {
   /* ------------------------------------------------------------ 판정 */
   decision(decisionId: string): Promise<ApiResult<DecisionProjection>> {
     return apiFetch<DecisionProjection>(`/api/v1/decisions/${encodeURIComponent(decisionId)}`);
+  },
+
+  decisionInputs(decisionId: string): Promise<ApiResult<DecisionInputMetricsProjection>> {
+    return apiFetch<DecisionInputMetricsProjection>(`/api/v1/decisions/${encodeURIComponent(decisionId)}/inputs`);
   },
 
   /** 실패해도 자동 재시도하지 않는다. 같은 키로 다시 보내는 것은 사용자가 선택한다. */

@@ -6,8 +6,11 @@ import math
 from dataclasses import dataclass
 from typing import Any, Literal, Protocol, cast
 
+import psycopg
+
 from app.p1_owner.automation import ExactOrderIntent, Quote, ReconcileSnapshot, _limit_price
 from app.p1_owner.automation import _MAX_OPEN_POSITIONS, _ROUND_TRIP_COST_BPS
+from app.p1_owner.automation import remaining_return_detail
 from app.p1_owner.automation_portfolio import (
     _MAX_ORDERS_PER_SESSION,
     CapitalPolicy,
@@ -93,7 +96,13 @@ class PortfolioContinuationRunner:
             plan, binding = prepared
             if not plan.orders:
                 return PortfolioContinuationResult("NO_ELIGIBLE_ADJUSTMENT", 0, 0)
-            self._repository.stage(claim=claim, binding=binding, plan=plan)
+            try:
+                self._repository.stage(claim=claim, binding=binding, plan=plan)
+            except psycopg.errors.UniqueViolation:
+                # 세션 스냅샷은 run 당 하나다(PK run_id). 앞선 결정 시점이 이미 계획을 세웠으면
+                # 뒤 시점은 새 계획을 만들 수 없다. 예외로 두면 continuation 이 닫히고 다음 세션
+                # 스케줄도 굴리지 못했다. 무주문 사유로 남기고 정상 종료한다.
+                return PortfolioContinuationResult("SESSION_PLAN_ALREADY_STAGED", 0, 0)
             planned_count = len(plan.orders)
             current = self._repository.current_execution(claim=claim)
         completed = 0
@@ -239,14 +248,16 @@ class PortfolioContinuationRunner:
                 flush=True,
             )
 
-    def _record_candidate_drop(self, claim: RuntimeClaim, symbol: str, reason: str) -> None:
+    def _record_candidate_drop(
+        self, claim: RuntimeClaim, symbol: str, reason: str, detail: str | None = None
+    ) -> None:
         """후보가 탈락한 사유를 퍼널에 남긴다. 진단이라 실패해도 세션을 멈추지 않는다."""
 
         recorder = getattr(self._repository, "record_stage_outcomes", None)
         if not callable(recorder):
             return
         try:
-            recorder(claim, symbol, reason)
+            recorder(claim, symbol, reason, detail)
         except Exception as error:
             print(
                 f"AUTOMATION_PORTFOLIO_CANDIDATE_DROP=FAILED error={type(error).__name__}",
@@ -310,7 +321,18 @@ class PortfolioContinuationRunner:
             ):
                 # 맨 `continue` 는 후보를 아무 기록 없이 버렸다. 단일 엔진 경로에는 퍼널이
                 # 붙어 있고 이쪽만 비어 있어서, 무주문 사유가 화면에 남지 않았다.
-                self._record_candidate_drop(claim, symbol, "NO_REMAINING_RETURN")
+                self._record_candidate_drop(
+                    claim,
+                    symbol,
+                    "NO_REMAINING_RETURN",
+                    remaining_return_detail(
+                        "예상 상승분이 이미 현재가에 반영돼 왕복 비용을 넘지 못한다",
+                        forecast_close,
+                        price,
+                    )
+                    if math.isfinite(forecast_close)
+                    else "LSTM 예측 종가가 없어 잔여 수익률을 계산할 수 없다",
+                )
                 continue
             buyable = port.portfolio_buyable(symbol, price)
             receipt_id = self._repository.record_buyable(claim=claim, projection=buyable)

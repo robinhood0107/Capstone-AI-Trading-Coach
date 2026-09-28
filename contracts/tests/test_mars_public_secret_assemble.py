@@ -84,7 +84,8 @@ class MarsPublicSecretAssembleTest(unittest.TestCase):
             private_file(root / filename, env_lines(keys))
         private_file(
             root / "postgres.env",
-            b"POSTGRES_COLLECTOR_PASSWORD=" + secrets.token_hex(16).encode() + b"\n",
+            b"POSTGRES_COLLECTOR_PASSWORD=" + secrets.token_hex(16).encode() + b"\n"
+            b"POSTGRES_DISCLOSURE_READER_PASSWORD=" + secrets.token_hex(16).encode() + b"\n",
         )
         return root
 
@@ -142,6 +143,7 @@ class MarsPublicSecretAssembleTest(unittest.TestCase):
                 "KAKAO_OAUTH_CLIENT_SECRET",
                 "VOYAGE_API_KEY",
                 "GOOGLE_OIDC_ADMIN_SUBJECT_SHA256",
+                "DECISION_DISCLOSURE_READER_DATABASE_DSN",
             },
         )
         self.assertEqual(
@@ -174,6 +176,21 @@ class MarsPublicSecretAssembleTest(unittest.TestCase):
             MODULE.env_file(full_dir / "mars-public-full.env")["ASYNC_WORKER_DATABASE_DSN"],
             MODULE.env_file(base / "python.env")["ASYNC_WORKER_DATABASE_DSN"],
         )
+        full_env = MODULE.env_file(full_dir / "mars-public-full.env")
+        observation_env = MODULE.env_file(base / "automation-observation.env")
+        for key in (
+            "DECISION_PORTFOLIO_WRITER_DATABASE_DSN",
+            "DECISION_RISK_WRITER_DATABASE_DSN",
+            "DECISION_MARKET_WRITER_DATABASE_DSN",
+        ):
+            self.assertEqual(full_env[key], observation_env[key])
+        reader_password = MODULE.env_file(base / "postgres.env")[
+            "POSTGRES_DISCLOSURE_READER_PASSWORD"
+        ]
+        self.assertEqual(
+            full_env["DECISION_DISCLOSURE_READER_DATABASE_DSN"],
+            MODULE.DISCLOSURE_READER_DSN.format(reader_password),
+        )
         compose = yaml.safe_load((ROOT / "deploy/p1/compose.public-full.yml").read_text())
         referenced = {
             Path(entry["file"].replace("${MARS_FULL_SECRETS_DIR}", "x")).name
@@ -181,18 +198,21 @@ class MarsPublicSecretAssembleTest(unittest.TestCase):
         }
         self.assertLessEqual(referenced, {p.name for p in full_dir.iterdir()})
 
-    def test_full_migration_env_drops_fixed_demo_password_bundles(self) -> None:
-        base = self.base("p1-base")
-        original = MODULE.env_file(base / "migration.env")
-        private_file(
-            base / "migration.env",
-            (base / "migration.env").read_bytes()
-            + b"DEMO_CREDENTIAL_SEPARATION_KEY=x\n"
-            b"DEMO_USER_CREDENTIAL_BUNDLE=y\nDEMO_ADMIN_CREDENTIAL_BUNDLE=z\n",
-        )
-        self.assertEqual(self.assemble("full", base).returncode, 0)
-        migrated = MODULE.env_file(self.release / "full-secrets/migration.env")
-        self.assertEqual(migrated, original)
+    def test_public_migration_env_drops_fixed_demo_password_bundles(self) -> None:
+        # 공개 DEMO·FULL 마이그레이션은 이 번들이 있으면 PUBLIC_PASSWORD_CREDENTIALS_FORBIDDEN 으로 멈춘다.
+        for product in ("full", "demo"):
+            with self.subTest(product=product):
+                base = self.base(f"p1-base-{product}")
+                original = MODULE.env_file(base / "migration.env")
+                private_file(
+                    base / "migration.env",
+                    (base / "migration.env").read_bytes()
+                    + b"DEMO_CREDENTIAL_SEPARATION_KEY=x\n"
+                    b"DEMO_USER_CREDENTIAL_BUNDLE=y\nDEMO_ADMIN_CREDENTIAL_BUNDLE=z\n",
+                )
+                self.assertEqual(self.assemble(product, base).returncode, 0)
+                migrated = MODULE.env_file(self.release / f"{product}-secrets/migration.env")
+                self.assertEqual(migrated, original)
 
     def test_refuses_to_reuse_one_base_bundle_or_overwrite_secrets(self) -> None:
         base = self.base("shared-base")

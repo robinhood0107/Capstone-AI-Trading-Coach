@@ -64,9 +64,29 @@
 
 - README에 산업체 자문 의견과 반영 사항, 최종 발표자료·자문의견서 링크, 참여 후기를 추가
 
+## [1.0.6] - 2026-09-28
+
+### 수정
+
+- FULL에서 자동운용이 매 세션 시작 직후 멈추던 문제. 공개 경로 필터가 같은 컨테이너의 자동운용 런타임이 부르는 `POST /internal/automation-runtime/command`까지 404로 막아, 후보 선별 전에 60초마다 실패만 반복했음. 필터는 FULL에서 이 경로를 loopback 요청에만 열고, 컨트롤러는 기존대로 loopback과 공유 비밀을 다시 확인
+- DEMO 비밀 조립에서 고정 로그인 번들(`DEMO_*`)을 지우지 않아 공개 DEMO 마이그레이션이 `PUBLIC_PASSWORD_CREDENTIALS_FORBIDDEN`으로 멈추던 문제
+- FULL bridge의 소유자 인증 세션 발급, 재기동 후 남은 결정 시점 재개, 일시적인 continuation 오류 재시도
+- 주문 직전 잔고·시세·위험지표 관측과 공개 FULL 비밀 조립의 writer·공시 reader DSN 누락을 수정. 연결 계좌가 바뀐 뒤 옛 관측 scope가 현재 계좌와 충돌하던 조회도 최신 scope 하나로 제한
+- 포트폴리오 계획·수령증·의도 해시·부분체결 정산 경로를 맞춤. 당일 매수금액을 기준 자본에 두 번 더하던 손실 계산과 KIS 누적 평균가 반올림 때문에 매도 대사가 멈추던 문제를 수정
+- 주문 판정 화면에서 중복 사유를 코드별로 묶고 관련 규칙과 한국어 라벨을 표시. 원문 코드는 펼친 상세에서 확인 가능
+- FULL 로그인 새로고침 때 access token을 HttpOnly 갱신 세션으로 복원하고, 만료된 access token을 갱신하며 로그아웃 시 두 세션을 해제. 갱신 세션은 30일 동안 사용하지 않으면 만료
+- 과거 판정의 만료 상태를 첫 화면에서 알리고, 판정 시점에 저장한 입력값·단위·관측 시각을 소유자 범위로 조회해 표시. 보고서와 학습일지에는 기존 체결 목록을 재사용하고, 보고서 손익의 source 종료일을 명확히 표시
+- 기존 DB에서 역할 bootstrap을 다시 실행할 때 마이그레이션으로 허용된 자동운용 함수 권한이 지워지던 문제
+- 선택형 주문 경로 시험의 확인창을 닫으면 주문이 나가지 않았다는 안내를 표시
+
+### 확인
+
+- KIS 모의계좌에서 086790 36주 매수와 36주 매도를 체결·대사했고 포지션 마감을 확인. 이 시험은 전략 수익성 검증을 뜻하지 않음
+
 [1.0.0]: https://github.com/robinhood0107/Capstone-AI-Trading-Coach/releases/tag/v1.0.0
 [1.0.1]: https://github.com/robinhood0107/Capstone-AI-Trading-Coach/releases/tag/v1.0.1
 [1.0.2]: https://github.com/robinhood0107/Capstone-AI-Trading-Coach/releases/tag/v1.0.2
 [1.0.3]: https://github.com/robinhood0107/Capstone-AI-Trading-Coach/releases/tag/v1.0.3
 [1.0.4]: https://github.com/robinhood0107/Capstone-AI-Trading-Coach/releases/tag/v1.0.4
 [1.0.5]: https://github.com/robinhood0107/Capstone-AI-Trading-Coach/releases/tag/v1.0.5
+[1.0.6]: https://github.com/robinhood0107/Capstone-AI-Trading-Coach/releases/tag/v1.0.6

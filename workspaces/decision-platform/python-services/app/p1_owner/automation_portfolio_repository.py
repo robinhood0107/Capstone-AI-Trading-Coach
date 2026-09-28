@@ -11,6 +11,7 @@ import psycopg
 from psycopg.conninfo import conninfo_to_dict
 from psycopg.types.json import Jsonb
 
+from app.p1_owner.automation import _bounded_reason_detail
 from app.p1_owner.automation_portfolio import PortfolioPlan
 from app.p1_owner.automation_runtime import RuntimeClaim
 
@@ -201,7 +202,9 @@ class PostgresAutomationPortfolioRepository:
             )
             return 0
 
-    def record_stage_outcomes(self, claim: RuntimeClaim, symbol: str, reason: str) -> int:
+    def record_stage_outcomes(
+        self, claim: RuntimeClaim, symbol: str, reason: str, detail: str | None = None
+    ) -> int:
         """후보가 탈락한 사유를 퍼널 표에 남긴다.
 
         단일 주문 엔진 경로에는 이 기록이 붙어 있는데 포트폴리오 경로만 비어 있었다.
@@ -219,6 +222,7 @@ class PostgresAutomationPortfolioRepository:
                 "symbol": symbol,
                 "outcome": "DROPPED",
                 "reasonCode": reason,
+                "reasonDetail": _bounded_reason_detail(detail),
             }
         ]
         with psycopg.connect(self._dsn) as connection:

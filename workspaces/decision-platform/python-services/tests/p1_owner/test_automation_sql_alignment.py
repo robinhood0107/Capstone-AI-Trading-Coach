@@ -360,9 +360,9 @@ def test_the_finish_function_keeps_pgcrypto_on_search_path() -> None:
     """
 
     _, body = _latest_definition(_FINISH_EXECUTION)
-    assert re.search(
-        r"SET search_path(?:=| TO )\s*'?pg_catalog'?\s*,\s*'?public'?", body
-    ), "pgcrypto search_path is not restored after CREATE OR REPLACE"
+    assert re.search(r"SET search_path(?:=| TO )\s*'?pg_catalog'?\s*,\s*'?public'?", body), (
+        "pgcrypto search_path is not restored after CREATE OR REPLACE"
+    )
 
 
 _STAGE_PLAN = "p1_stage_automation_portfolio_plan_v1"

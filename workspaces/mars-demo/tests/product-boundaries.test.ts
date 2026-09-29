@@ -79,6 +79,8 @@ test('DEMO image packages the FULL presentation modules without FULL services or
     'src/features/brokerage', 'src/features/account', 'src/features/strong-llm',
     'src/shared/api/client.ts', 'src/shared/api/session.ts',
   ]) assert.ok(!dockerfile.includes(forbidden), `DEMO image must not include ${forbidden}`);
+  const runner = dockerfile.split('FROM node:22-bookworm-slim AS runner')[1] ?? '';
+  assert.ok(runner.includes('rm -rf /usr/local/lib/node_modules/npm /usr/local/bin/npm /usr/local/bin/npx'));
 });
 
 test('DEMO transport uses only its same-origin API adapter and signed visitor session', () => {

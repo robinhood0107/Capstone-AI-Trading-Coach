@@ -54,6 +54,7 @@ WORKDIR /repo/workspaces/mars-demo
 RUN npm run typecheck && npm test && python3 scripts/validate_fixture.py data/scenario.v1.json && npm run build
 
 FROM node:22-bookworm-slim AS runner
+RUN rm -rf /usr/local/lib/node_modules/npm /usr/local/bin/npm /usr/local/bin/npx
 ENV NODE_ENV=production \
     NEXT_TELEMETRY_DISABLED=1 \
     NODE_OPTIONS=--max-old-space-size=512 \

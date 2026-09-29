@@ -2,13 +2,6 @@
 
 이 문서는 [Keep a Changelog](https://keepachangelog.com/ko/1.1.0/) 형식을 따르고, 버전은 [유의적 버전](https://semver.org/lang/ko/)을 따릅니다. 버전 하나가 GitHub Release `vX.Y.Z` 하나와 Docker Hub 이미지 태그 `vX.Y.Z-<part>` 한 벌에 대응합니다.
 
-## [1.0.11] - 2026-09-29
-
-### 변경
-
-- 공개 README를 최종보고서 안내와 배포·실행 절차 중심으로 정리
-- 문서 색인의 보이는 내용을 최종보고서 링크로 한정하고 내부 설계·팀 개인 정보는 노출하지 않음
-
 ## [1.0.10] - 2026-09-29
 
 ### 변경
@@ -130,4 +123,3 @@
 [1.0.8]: https://github.com/robinhood0107/Capstone-AI-Trading-Coach/releases/tag/v1.0.8
 [1.0.9]: https://github.com/robinhood0107/Capstone-AI-Trading-Coach/releases/tag/v1.0.9
 [1.0.10]: https://github.com/robinhood0107/Capstone-AI-Trading-Coach/releases/tag/v1.0.10
-[1.0.11]: https://github.com/robinhood0107/Capstone-AI-Trading-Coach/releases/tag/v1.0.11

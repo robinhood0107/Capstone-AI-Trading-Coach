@@ -126,6 +126,9 @@ class MarsDockerHubReleaseWorkflowTest(unittest.TestCase):
     def test_release_candidate_builds_are_scoped_and_scan_before_registry_credentials(self) -> None:
         full = FULL_CANDIDATE.read_text(encoding="utf-8")
         demo = DEMO_CANDIDATE.read_text(encoding="utf-8")
+        self.assertIn("branches: [develop, main]", full)
+        self.assertIn("head.repo.full_name == github.repository", full)
+        self.assertNotIn("head.ref == 'develop'", full)
         self.assertIn("--file workspaces/experience-dashboard/Dockerfile", full)
         self.assertIn("--build-arg MARS_PRODUCT=full", full)
         self.assertNotIn("Build both product web images", full)

@@ -15,6 +15,7 @@ data class EvaluationSourceRequest(
     val evaluationAsOf: Instant,
     val evaluationId: String = "unavailable",
     val decisionId: String = "unavailable",
+    val automationRiskScope: Boolean = false,
 )
 
 data class PortfolioSourceRequest(

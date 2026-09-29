@@ -680,6 +680,7 @@ class AutomationInputs:
     kill_switch_active: bool = False
     account_complete: bool = True
     account_digest_matches: bool = True
+    account_sync_changed: bool = False
     buyable_quantity: int = 1
     buyable_amount_krw: int = _MAX_BIGINT
     open_position_market_value_krw: int = 0
@@ -1198,6 +1199,13 @@ class AutomationEngine:
             return
         if run.session_date != inputs.session_date:
             self._halt(run, now, "SESSION_DRIFT")
+            return
+        if run.state not in {"ORDER_SUBMITTED", "PENDING_RECONCILIATION"} and (
+            now.date() != run.session_date
+            or now.timetz().replace(tzinfo=None) > _KST_CLOSE_ORDER_TIME
+        ):
+            self._release_exit_pending(run)
+            self._transition(run, "SKIPPED_LATE_START", "RUN_TRANSITIONED", now)
             return
         if not inputs.account_digest_matches:
             self._halt(run, now, "ACCOUNT_DRIFT")
@@ -2053,6 +2061,13 @@ class AutomationEngine:
         if now.timetz().replace(tzinfo=None) > _KST_CLOSE_ORDER_TIME:
             self._release_exit_pending(run)
             self._transition(run, "SKIPPED_LATE_START", "RUN_TRANSITIONED", now)
+            return
+        if inputs.account_sync_changed:
+            # The account changed after this intent was sized. Keep the session alive
+            # without submitting a stale quantity; the next scheduled decision will
+            # use the newly reconciled balance.
+            self._release_exit_pending(run)
+            self._transition(run, "SKIPPED_DATA_UNAVAILABLE", "RUN_TRANSITIONED", now)
             return
         if not inputs.account_complete or not inputs.account_digest_matches:
             self._release_exit_pending(run)

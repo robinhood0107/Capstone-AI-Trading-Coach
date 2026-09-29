@@ -102,8 +102,8 @@ class MetricSnapshotArtifactV2 private constructor(
     }
 
     companion object {
-        fun from(snapshot: MetricSnapshot): MetricSnapshotArtifactV2 =
-            MetricSnapshotArtifactV2(
+        fun from(snapshot: MetricSnapshot): MetricSnapshotArtifactV2 {
+            val canonical =
                 mapOf(
                     "actorUserId" to snapshot.actorUserId,
                     "disclosureEvidence" to disclosureEvidence(snapshot),
@@ -139,8 +139,18 @@ class MetricSnapshotArtifactV2 private constructor(
                     "retrievedAt" to snapshot.retrievedAt,
                     "snapshotSchemaVersion" to snapshot.snapshotSchemaVersion,
                     "systemRuleCatalogVersion" to snapshot.systemRuleCatalogVersion,
-                ),
-            )
+                )
+            val value =
+                if (snapshot.riskExcludedPositionSymbols.isEmpty()) {
+                    canonical
+                } else {
+                    canonical +
+                        mapOf(
+                            "riskExcludedPositionSymbols" to snapshot.riskExcludedPositionSymbols.sorted(),
+                        )
+                }
+            return MetricSnapshotArtifactV2(value)
+        }
 
         private fun disclosureEvidence(snapshot: MetricSnapshot): Map<String, Any?>? =
             snapshot.disclosureEvidence?.let { evidence ->

@@ -59,6 +59,8 @@ data class PortfolioEvaluationCommand(
     val orderIntent: OrderIntentSnapshot,
     val optionalComponents: Set<OptionalEvaluationComponent> = emptySet(),
     val decisionId: String = evaluationId,
+    val riskExcludedPositionSymbols: Set<String> = emptySet(),
+    val automationRiskScope: Boolean = false,
 )
 
 data class OfflinePortfolioEvaluation(
@@ -135,6 +137,8 @@ class PortfolioEvaluationUseCase(
                     readinessPolicyVersion = systemRuleContract.readinessPolicyVersion,
                     acquisitionPlan = plan,
                     decisionId = command.decisionId,
+                    riskExcludedPositionSymbols = command.riskExcludedPositionSymbols,
+                    automationRiskScope = command.automationRiskScope,
                 ),
             )
         val candidates = candidateRules(principle, snapshot, command.optionalComponents)

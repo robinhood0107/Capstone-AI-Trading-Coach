@@ -97,7 +97,32 @@ def load_deterministic_metric_fixture(path: Path) -> DeterministicMetricFixture:
         max_bytes=_MAX_FIXTURE_BYTES,
         label="deterministic metric",
     )
-    artifact_hash = hashlib.sha256(artifact_bytes).hexdigest()
+    return _metric_fixture(root, hashlib.sha256(artifact_bytes).hexdigest())
+
+
+def load_deterministic_metric_batch_fixture(path: Path) -> tuple[DeterministicMetricFixture, ...]:
+    """여러 risk projection을 하나의 검증된 append transaction 입력으로 읽는다."""
+    _artifact_bytes, root = read_json_fixture(
+        path,
+        max_bytes=_MAX_FIXTURE_BYTES,
+        label="deterministic metric batch",
+    )
+    if not isinstance(root, dict) or set(root) != {"fixtures"}:
+        raise ValueError("deterministic metric batch root shape is invalid")
+    raw_fixtures = root["fixtures"]
+    if not isinstance(raw_fixtures, list) or not 1 <= len(raw_fixtures) <= 8:
+        raise ValueError("deterministic metric batch size is invalid")
+    fixtures: list[DeterministicMetricFixture] = []
+    for item in raw_fixtures:
+        encoded = json.dumps(item, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode(
+            "utf-8"
+        )
+        fixtures.append(_metric_fixture(item, hashlib.sha256(encoded).hexdigest())
+        )
+    return tuple(fixtures)
+
+
+def _metric_fixture(root: object, artifact_hash: str) -> DeterministicMetricFixture:
     if not isinstance(root, dict) or set(root) != _ROOT_FIELDS:
         raise ValueError("deterministic metric fixture root shape is invalid")
     schema_version = _bounded_text(root["schemaVersion"], "schemaVersion")
@@ -144,74 +169,96 @@ def append_deterministic_metric_fixture(path: Path, *, database_dsn: str) -> int
     """decision_risk_writer로 risk/order-count를 한 transaction에서 exact INSERT한다."""
     if not database_dsn.strip():
         raise ValueError("decision risk writer database DSN is required")
-    fixture = load_deterministic_metric_fixture(path)
+    return _append_deterministic_metric_fixtures(
+        (load_deterministic_metric_fixture(path),),
+        database_dsn=database_dsn,
+    )
+
+
+def append_deterministic_metric_fixtures(path: Path, *, database_dsn: str) -> int:
+    """계좌 전체와 자동매매 전용 위험 관측을 단일 DB transaction에 함께 추가한다."""
+    if not database_dsn.strip():
+        raise ValueError("decision risk writer database DSN is required")
+    return _append_deterministic_metric_fixtures(
+        load_deterministic_metric_batch_fixture(path),
+        database_dsn=database_dsn,
+    )
+
+
+def _append_deterministic_metric_fixtures(
+    fixtures: tuple[DeterministicMetricFixture, ...],
+    *,
+    database_dsn: str,
+) -> int:
+    inserted = 0
     with psycopg.connect(database_dsn, autocommit=False) as connection:
         with connection.transaction():
-            risk = fixture.risk
-            inserted_risk = connection.execute(
-                """
-                INSERT INTO deterministic_risk_observations (
-                  observation_id, owner_user_id, owner_scope_hash, portfolio_source,
-                  daily_loss_rate, max_drawdown, annualized_volatility, completeness,
-                  observed_at, received_at, schema_version, source_version,
-                  payload_json, source_ref, artifact_hash
-                ) VALUES (
-                  %s, %s, %s, %s, %s, %s, %s, %s,
-                  %s, %s, %s, %s, %s::jsonb, %s, %s
-                )
-                ON CONFLICT DO NOTHING
-                """,
-                (
-                    risk.observation_id,
-                    fixture.owner_user_id,
-                    fixture.owner_scope_hash,
-                    fixture.portfolio_source,
-                    risk.daily_loss_rate,
-                    risk.max_drawdown,
-                    risk.annualized_volatility,
-                    risk.completeness,
-                    risk.observed_at,
-                    risk.received_at,
-                    fixture.schema_version,
-                    fixture.source_version,
-                    risk.payload_json,
-                    risk.source_ref,
-                    fixture.artifact_hash,
-                ),
-            ).rowcount
-            orders = fixture.daily_order_count
-            inserted_orders = connection.execute(
-                """
-                INSERT INTO daily_order_count_observations (
-                  observation_id, owner_user_id, owner_scope_hash, portfolio_source,
-                  trading_date, order_count, covered_through, completeness,
-                  observed_at, received_at, schema_version, source_version,
-                  payload_json, source_ref, artifact_hash
-                ) VALUES (
-                  %s, %s, %s, %s, %s, %s, %s, %s,
-                  %s, %s, %s, %s, %s::jsonb, %s, %s
-                )
-                ON CONFLICT DO NOTHING
-                """,
-                (
-                    orders.observation_id,
-                    fixture.owner_user_id,
-                    fixture.owner_scope_hash,
-                    fixture.portfolio_source,
-                    orders.trading_date,
-                    orders.order_count,
-                    orders.covered_through,
-                    orders.completeness,
-                    orders.observed_at,
-                    orders.received_at,
-                    fixture.schema_version,
-                    fixture.source_version,
-                    orders.payload_json,
-                    orders.source_ref,
-                    fixture.artifact_hash,
-                ),
-            ).rowcount
-    return inserted_risk + inserted_orders
+            for fixture in fixtures:
+                risk = fixture.risk
+                inserted += connection.execute(
+                    """
+                    INSERT INTO deterministic_risk_observations (
+                      observation_id, owner_user_id, owner_scope_hash, portfolio_source,
+                      daily_loss_rate, max_drawdown, annualized_volatility, completeness,
+                      observed_at, received_at, schema_version, source_version,
+                      payload_json, source_ref, artifact_hash
+                    ) VALUES (
+                      %s, %s, %s, %s, %s, %s, %s, %s,
+                      %s, %s, %s, %s, %s::jsonb, %s, %s
+                    )
+                    ON CONFLICT DO NOTHING
+                    """,
+                    (
+                        risk.observation_id,
+                        fixture.owner_user_id,
+                        fixture.owner_scope_hash,
+                        fixture.portfolio_source,
+                        risk.daily_loss_rate,
+                        risk.max_drawdown,
+                        risk.annualized_volatility,
+                        risk.completeness,
+                        risk.observed_at,
+                        risk.received_at,
+                        fixture.schema_version,
+                        fixture.source_version,
+                        risk.payload_json,
+                        risk.source_ref,
+                        fixture.artifact_hash,
+                    ),
+                ).rowcount
+                orders = fixture.daily_order_count
+                inserted += connection.execute(
+                    """
+                    INSERT INTO daily_order_count_observations (
+                      observation_id, owner_user_id, owner_scope_hash, portfolio_source,
+                      trading_date, order_count, covered_through, completeness,
+                      observed_at, received_at, schema_version, source_version,
+                      payload_json, source_ref, artifact_hash
+                    ) VALUES (
+                      %s, %s, %s, %s, %s, %s, %s, %s,
+                      %s, %s, %s, %s, %s::jsonb, %s, %s
+                    )
+                    ON CONFLICT DO NOTHING
+                    """,
+                    (
+                        orders.observation_id,
+                        fixture.owner_user_id,
+                        fixture.owner_scope_hash,
+                        fixture.portfolio_source,
+                        orders.trading_date,
+                        orders.order_count,
+                        orders.covered_through,
+                        orders.completeness,
+                        orders.observed_at,
+                        orders.received_at,
+                        fixture.schema_version,
+                        fixture.source_version,
+                        orders.payload_json,
+                        orders.source_ref,
+                        fixture.artifact_hash,
+                    ),
+                ).rowcount
+    return inserted
 
 
 def _risk_observation(

@@ -11,6 +11,7 @@ from zoneinfo import ZoneInfo
 
 import httpx
 
+import app.p1_owner.automation_runtime_live as live_runtime
 from app.p1_owner.automation import (
     AutomationRun,
     ExactOrderIntent,
@@ -19,7 +20,11 @@ from app.p1_owner.automation import (
     ReconcileOutcome,
     SignalCandidate,
 )
-from app.p1_owner.automation_runtime import AutomationRuntimeError, RuntimeClaim
+from app.p1_owner.automation_runtime import (
+    AutomationObservationUnavailable,
+    AutomationRuntimeError,
+    RuntimeClaim,
+)
 from app.p1_owner.automation_runtime_live import (
     FailClosedVertexVetoTransport,
     LiveAutomationPort,
@@ -31,6 +36,14 @@ from app.p1_owner.automation_runtime_live import (
 from app.p1_owner.vertex_corpus_evidence import CorpusDocument
 
 _KST = ZoneInfo("Asia/Seoul")
+
+
+@pytest.fixture(autouse=True)
+def _runtime_observation_publisher_succeeds_by_default(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # These port tests isolate sizing/bridge behavior; publisher failure is covered explicitly below.
+    monkeypatch.setattr(live_runtime, "publish_runtime_observations", lambda **_kwargs: "PUBLISHED")
 
 
 def test_real_kis_current_price_status_fields_survive_as_tradable() -> None:
@@ -190,6 +203,299 @@ class FakeExecutionSource:
         return None
 
 
+class FakeAccountSyncExecutionSource(FakeExecutionSource):
+    def __init__(
+        self,
+        snapshot: dict[str, object],
+        *,
+        open_order_count: int = 0,
+    ) -> None:
+        super().__init__()
+        self.snapshot = snapshot
+        self.open_order_count = open_order_count
+        self.physical_call_count = 0
+        self.sync_calls = 0
+
+    def account_sync_snapshot(
+        self, account_id: str, session_date: date
+    ) -> tuple[dict[str, object], int, str]:
+        assert account_id == _claim().account_id
+        assert session_date == date(2026, 8, 28)
+        self.sync_calls += 1
+        self.physical_call_count += 2
+        return self.snapshot, self.open_order_count, "a" * 64
+
+
+class FakeAccountSyncRepository:
+    def __init__(self) -> None:
+        self.calls: list[dict[str, object]] = []
+        self.risk_baseline: int | None = None
+        self.state: dict[str, Any] = _state()
+
+    def reconcile_external_account(self, claim: RuntimeClaim, **kwargs: object) -> dict[str, Any]:
+        assert claim == _claim()
+        self.calls.append(kwargs)
+        return {"reconciled": True, "quarantinedSymbols": []}
+
+    def get_or_initialize_risk_baseline(
+        self,
+        claim: RuntimeClaim,
+        observed_equity_krw: int,
+        observed_cash_krw: int,
+        *,
+        recover_halted: bool = False,
+        as_of: datetime | None = None,
+    ) -> int:
+        assert claim == _claim()
+        assert observed_cash_krw >= 0
+        assert isinstance(recover_halted, bool)
+        assert as_of is None or as_of.tzinfo is not None
+        if self.risk_baseline is None:
+            self.risk_baseline = observed_equity_krw
+        return self.risk_baseline
+
+    def read_state(self, claim: RuntimeClaim) -> dict[str, Any]:
+        assert claim == _claim()
+        return dict(self.state)
+
+
+def _account_projection(
+    *, cash_krw: int = 1_000_000, positions: list[dict[str, object]] | None = None
+) -> dict[str, object]:
+    return {
+        "accountId": _claim().account_id,
+        "cashKrw": cash_krw,
+        "marginRequirementKrw": 0,
+        "portfolioEquityKrw": 1_000_000,
+        "positionsComplete": True,
+        "positions": positions or [],
+    }
+
+
+def _account_sync_port(
+    monkeypatch: pytest.MonkeyPatch,
+    execution: FakeAccountSyncExecutionSource,
+    repository: FakeAccountSyncRepository,
+) -> LiveAutomationPort:
+    monkeypatch.setenv("MARS_PUBLIC_SURFACE_MODE", "FULL")
+    monkeypatch.setattr(live_runtime, "publish_runtime_observations", lambda **_kwargs: "PUBLISHED")
+    state = _state()
+    state["expectedAccountProjection"] = _account_projection()
+    state["expectedAccountDigest"] = "e" * 64
+    return LiveAutomationPort(
+        _claim(),
+        state,
+        FakeBridge(),
+        FakeQuoteSource(),
+        execution,
+        FailClosedVertexVetoTransport(),
+        account_sync_repository=repository,  # type: ignore[arg-type]
+    )
+
+
+@pytest.mark.parametrize(
+    ("failure", "expected_error"),
+    [
+        ("wrong_account", "AUTOMATION_BALANCE_IDENTITY_MISMATCH"),
+        ("incomplete", "AUTOMATION_BALANCE_PAGINATION_REQUIRED"),
+        ("open_order", "AUTOMATION_EXTERNAL_ORDER_PENDING"),
+        ("observation", "AUTOMATION_ACCOUNT_OBSERVATION_UNAVAILABLE"),
+    ],
+)
+def test_live_account_sync_failures_never_rebase_expectation(
+    monkeypatch: pytest.MonkeyPatch,
+    failure: str,
+    expected_error: str,
+) -> None:
+    snapshot = _account_projection()
+    open_order_count = 0
+    if failure == "wrong_account":
+        snapshot["accountId"] = "acct_" + "9" * 32
+    elif failure == "incomplete":
+        snapshot["positionsComplete"] = False
+    elif failure == "open_order":
+        open_order_count = 1
+    elif failure == "observation":
+        snapshot["cashKrw"] = 999_000
+    execution = FakeAccountSyncExecutionSource(snapshot, open_order_count=open_order_count)
+    repository = FakeAccountSyncRepository()
+    repository.get_or_initialize_risk_baseline(_claim(), 1_000_000, 1_000_000)
+    port = _account_sync_port(monkeypatch, execution, repository)
+    if failure == "observation":
+        monkeypatch.setattr(
+            live_runtime,
+            "publish_runtime_observations",
+            lambda **_kwargs: "UNAVAILABLE",
+        )
+
+    with pytest.raises(AutomationRuntimeError, match=expected_error):
+        port.sync_account(
+            state=_state()
+            | {
+                "expectedAccountProjection": _account_projection(),
+                "expectedAccountDigest": "e" * 64,
+            },
+            run=None,
+            now=datetime(2026, 8, 28, 9, 30, tzinfo=_KST),
+            next_session=date(2026, 8, 31),
+        )
+
+    assert execution.sync_calls == 1
+    assert repository.calls == []
+
+
+def test_personal_trade_in_unmanaged_symbol_rebases_without_stopping_automation(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # The user bought 086790 manually. It is not a bot-owned position, so the complete
+    # account snapshot becomes the new baseline and the run can continue from fresh data.
+    observed = _account_projection(
+        cash_krw=982_540,
+        positions=[{"marketValueKrw": 17_460, "quantity": 1, "symbol": "086790"}],
+    )
+    execution = FakeAccountSyncExecutionSource(observed)
+    repository = FakeAccountSyncRepository()
+    repository.get_or_initialize_risk_baseline(_claim(), 1_000_000, 1_000_000)
+    port = _account_sync_port(monkeypatch, execution, repository)
+    published: dict[str, Any] = {}
+    monkeypatch.setattr(
+        live_runtime,
+        "publish_runtime_observations",
+        lambda **kwargs: published.update(kwargs) or "PUBLISHED",
+    )
+    state = _state() | {
+        "expectedAccountProjection": _account_projection(),
+        "expectedAccountDigest": "e" * 64,
+    }
+
+    result = port.sync_account(
+        state=state,
+        run=None,
+        now=datetime(2026, 8, 28, 9, 30, tzinfo=_KST),
+        next_session=date(2026, 8, 31),
+    )
+
+    assert result == {"reconciled": True, "quarantinedSymbols": []}
+    assert len(repository.calls) == 1
+    assert repository.calls[0]["account_projection"] == observed
+    assert repository.calls[0]["expected_account_digest"] == "e" * 64
+    assert port._account_sync_changed is True
+    assert port._risk_excluded_symbols == frozenset({"086790"})
+    assert published["risk_excluded_symbols"] == ("086790",)
+    assert published["risk_baseline_equity_krw"] == 1_000_000
+    assert published["balance"] == observed
+    assert port._expected_projection is not None
+    assert port._expected_projection["positions"] == [{"quantity": "1", "symbol": "086790"}]
+    risk_balance = live_runtime._risk_balance_projection(observed, port._risk_excluded_symbols)
+    assert risk_balance["positions"] == []
+    assert risk_balance["portfolioEquityKrw"] == 982_540
+    assert (
+        live_runtime._risk_asset_remaining(
+            state | {"principleAssetWeightLimit": "0.20"},
+            risk_balance,
+            "005930",
+        )
+        == 196_508
+    )
+
+
+def test_resumed_portfolio_evaluation_refreshes_manual_exclusions_before_publish(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("MARS_PUBLIC_SURFACE_MODE", "FULL")
+    observed = _account_projection(
+        cash_krw=200_000,
+        positions=[
+            {"marketValueKrw": 100_000, "quantity": 1, "symbol": "005930"},
+            {"marketValueKrw": 800_000, "quantity": 1, "symbol": "132030"},
+        ],
+    )
+    observed["portfolioEquityKrw"] = 1_100_000
+
+    class ManualPortfolioExecution(FakeExecutionSource):
+        def __init__(self) -> None:
+            super().__init__()
+            self.sync_calls = 0
+
+        def balance(self, account_id: str) -> dict[str, object]:
+            del account_id
+            return observed
+
+        def account_sync_snapshot(
+            self, account_id: str, session_date: date
+        ) -> tuple[dict[str, object], int, str]:
+            assert account_id == _claim().account_id
+            self.sync_calls += 1
+            return observed, 0, "a" * 64
+
+    state = _state()
+    state["positions"] = [{"symbol": "005930", "status": "OPEN"}]
+    state["expectedAccountProjection"] = _account_projection()
+    state["expectedAccountDigest"] = "e" * 64
+    repository = FakeAccountSyncRepository()
+    repository.state = state
+    bridge = FakeBridge()
+    published: dict[str, Any] = {}
+    monkeypatch.setattr(
+        live_runtime,
+        "publish_runtime_observations",
+        lambda **kwargs: published.update(kwargs) or "PUBLISHED",
+    )
+    execution = ManualPortfolioExecution()
+    port = LiveAutomationPort(
+        _claim(),
+        state,
+        bridge,
+        FakeQuoteSource(),
+        execution,
+        FailClosedVertexVetoTransport(),
+        account_sync_repository=repository,  # type: ignore[arg-type]
+    )
+
+    decision_id = port.portfolio_evaluate(
+        ExactOrderIntent("005930", "BUY", "LIMIT", 1, 75_000, 75_000, "1d", _claim().strategy_id),
+        ordinal=1,
+    )
+
+    assert decision_id == "dec_" + "1" * 32
+    assert execution.sync_calls == 1
+    assert published["risk_excluded_symbols"] == ("132030",)
+    assert set(published["quotes"]) == {"005930"}
+    assert len(repository.calls) == 1
+    assert repository.calls[0]["account_projection"] == observed
+    assert repository.risk_baseline == 300_000
+    assert published["risk_baseline_equity_krw"] == 300_000
+    assert published["balance"]["portfolioEquityKrw"] == 1_100_000
+
+
+def test_portfolio_risk_publish_failure_blocks_evaluate_and_can_retry(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("MARS_PUBLIC_SURFACE_MODE", "LOCAL")
+    repository = FakeAccountSyncRepository()
+    bridge = FakeBridge()
+    monkeypatch.setattr(
+        live_runtime,
+        "publish_runtime_observations",
+        lambda **_kwargs: "FAILED_RuntimeError",
+    )
+    port = LiveAutomationPort(
+        _claim(),
+        _state(),
+        bridge,
+        FakeQuoteSource(),
+        FakeExecutionSource(),
+        FailClosedVertexVetoTransport(),
+        account_sync_repository=repository,  # type: ignore[arg-type]
+    )
+
+    intent = ExactOrderIntent("005930", "BUY", "LIMIT", 1, 75_000, 75_000, "1d", _claim().strategy_id)
+    with pytest.raises(AutomationObservationUnavailable, match="AUTOMATION_RISK_OBSERVATION_UNAVAILABLE"):
+        port.portfolio_evaluate(intent, ordinal=1)
+
+    assert bridge.calls == []
+
+
 def _claim() -> RuntimeClaim:
     return RuntimeClaim(
         user_id="usr_automation_runtime_0001",
@@ -262,6 +568,8 @@ def test_live_port_reuses_one_quote_spring_risk_brokerage_and_execution_reader()
     quote_source = FakeQuoteSource()
     execution = FakeExecutionSource()
     state = _state()
+    state["positions"] = [{"symbol": "999999", "status": "OPEN"}]
+    state["manualPositionSymbols"] = ["999999"]
     run = AutomationRun(
         run_id=str(state["runId"]),
         session_date=date(2026, 8, 28),
@@ -320,6 +628,8 @@ def test_kis_runtime_sizing_fails_closed_when_risk_balance_is_incomplete() -> No
 
     bridge = FakeBridge()
     state = _state()
+    state["positions"] = [{"symbol": "999999", "status": "OPEN"}]
+    state["manualPositionSymbols"] = ["999999"]
     run = AutomationRun(
         run_id=str(state["runId"]),
         session_date=date(2026, 8, 28),
@@ -344,6 +654,44 @@ def test_kis_runtime_sizing_fails_closed_when_risk_balance_is_incomplete() -> No
     assert inputs.account_complete is False
     assert bridge.calls == []
     assert port.physical_calls == 2  # one current-price quote and one complete-page balance read
+
+
+def test_unmanaged_manual_holding_does_not_block_risk_completeness() -> None:
+    balance = {
+        "accountId": _claim().account_id,
+        "cashKrw": 900_000,
+        "marginRequirementKrw": 0,
+        "portfolioEquityKrw": 1_000_000,
+        "positionsComplete": True,
+        "positions": [{"marketValueKrw": 100_000, "quantity": 1, "symbol": "999999"}],
+    }
+    state = _state()
+    state["manualPositionSymbols"] = ["999999"]
+
+    assert live_runtime._risk_complete(balance, state) is True
+
+
+@pytest.mark.parametrize(
+    ("managed_status", "expected"),
+    [("OPEN", False), ("EXIT_PENDING", False), ("HALTED_MISMATCH", True)],
+)
+def test_manual_holding_exception_never_masks_an_active_bot_position(
+    managed_status: str,
+    expected: bool,
+) -> None:
+    balance = {
+        "accountId": _claim().account_id,
+        "cashKrw": 900_000,
+        "marginRequirementKrw": 0,
+        "portfolioEquityKrw": 1_000_000,
+        "positionsComplete": True,
+        "positions": [{"marketValueKrw": 100_000, "quantity": 1, "symbol": "999999"}],
+    }
+    state = _state()
+    state["manualPositionSymbols"] = ["999999"]
+    state["positions"] = [{"symbol": "999999", "status": managed_status}]
+
+    assert live_runtime._risk_complete(balance, state) is expected
 
 
 def test_unconfigured_vertex_transport_abstains_before_provider_call() -> None:
@@ -652,6 +1000,8 @@ def test_the_three_gates_that_used_to_close_every_order_are_open() -> None:
     (3) 원칙 한도가 MAX_BIGINT로 들어와 수량이 사용자 원칙을 넘었다.
     """
     state = _state()
+    state["positions"] = [{"symbol": "005930", "status": "OPEN"}]
+    state["manualPositionSymbols"] = ["005930"]
     # V95가 실제 값을 내보낸다. 원칙은 1회 최대주문 30만원, 보유 평가액은 20만원이다.
     state["principleMaxSingleOrderKrw"] = 300_000
     state["principleAssetRemainingKrw"] = 500_000

@@ -31,6 +31,8 @@ _TIME = re.compile(r"^[0-9]{6}$")
 _MAX_BIGINT = 9_223_372_036_854_775_807
 _MAX_POSITIONS = 1_000
 _MAX_MOCK_EXECUTION_ROWS = 15
+_MAX_BALANCE_SYNC_PAGES = 4
+_MAX_ACCOUNT_SYNC_EXECUTION_PAGES = 4
 
 
 @dataclass(frozen=True, slots=True)
@@ -54,6 +56,26 @@ class KISMockExecutionSourceProbe:
     provider_exec_ref_hash: str | None
     rows_seen: int
     matched: bool
+
+
+@dataclass(frozen=True, slots=True)
+class KISMockExternalOrder:
+    """한 거래일의 외부 주문 상태. 원문 주문번호는 반환하지 않는다."""
+
+    order_ref_hash: str
+    symbol: str
+    side: Literal["BUY", "SELL"]
+    ordered_quantity: int
+    filled_quantity: int
+    leaves_quantity: int
+    cancelled: bool
+    rejected: bool
+
+    @property
+    def unresolved(self) -> bool:
+        # A cancel/reject flag can coexist with residual leaves while KIS is still
+        # processing the request. Only zero remaining quantity proves it is closed.
+        return self.leaves_quantity > 0
 
 
 @dataclass(frozen=True, slots=True)
@@ -134,38 +156,70 @@ class KISMockOnlineBalanceReader:
         return self.probe_balance_source(account_id)
 
     def probe_balance_source(self, account_id: str) -> KISMockBalanceSourceProbe:
-        """exact-approved 진단에서 cash/equity/position source shape만 bounded 검증한다.
-
-        provider가 continuation cursor를 돌려줘도 이 probe 결과는 publish/risk 근거가 아니므로
-        첫 page shape만 검증하고 partial flag를 남긴다. 완전한 owner-facing balance는 여전히
-        trusted enrichment와 별도 pagination 처리가 없으면 fail-closed다.
-        """
-        payload = self._client.request(
-            "GET",
-            BALANCE_PATH,
-            MOCK_BALANCE_TR_ID,
-            params={
-                "AFHR_FLPR_YN": "N",
-                "OFL_YN": "",
-                "INQR_DVSN": "02",
-                "UNPR_DVSN": "01",
-                "FUND_STTL_ICLD_YN": "N",
-                "FNCG_AMT_AUTO_RDPT_YN": "N",
-                "PRCS_DVSN": "00",
-                "CTX_AREA_FK100": "",
-                "CTX_AREA_NK100": "",
-            },
-        )
-        positions_complete = not (
-            _has_continuation_cursor(payload.get("ctx_area_fk100"))
-            or _has_continuation_cursor(payload.get("ctx_area_nk100"))
-        )
-        positions = _positions(payload.get("output1"))
-        summary = _single_object(
-            payload.get("output2"),
-            "balance summary",
-            reason=KISMockFailureReason.BALANCE_SUMMARY_INVALID,
-        )
+        """Read all bounded balance pages; never label a partial holdings list complete."""
+        cursor_fk = ""
+        cursor_nk = ""
+        continuation: Literal["N"] | None = None
+        positions: list[tuple[str, int, int]] = []
+        summary: dict[str, Any] | None = None
+        positions_complete = False
+        seen_symbols: set[str] = set()
+        for page_index in range(_MAX_BALANCE_SYNC_PAGES):
+            payload = self._client.request(
+                "GET",
+                BALANCE_PATH,
+                MOCK_BALANCE_TR_ID,
+                params={
+                    "AFHR_FLPR_YN": "N",
+                    "OFL_YN": "",
+                    "INQR_DVSN": "02",
+                    "UNPR_DVSN": "01",
+                    "FUND_STTL_ICLD_YN": "N",
+                    "FNCG_AMT_AUTO_RDPT_YN": "N",
+                    "PRCS_DVSN": "00",
+                    "CTX_AREA_FK100": cursor_fk,
+                    "CTX_AREA_NK100": cursor_nk,
+                },
+                continuation=continuation,
+            )
+            page_positions = _positions(payload.get("output1"))
+            if seen_symbols.intersection(symbol for symbol, _, _ in page_positions):
+                raise KISMockProjectionError(
+                    KISMockFailureReason.BALANCE_POSITIONS_INVALID,
+                    "KIS mock balance pages contain duplicate positions",
+                )
+            seen_symbols.update(symbol for symbol, _, _ in page_positions)
+            positions.extend(page_positions)
+            raw_summary = payload.get("output2")
+            if raw_summary not in (None, "", []):
+                current_summary = _single_object(
+                    raw_summary,
+                    "balance summary",
+                    reason=KISMockFailureReason.BALANCE_SUMMARY_INVALID,
+                )
+                if summary is None:
+                    summary = current_summary
+                elif any(
+                    _nonnegative(current_summary.get(field), field)
+                    != _nonnegative(summary.get(field), field)
+                    for field in ("prvs_rcdl_excc_amt", "tot_evlu_amt")
+                ):
+                    raise KISMockProjectionError(
+                        KISMockFailureReason.BALANCE_SUMMARY_INVALID,
+                        "KIS mock balance summary changed between pages",
+                    )
+            has_more, cursor_fk, cursor_nk = _pagination_state(payload)
+            if not has_more:
+                positions_complete = True
+                break
+            if page_index + 1 >= _MAX_BALANCE_SYNC_PAGES:
+                break
+            continuation = "N"
+        if summary is None:
+            raise KISMockProjectionError(
+                KISMockFailureReason.BALANCE_SUMMARY_INVALID,
+                "KIS mock balance summary is unavailable",
+            )
         return KISMockBalanceSourceProbe(
             account_id=account_id,
             cash_krw=_nonnegative(
@@ -179,7 +233,7 @@ class KISMockOnlineBalanceReader:
                 "portfolio equity",
                 reason=KISMockFailureReason.BALANCE_EQUITY_INVALID,
             ),
-            positions=positions,
+            positions=tuple(sorted(positions)),
             positions_complete=positions_complete,
         )
 
@@ -228,6 +282,94 @@ class KISMockExecutionReader:
 
     def __init__(self, client: KISMockBrokerageHttpClient) -> None:
         self._client = client
+
+    def read_session_orders(
+        self, *, session_date: date, recent: bool = True
+    ) -> tuple[KISMockExternalOrder, ...]:
+        """Read every same-session KRX order with a bounded continuation loop.
+
+        A partial page is never treated as an empty/open-order-free result. Four pages cover
+        the configured bounded owner order budget; anything beyond that defers account sync.
+        """
+        tr_id = MOCK_EXECUTIONS_RECENT_TR_ID if recent else MOCK_EXECUTIONS_ARCHIVE_TR_ID
+        cursor_fk = ""
+        cursor_nk = ""
+        continuation: Literal["N"] | None = None
+        orders: list[KISMockExternalOrder] = []
+        seen: set[str] = set()
+        for page_index in range(_MAX_ACCOUNT_SYNC_EXECUTION_PAGES):
+            payload = self._client.request(
+                "GET",
+                EXECUTIONS_PATH,
+                tr_id,
+                params={
+                    "INQR_STRT_DT": session_date.strftime("%Y%m%d"),
+                    "INQR_END_DT": session_date.strftime("%Y%m%d"),
+                    "SLL_BUY_DVSN_CD": "00",
+                    "INQR_DVSN": "00",
+                    "PDNO": "",
+                    "CCLD_DVSN": "00",
+                    "ORD_GNO_BRNO": "",
+                    "ODNO": "",
+                    "INQR_DVSN_3": "00",
+                    "INQR_DVSN_1": "",
+                    "CTX_AREA_FK100": cursor_fk,
+                    "CTX_AREA_NK100": cursor_nk,
+                    "EXCG_ID_DVSN_CD": "KRX",
+                },
+                continuation=continuation,
+            )
+            rows = _execution_page_rows(payload)
+            for row in rows:
+                order_no = _execution_order_no(row)
+                symbol = row.get("pdno", row.get("PDNO"))
+                if (
+                    not isinstance(order_no, str)
+                    or re.fullmatch(r"[0-9A-Za-z._:-]{1,64}", order_no) is None
+                    or not isinstance(symbol, str)
+                    or _SYMBOL.fullmatch(symbol) is None
+                ):
+                    raise ValueError("KIS mock account order row is invalid")
+                order_ref_hash = hashlib.sha256(
+                    f"kis-mock-order-receipt/v1\0{order_no}".encode()
+                ).hexdigest()
+                if order_ref_hash in seen:
+                    raise ValueError("KIS mock account order pages contain a duplicate")
+                seen.add(order_ref_hash)
+                raw_side = str(row.get("sll_buy_dvsn_cd", row.get("SLL_BUY_DVSN_CD", "")))
+                if raw_side not in {"01", "02"}:
+                    raise ValueError("KIS mock account order side is invalid")
+                ordered = _nonnegative(row.get("ord_qty"), "order quantity")
+                filled = _nonnegative(row.get("tot_ccld_qty"), "filled quantity")
+                leaves = _nonnegative(row.get("rmn_qty"), "leaves quantity")
+                cancelled_quantity = _nonnegative(row.get("cncl_cfrm_qty"), "cancelled quantity")
+                rejected_quantity = _nonnegative(row.get("rjct_qty"), "rejected quantity")
+                if (
+                    ordered <= 0
+                    or filled + leaves + cancelled_quantity + rejected_quantity != ordered
+                ):
+                    raise ValueError("KIS mock account order quantities are invalid")
+                cancelled = cancelled_quantity > 0 or str(row.get("cncl_yn") or "") == "Y"
+                rejected = rejected_quantity > 0
+                orders.append(
+                    KISMockExternalOrder(
+                        order_ref_hash=order_ref_hash,
+                        symbol=symbol,
+                        side="BUY" if raw_side == "02" else "SELL",
+                        ordered_quantity=ordered,
+                        filled_quantity=filled,
+                        leaves_quantity=leaves,
+                        cancelled=cancelled,
+                        rejected=rejected,
+                    )
+                )
+            has_more, cursor_fk, cursor_nk = _pagination_state(payload)
+            if not has_more:
+                return tuple(orders)
+            if page_index + 1 >= _MAX_ACCOUNT_SYNC_EXECUTION_PAGES:
+                raise ValueError("KIS mock account order history exceeds the page limit")
+            continuation = "N"
+        raise ValueError("KIS mock account order history is incomplete")
 
     def read(
         self,
@@ -524,9 +666,7 @@ def _strict_execution_rows(
     *,
     require_nonempty: bool,
 ) -> list[dict[str, Any]]:
-    if _has_continuation_cursor(payload.get("ctx_area_fk100")) or _has_continuation_cursor(
-        payload.get("ctx_area_nk100")
-    ):
+    if _pagination_state(payload)[0]:
         raise ValueError("KIS mock execution response requires another bounded page")
     rows = payload.get("output1")
     min_rows = 1 if require_nonempty else 0
@@ -540,9 +680,7 @@ def _strict_execution_rows(
 def _execution_source_probe_rows(payload: dict[str, Any]) -> list[dict[str, Any]]:
     """exact probe 전용 parser: no-data 표현은 snapshot 없이 source-shape로만 닫는다."""
 
-    if _has_continuation_cursor(payload.get("ctx_area_fk100")) or _has_continuation_cursor(
-        payload.get("ctx_area_nk100")
-    ):
+    if _pagination_state(payload)[0]:
         raise ValueError("KIS mock execution response requires another bounded page")
     rows = payload.get("output1")
     if rows is None or rows == "" or rows == {}:
@@ -554,6 +692,42 @@ def _execution_source_probe_rows(payload: dict[str, Any]) -> list[dict[str, Any]
     if not all(isinstance(row, dict) for row in rows):
         raise ValueError("KIS mock execution response is incomplete")
     return rows
+
+
+def _execution_page_rows(payload: dict[str, Any]) -> list[dict[str, Any]]:
+    """Validate one page's bounded row shape while leaving cursor handling to the caller."""
+    rows = payload.get("output1")
+    if rows is None or rows == "" or rows == {}:
+        return []
+    if isinstance(rows, dict):
+        return [rows]
+    if not isinstance(rows, list) or len(rows) > _MAX_MOCK_EXECUTION_ROWS:
+        raise ValueError("KIS mock execution response is incomplete")
+    if not all(isinstance(row, dict) for row in rows):
+        raise ValueError("KIS mock execution response is incomplete")
+    return rows
+
+
+def _pagination_state(payload: dict[str, Any]) -> tuple[bool, str, str]:
+    """Reconcile KIS tr_cont with body cursors; disagreement is an incomplete snapshot."""
+    cursor_fk = str(payload.get("ctx_area_fk100") or "").strip()
+    cursor_nk = str(payload.get("ctx_area_nk100") or "").strip()
+    has_cursor = bool(cursor_fk or cursor_nk)
+    if "_tr_cont" not in payload:
+        return has_cursor, cursor_fk, cursor_nk
+    raw_header = payload.get("_tr_cont")
+    if not isinstance(raw_header, str):
+        raise ValueError("KIS mock continuation header is invalid")
+    header = raw_header.strip().upper()
+    if header in {"M", "F"}:
+        if not has_cursor:
+            raise ValueError("KIS mock continuation header has no cursor")
+        return True, cursor_fk, cursor_nk
+    if header in {"", "D", "E"}:
+        if has_cursor:
+            raise ValueError("KIS mock cursor has no continuation header")
+        return False, "", ""
+    raise ValueError("KIS mock continuation header is unknown")
 
 
 def _execution_source_probe_hash(reference: MockProviderOrderReference) -> str:

@@ -72,6 +72,17 @@ class DecisionService(
             val pinned =
                 automationPinned ?: principleSnapshotPort.findActiveOwned(actor.userId, command.principleId)
                     ?: throw DecisionNotFoundException()
+            val riskExcludedPositionSymbols =
+                if (automationRunId == null) {
+                    emptySet()
+                } else {
+                    principleSnapshotPort.findAutomationRiskExcludedSymbols(
+                        actor.userId,
+                        command.principleId,
+                        automationRunId,
+                        requireNotNull(automationClaimHash),
+                    )
+                }
             metricMode = DecisionMetricMode.valueOf(pinned.mode.name)
             val claim =
                 when (val lookup = claimService.acquire(identity.scopeHash, identity.requestHash)) {
@@ -87,6 +98,8 @@ class DecisionService(
                     evaluationAsOf = evaluationAsOf,
                     pinned = pinned,
                     claim = claim,
+                    riskExcludedPositionSymbols = riskExcludedPositionSymbols,
+                    automationRiskScope = automationRunId != null,
                 ),
                 startedAtNanos,
             )
@@ -156,6 +169,8 @@ class DecisionService(
         evaluationAsOf: java.time.Instant,
         pinned: com.capstone.decision.application.risk.port.ActivePrincipleSnapshot,
         claim: DecisionIdempotencyClaim,
+        riskExcludedPositionSymbols: Set<String>,
+        automationRiskScope: Boolean,
     ): DecisionProjection {
         try {
             val evaluationId = id("evl")
@@ -170,6 +185,8 @@ class DecisionService(
                         evaluationAsOf = evaluationAsOf,
                         orderIntent = command.orderIntent,
                         decisionId = decisionId,
+                        riskExcludedPositionSymbols = riskExcludedPositionSymbols,
+                        automationRiskScope = automationRiskScope,
                     ),
                     pinned,
                 )

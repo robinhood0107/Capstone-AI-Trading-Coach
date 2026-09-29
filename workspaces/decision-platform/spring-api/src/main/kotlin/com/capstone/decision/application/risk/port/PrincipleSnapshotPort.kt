@@ -28,6 +28,14 @@ interface PrincipleSnapshotPort {
         claimHash: String,
     ): ActivePrincipleSnapshot? = null
 
+    /** Owner-authorized manual holdings excluded from this automation decision's exposure limits. */
+    fun findAutomationRiskExcludedSymbols(
+        actorUserId: String,
+        principleId: PrincipleId,
+        runId: String,
+        claimHash: String,
+    ): Set<String> = emptySet()
+
     fun findActiveOwned(
         actorUserId: String,
         principleId: PrincipleId,

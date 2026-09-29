@@ -15,6 +15,7 @@ from app.brokerage.kis_mock_portfolio_writer import (
 )
 from app.data.decision.deterministic_observation_writer import (
     append_deterministic_metric_fixture,
+    append_deterministic_metric_fixtures,
     load_deterministic_metric_fixture,
 )
 from app.data.kis.market_quote_observation_writer import (
@@ -196,6 +197,45 @@ def test_deterministic_fixture_appends_complete_zero_and_previous_session_metric
     assert orders[0] == "2026-06-24"
     assert orders[1] == 0
     assert orders[3] == "COMPLETE"
+
+
+def test_account_and_automation_risk_metrics_append_in_one_idempotent_batch(
+    postgres_cluster: PostgresTestCluster,
+    tmp_path: Path,
+) -> None:
+    _reset_source_rows(postgres_cluster)
+    account_metric = json.loads(DETERMINISTIC_FIXTURE.read_text(encoding="utf-8"))
+    automation_metric = json.loads(json.dumps(account_metric))
+    automation_metric["sourceVersion"] = "p1-automation-risk-v1"
+    batch_path = tmp_path / "deterministic-metric-batch.json"
+    batch_path.write_text(
+        json.dumps({"fixtures": [account_metric, automation_metric]}, sort_keys=True),
+        encoding="utf-8",
+    )
+
+    inserted = append_deterministic_metric_fixtures(
+        batch_path,
+        database_dsn=postgres_cluster["risk_writer_dsn"],
+    )
+    replay = append_deterministic_metric_fixtures(
+        batch_path,
+        database_dsn=postgres_cluster["risk_writer_dsn"],
+    )
+    with psycopg.connect(postgres_cluster["admin_dsn"]) as connection:
+        rows = connection.execute(
+            """
+            SELECT source_version,count(*)
+            FROM deterministic_risk_observations
+            GROUP BY source_version
+            ORDER BY source_version
+            """
+        ).fetchall()
+
+    assert inserted == 4
+    assert replay == 0
+    assert rows == sorted(
+        [("p1-automation-risk-v1", 1), (account_metric["sourceVersion"], 1)]
+    )
 
 
 @pytest.mark.parametrize(

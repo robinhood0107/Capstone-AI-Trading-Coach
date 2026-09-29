@@ -11,8 +11,9 @@ import re
 import socket
 import ssl
 from collections.abc import Callable, Mapping
-from dataclasses import dataclass
-from datetime import date, datetime
+from dataclasses import dataclass, replace
+from datetime import UTC, date, datetime
+from decimal import Decimal, InvalidOperation, ROUND_FLOOR
 from typing import Any, Protocol, cast
 from zoneinfo import ZoneInfo
 
@@ -21,7 +22,10 @@ import psycopg
 from pydantic import SecretStr
 
 from app.brokerage.kis_mock_online_client import KISBrokerageCallBudget, KISMockBrokerageHttpClient
-from app.brokerage.kis_mock_online_runtime import KISMockExecutionReader, KISMockOnlineBalanceReader
+from app.brokerage.kis_mock_online_runtime import (
+    KISMockExecutionReader,
+    KISMockOnlineBalanceReader,
+)
 from app.brokerage.mock_order_reference_store import (
     EncryptedRedisOrderReferenceStore,
     MockProviderOrderReference,
@@ -63,6 +67,7 @@ from app.p1_owner.automation import (
     ReconcileOutcome,
     SubmitOutcome,
     _limit_price,
+    _physical_call_cap,
 )
 from app.p1_owner.vertex_corpus_evidence import (
     CorpusDocumentSource,
@@ -73,7 +78,9 @@ from app.p1_owner.vertex_source_registry import registered_source_for_uri
 from app.p1_owner.vertex_transport import VertexAiVetoTransport, VertexTransportSettings
 from app.p1_owner.automation_runtime import (
     AccountLineageAdvance,
+    AutomationObservationUnavailable,
     AutomationRuntimeError,
+    PostgresAutomationRuntimeRepository,
     RuntimeClaim,
     inputs_from_state,
 )
@@ -487,6 +494,28 @@ class KisAutomationExecutionSource:
             ],
         }
 
+    def account_sync_snapshot(
+        self, account_id: str, session_date: date
+    ) -> tuple[dict[str, object], int, str]:
+        """Read a complete current balance and bounded same-session order history."""
+        balance = self.balance(account_id)
+        orders = self._reader.read_session_orders(session_date=session_date)
+        order_projection = [
+            {
+                "cancelled": item.cancelled,
+                "filledQuantity": item.filled_quantity,
+                "leavesQuantity": item.leaves_quantity,
+                "orderRefHash": item.order_ref_hash,
+                "orderedQuantity": item.ordered_quantity,
+                "rejected": item.rejected,
+                "side": item.side,
+                "symbol": item.symbol,
+            }
+            for item in orders
+        ]
+        orders_sha256 = hashlib.sha256(canonical_json_bytes(order_projection)).hexdigest()
+        return balance, sum(item.unresolved for item in orders), orders_sha256
+
     def read(self, order_id: str, account_id: str, session_date: date) -> ReconcileSnapshot:
         reference = self._reference(order_id, account_id)
         try:
@@ -579,12 +608,22 @@ class LiveAutomationPort:
         vertex_transport: VertexVetoTransport,
         corpus_source: CorpusDocumentSource | None = None,
         order_book_source: KisOrderBookSource | None = None,
+        account_sync_repository: PostgresAutomationRuntimeRepository | None = None,
     ) -> None:
         self._claim = claim
-        # 포트폴리오 재평가가 위험지표 분모(세션 기준 자본)를 만들 때 쓴다.
-        baseline = state.get("expectedAccountProjection", state.get("baselineAccountProjection"))
+        # 세션 기준 자본은 account-sync가 바꾸는 expected projection과 분리한다.
+        baseline = state.get("baselineAccountProjection", state.get("expectedAccountProjection"))
         self._baseline_projection: dict[str, Any] = (
             dict(baseline) if isinstance(baseline, dict) else {}
+        )
+        self._runtime_state = dict(state)
+        stored_risk_baseline = state.get("automationRiskBaselineEquityKrw")
+        self._risk_baseline_equity_krw = (
+            stored_risk_baseline
+            if isinstance(stored_risk_baseline, int)
+            and not isinstance(stored_risk_baseline, bool)
+            and stored_risk_baseline > 0
+            else None
         )
         self._corpus_source: CorpusDocumentSource = corpus_source or EmptyCorpusDocumentSource()
         self._bridge = bridge
@@ -593,6 +632,9 @@ class LiveAutomationPort:
         self._vertex_transport = vertex_transport
         # 체결 품질 원장용. 없으면 기록을 건너뛴다 - 거래에는 영향이 없다.
         self._order_book = order_book_source
+        self._account_sync_repository = account_sync_repository
+        self._account_sync_enabled = os.environ.get("MARS_PUBLIC_SURFACE_MODE", "LOCAL") == "FULL"
+        self._account_sync_changed = False
         self._cached_quotes: dict[str, Quote] = {}
         raw_screenings = state.get("screenings")
         if isinstance(raw_screenings, list):
@@ -633,6 +675,7 @@ class LiveAutomationPort:
         self._last_execution_ref_hash: str | None = None
         self._completed_balance: dict[str, object] | None = None
         self._latest_balance: dict[str, object] | None = None
+        self._risk_excluded_symbols: frozenset[str] = frozenset()
         self._latest_buyables: dict[str, dict[str, object]] = {}
         expected = state.get("expectedAccountProjection", state.get("baselineAccountProjection"))
         self._expected_projection: dict[str, Any] | None = (
@@ -692,9 +735,11 @@ class LiveAutomationPort:
             quote = run.selected_quote or self._quote(symbol)
             exact_limit_price = _limit_price(quote, _required_side(run.selected_side))
             self._require_capacity(1)
-            balance = self._execution_source.balance(self._claim.account_id)
+            balance = self._latest_balance
+            if balance is None:
+                balance = self._execution_source.balance(self._claim.account_id)
+                self.physical_calls += 1
             self._latest_balance = dict(balance)
-            self.physical_calls += 1
             if balance.get("accountId") != self._claim.account_id:
                 raise AutomationRuntimeError("AUTOMATION_BALANCE_IDENTITY_MISMATCH")
             expected = state.get(
@@ -702,10 +747,20 @@ class LiveAutomationPort:
             )
             if not isinstance(expected, dict):
                 raise AutomationRuntimeError("AUTOMATION_BASELINE_PROJECTION_MISSING")
+            risk_excluded = _unmanaged_manual_position_symbols(balance, state)
+            self._risk_excluded_symbols = risk_excluded
+            risk_balance = _risk_balance_projection(balance, risk_excluded)
+            self._runtime_state = dict(state)
             account_complete = _risk_complete(balance, state)
             # 원칙 한도는 durable state가, 곱할 평가액은 live 잔고가 준다. 둘 다 있어야
             # 사이저가 사용자 원칙 안쪽에서 수량을 만든다.
-            runtime_state["openPositionMarketValueKrw"] = _open_position_value(balance)
+            runtime_state["openPositionMarketValueKrw"] = _open_position_value(risk_balance)
+            if risk_excluded:
+                runtime_state["principleAssetRemainingKrw"] = _risk_asset_remaining(
+                    state,
+                    risk_balance,
+                    symbol,
+                )
             try:
                 expected_lineage = AccountLineageSnapshot.from_projection(expected)
                 observed_lineage = AccountLineageSnapshot.from_projection(balance)
@@ -738,9 +793,8 @@ class LiveAutomationPort:
             # 다음 tick 이 RISK_CHECKING 이고 RiskEngine 은 관측 표에서 잔고와 위험지표를
             # 읽는다. 그 표를 채우는 것이 운영자 CLI 뿐이어서, 사람이 매일 손으로 적재하지
             # 않으면 `violations` 는 비어 있는데 입력 부재로 HOLD 됐다. 잔고를 받는 프로세스는
-            # 이 런타임뿐이므로 여기서 같은 tick 안에 적재한다. 실패는 마커만 남기고 삼킨다 -
-            # 관측이 없으면 RiskEngine 이 HOLD 하므로 결과가 이미 fail-closed 이고, 예외를
-            # 올리면 세션이 HALTED 로 닫혀 사람이 손대야 다시 열린다.
+            # 이 런타임뿐이므로 여기서 같은 tick 안에 적재한다. 두 위험 projection이 모두
+            # 성공하지 않으면 EVALUATE를 호출하지 않고 같은 멱등 tick을 재시도한다.
             runtime_state["observationPublish"] = publish_runtime_observations(
                 owner_user_id=self._claim.user_id,
                 account_id=self._claim.account_id,
@@ -749,11 +803,20 @@ class LiveAutomationPort:
                 # 만족할 수 없다. 지금 주문하려는 종목과 보유 종목의 실시간 호가는 이 시점에
                 # 이 프로세스에만 있다. 그것을 같은 tick 안에 적재해야 RiskEngine 의
                 # current_price_krw / order_amount_krw / asset_weight 가 값을 갖는다.
-                quotes=self._observation_quotes(symbol, balance),
+                quotes=self._observation_quotes(symbol, risk_balance),
                 baseline_equity_krw=_projection_equity(expected, balance),
+                risk_baseline_equity_krw=self._risk_baseline_equity(
+                    risk_balance,
+                    risk_excluded,
+                    state,
+                    as_of=now,
+                ),
                 trading_date=self._claim.session_date.isoformat(),
+                risk_excluded_symbols=tuple(sorted(risk_excluded)),
             )
-        return inputs_from_state(
+            if runtime_state["observationPublish"] != "PUBLISHED":
+                raise AutomationObservationUnavailable("AUTOMATION_RISK_OBSERVATION_UNAVAILABLE")
+        inputs = inputs_from_state(
             runtime_state,
             risk_allow=risk_allow,
             buyable_quantity=buyable_quantity,
@@ -761,6 +824,102 @@ class LiveAutomationPort:
             account_complete=account_complete,
             account_digest_matches=account_digest_matches,
         )
+        if self._account_sync_changed and run.state == "ORDER_SUBMITTING":
+            return replace(inputs, account_sync_changed=True)
+        return inputs
+
+    def sync_account(
+        self,
+        *,
+        state: dict[str, Any],
+        run: AutomationRun | None,
+        now: datetime,
+        next_session: date,
+        recover_halted: bool = False,
+    ) -> dict[str, Any] | None:
+        """Refresh KIS account state before a decision or physical order submission."""
+        repository = self._account_sync_repository
+        reader = getattr(self._execution_source, "account_sync_snapshot", None)
+        if not self._account_sync_enabled:
+            return None
+        if repository is None or not callable(reader):
+            raise AutomationRuntimeError("AUTOMATION_ACCOUNT_SYNC_UNAVAILABLE")
+        expected_projection = state.get(
+            "expectedAccountProjection", state.get("baselineAccountProjection")
+        )
+        if not isinstance(expected_projection, dict):
+            raise AutomationRuntimeError("AUTOMATION_BASELINE_PROJECTION_MISSING")
+        expected_digest = state.get("expectedAccountDigest")
+        if not isinstance(expected_digest, str) or _SHA256.fullmatch(expected_digest) is None:
+            raise AutomationRuntimeError("AUTOMATION_EXPECTED_ACCOUNT_DIGEST_MISSING")
+        expected = AccountLineageSnapshot.from_projection(expected_projection)
+        call_cap = _physical_call_cap(run) if run is not None else 64
+        if self.physical_calls > call_cap - 8:
+            raise AutomationRuntimeError("AUTOMATION_PROVIDER_CALL_CAP_EXHAUSTED")
+        before = int(getattr(self._execution_source, "physical_call_count", 0))
+        balance, open_order_count, order_snapshot_sha256 = reader(
+            self._claim.account_id, now.astimezone(_KST).date()
+        )
+        after = int(getattr(self._execution_source, "physical_call_count", before))
+        self.physical_calls += max(0, after - before)
+        if balance.get("accountId") != self._claim.account_id:
+            raise AutomationRuntimeError("AUTOMATION_BALANCE_IDENTITY_MISMATCH")
+        if balance.get("positionsComplete") is not True:
+            raise AutomationRuntimeError("AUTOMATION_BALANCE_PAGINATION_REQUIRED")
+        try:
+            observed = AccountLineageSnapshot.from_projection(balance)
+        except (AutomationError, TypeError, ValueError) as error:
+            raise AutomationRuntimeError("AUTOMATION_ACCOUNT_LINEAGE_INVALID") from error
+        changed = not expected.exact_match(observed)
+        risk_excluded = _unmanaged_manual_position_symbols(balance, state)
+        self._risk_excluded_symbols = risk_excluded
+        risk_balance = _risk_balance_projection(balance, risk_excluded)
+        self._latest_balance = dict(balance)
+        self._runtime_state = dict(state)
+        self._account_sync_changed = changed
+        # No order may be submitted against an account whose prior external order is open.
+        if open_order_count:
+            raise AutomationRuntimeError("AUTOMATION_EXTERNAL_ORDER_PENDING")
+        risk_baseline_equity = self._risk_baseline_equity(
+            risk_balance,
+            risk_excluded,
+            state,
+            recover_halted=recover_halted,
+            as_of=now,
+        )
+        if changed:
+            baseline_equity = _projection_equity(expected_projection, balance)
+            marker = publish_runtime_observations(
+                owner_user_id=self._claim.user_id,
+                account_id=self._claim.account_id,
+                balance=balance,
+                quotes=self._observation_quotes("", risk_balance),
+                baseline_equity_krw=baseline_equity,
+                trading_date=self._claim.session_date.isoformat(),
+                risk_excluded_symbols=tuple(sorted(risk_excluded)),
+                risk_baseline_equity_krw=risk_baseline_equity,
+            )
+            if marker != "PUBLISHED":
+                raise AutomationObservationUnavailable("AUTOMATION_ACCOUNT_OBSERVATION_UNAVAILABLE")
+        result = repository.reconcile_external_account(
+            self._claim,
+            account_projection=balance,
+            expected_account_digest=expected_digest,
+            order_snapshot_sha256=order_snapshot_sha256,
+            open_order_count=open_order_count,
+            next_session=next_session,
+            recover_halted=recover_halted,
+        )
+        self._expected_projection = {
+            "accountId": observed.account_id,
+            "cashKrw": str(observed.cash_krw),
+            "schemaVersion": 2,
+            "positions": [
+                {"quantity": str(quantity), "symbol": symbol}
+                for symbol, quantity in observed.positions
+            ],
+        }
+        return result
 
     def quote(self, symbol: str) -> Quote:
         return self._quote(symbol)
@@ -1007,11 +1166,38 @@ class LiveAutomationPort:
         # 같은 tick 안에서 발행하는데 이 경로에는 없어서, 포트폴리오 주문은 BALANCE_STALE·
         # PRICE_MISSING·RISK_SNAPSHOT_MISSING 으로 늘 HOLD 됐다. 같은 발행을 여기서도 한다.
         self._require_capacity(1)
-        balance = self._execution_source.balance(self._claim.account_id)
-        self.physical_calls += 1
-        if balance.get("accountId") != self._claim.account_id:
-            raise AutomationRuntimeError("AUTOMATION_BALANCE_IDENTITY_MISMATCH")
-        self._latest_balance = dict(balance)
+        risk_as_of = datetime.now(UTC)
+        state_reader = getattr(self._account_sync_repository, "read_state", None)
+        if self._account_sync_enabled:
+            if self._account_sync_repository is None or not callable(state_reader):
+                raise AutomationRuntimeError("AUTOMATION_ACCOUNT_SYNC_UNAVAILABLE")
+            refreshed_state = state_reader(self._claim)
+            if not isinstance(refreshed_state, dict):
+                raise AutomationRuntimeError("AUTOMATION_STATE_UNAVAILABLE")
+            self._runtime_state = dict(refreshed_state)
+            self.sync_account(
+                state=self._runtime_state,
+                run=None,
+                now=risk_as_of,
+                next_session=self._claim.session_date,
+            )
+            refreshed_state = state_reader(self._claim)
+            if not isinstance(refreshed_state, dict) or self._latest_balance is None:
+                raise AutomationRuntimeError("AUTOMATION_STATE_UNAVAILABLE")
+            self._runtime_state = dict(refreshed_state)
+            balance = self._latest_balance
+        else:
+            balance = self._execution_source.balance(self._claim.account_id)
+            self.physical_calls += 1
+            if balance.get("accountId") != self._claim.account_id:
+                raise AutomationRuntimeError("AUTOMATION_BALANCE_IDENTITY_MISMATCH")
+            if balance.get("positionsComplete") is not True:
+                raise AutomationRuntimeError("AUTOMATION_BALANCE_PAGINATION_REQUIRED")
+            self._latest_balance = dict(balance)
+        risk_excluded = _unmanaged_manual_position_symbols(balance, self._runtime_state)
+        self._risk_excluded_symbols = risk_excluded
+        risk_balance = _risk_balance_projection(balance, self._risk_excluded_symbols)
+        expected_projection = self._expected_projection or self._baseline_projection
         # 재기동 뒤 이어받은 실행은 계획 단계를 거치지 않아 주문 종목 시세가 캐시에 없다.
         # 없으면 시세 관측이 빠져 PRICE_MISSING 으로 HOLD 된다.
         self._quote(intent.symbol)
@@ -1019,10 +1205,19 @@ class LiveAutomationPort:
             owner_user_id=self._claim.user_id,
             account_id=self._claim.account_id,
             balance=balance,
-            quotes=self._observation_quotes(intent.symbol, balance),
-            baseline_equity_krw=_projection_equity(self._baseline_projection, balance),
+            quotes=self._observation_quotes(intent.symbol, risk_balance),
+            baseline_equity_krw=_projection_equity(expected_projection, balance),
+            risk_baseline_equity_krw=self._risk_baseline_equity(
+                risk_balance,
+                risk_excluded,
+                self._runtime_state,
+                as_of=risk_as_of,
+            ),
             trading_date=self._claim.session_date.isoformat(),
+            risk_excluded_symbols=tuple(sorted(self._risk_excluded_symbols)),
         )
+        if marker != "PUBLISHED":
+            raise AutomationObservationUnavailable("AUTOMATION_RISK_OBSERVATION_UNAVAILABLE")
         print(f"AUTOMATION_PORTFOLIO_OBSERVATION={marker}", flush=True)
         response = self._bridge.command(
             "EVALUATE",
@@ -1047,6 +1242,57 @@ class LiveAutomationPort:
             if risk.get("decision") == "ALLOW" and risk.get("canSubmitOrder") is True
             else None
         )
+
+    def _risk_baseline_equity(
+        self,
+        risk_balance: Mapping[str, Any],
+        excluded_symbols: frozenset[str],
+        state: Mapping[str, Any],
+        *,
+        recover_halted: bool = False,
+        as_of: datetime,
+    ) -> int:
+        observed_equity = risk_balance.get("portfolioEquityKrw")
+        if (
+            not isinstance(observed_equity, int)
+            or isinstance(observed_equity, bool)
+            or observed_equity <= 0
+        ):
+            raise AutomationRuntimeError("AUTOMATION_RISK_EQUITY_INVALID")
+        observed_cash = risk_balance.get("cashKrw")
+        if (
+            not isinstance(observed_cash, int)
+            or isinstance(observed_cash, bool)
+            or observed_cash < 0
+        ):
+            raise AutomationRuntimeError("AUTOMATION_RISK_CASH_INVALID")
+        baseline_reader = getattr(
+            self._account_sync_repository, "get_or_initialize_risk_baseline", None
+        )
+        if callable(baseline_reader):
+            baseline = baseline_reader(
+                self._claim,
+                observed_equity,
+                observed_cash,
+                recover_halted=recover_halted,
+                as_of=as_of,
+            )
+        elif self._risk_baseline_equity_krw is not None:
+            baseline = self._risk_baseline_equity_krw
+        else:
+            raw_initial = state.get("baselineAccountProjection")
+            initial = raw_initial if isinstance(raw_initial, dict) else self._baseline_projection
+            if initial:
+                baseline = _projection_equity(
+                    _risk_expected_projection(initial, excluded_symbols),
+                    risk_balance,
+                )
+            else:
+                baseline = observed_equity
+        if not isinstance(baseline, int) or isinstance(baseline, bool) or baseline <= 0:
+            raise AutomationRuntimeError("AUTOMATION_RISK_BASELINE_INVALID")
+        self._risk_baseline_equity_krw = baseline
+        return baseline
 
     def portfolio_submit(
         self,
@@ -1207,6 +1453,11 @@ class LiveAutomationPort:
 class LiveAutomationPortFactory:
     """supervisor process에서만 production dependencies를 지연 생성한다."""
 
+    def __init__(
+        self, account_sync_repository: PostgresAutomationRuntimeRepository | None = None
+    ) -> None:
+        self._account_sync_repository = account_sync_repository
+
     def build(self, claim: RuntimeClaim, state: dict[str, Any]) -> LiveAutomationPort:
         shared_secret = os.environ.get("AUTOMATION_RUNTIME_SHARED_SECRET", "").strip()
         bridge = SpringAutomationBridgeClient(shared_secret)
@@ -1252,6 +1503,7 @@ class LiveAutomationPortFactory:
                 _vertex_veto_transport(owner_user_id=claim.user_id, run_id=claim.run_id),
                 _corpus_source(),
                 order_book_source,
+                self._account_sync_repository,
             )
         except Exception:
             bridge.close()
@@ -1725,10 +1977,122 @@ def _risk_complete(balance: dict[str, Any], state: dict[str, Any]) -> bool:
     if not isinstance(catalog, list):
         return False
     classified = {str(symbol) for symbol in catalog}
+    try:
+        excluded_manual = _unmanaged_manual_position_symbols(balance, state)
+    except AutomationRuntimeError:
+        return False
     positions = balance.get("positions")
     if not isinstance(positions, list):
         return False
     for item in positions:
-        if not isinstance(item, dict) or str(item.get("symbol", "")) not in classified:
+        if not isinstance(item, dict):
+            return False
+        symbol = str(item.get("symbol", ""))
+        if symbol not in classified and symbol not in excluded_manual:
             return False
     return True
+
+
+def _unmanaged_manual_position_symbols(
+    balance: Mapping[str, Any], state: Mapping[str, Any]
+) -> frozenset[str]:
+    """Current account holdings outside active bot ownership, from the live KIS snapshot."""
+
+    raw_holdings = balance.get("positions")
+    raw_positions = state.get("positions", [])
+    if (
+        not isinstance(raw_holdings, list)
+        or not all(isinstance(holding, dict) for holding in raw_holdings)
+        or not all(
+            isinstance(holding.get("symbol"), str)
+            and len(str(holding.get("symbol"))) == 6
+            and str(holding.get("symbol")).isdigit()
+            for holding in raw_holdings
+        )
+        or not isinstance(raw_positions, list)
+        or not all(isinstance(position, dict) for position in raw_positions)
+    ):
+        raise AutomationRuntimeError("AUTOMATION_MANUAL_POSITIONS_INVALID")
+    active_bot_symbols = {
+        str(position.get("symbol", ""))
+        for position in raw_positions
+        if position.get("status") in {"OPEN", "EXIT_PENDING"}
+    }
+    return frozenset(str(holding["symbol"]) for holding in raw_holdings) - active_bot_symbols
+
+
+def _risk_balance_projection(
+    balance: Mapping[str, Any], excluded_symbols: frozenset[str]
+) -> dict[str, Any]:
+    """Copy the complete broker snapshot with manual positions removed for bot risk limits."""
+
+    result = dict(balance)
+    raw_positions = balance.get("positions")
+    if not isinstance(raw_positions, list) or not all(
+        isinstance(item, dict) for item in raw_positions
+    ):
+        raise AutomationRuntimeError("AUTOMATION_BALANCE_INVALID")
+    if not excluded_symbols:
+        result["positions"] = list(raw_positions)
+        return result
+    full_equity = balance.get("portfolioEquityKrw")
+    if not isinstance(full_equity, int) or isinstance(full_equity, bool):
+        raise AutomationRuntimeError("AUTOMATION_BALANCE_INVALID")
+    filtered = [
+        item for item in raw_positions if str(item.get("symbol", "")) not in excluded_symbols
+    ]
+    excluded_value = sum(
+        int(item.get("marketValueKrw", 0) or 0)
+        for item in raw_positions
+        if str(item.get("symbol", "")) in excluded_symbols
+    )
+    equity = full_equity - excluded_value
+    if equity <= 0:
+        raise AutomationRuntimeError("AUTOMATION_RISK_EQUITY_INVALID")
+    result["positions"] = filtered
+    result["portfolioEquityKrw"] = equity
+    return result
+
+
+def _risk_expected_projection(
+    projection: Mapping[str, Any], excluded_symbols: frozenset[str]
+) -> dict[str, Any]:
+    result = dict(projection)
+    positions = projection.get("positions")
+    if not isinstance(positions, list):
+        raise AutomationRuntimeError("AUTOMATION_BASELINE_PROJECTION_MISSING")
+    result["positions"] = [
+        item
+        for item in positions
+        if isinstance(item, dict) and str(item.get("symbol", "")) not in excluded_symbols
+    ]
+    if len(result["positions"]) != len(positions):
+        return result
+    return result
+
+
+def _risk_asset_remaining(
+    state: Mapping[str, Any],
+    balance: Mapping[str, Any],
+    symbol: str,
+) -> int:
+    raw_limit = state.get("principleAssetWeightLimit")
+    if raw_limit is None:
+        return int(state.get("principleAssetRemainingKrw", 9_223_372_036_854_775_807))
+    try:
+        limit = Decimal(str(raw_limit))
+        equity = Decimal(str(balance["portfolioEquityKrw"]))
+        positions = balance.get("positions")
+        if not limit.is_finite() or not Decimal(0) < limit <= Decimal(1):
+            raise ValueError("principle asset weight limit is invalid")
+        if not isinstance(positions, list):
+            raise ValueError("risk balance positions are invalid")
+        current_value = sum(
+            int(item.get("marketValueKrw", 0) or 0)
+            for item in positions
+            if isinstance(item, dict) and item.get("symbol") == symbol
+        )
+        maximum = int((limit * equity).to_integral_value(rounding=ROUND_FLOOR))
+        return max(0, maximum - current_value)
+    except (InvalidOperation, KeyError, TypeError, ValueError):
+        raise AutomationRuntimeError("AUTOMATION_ASSET_WEIGHT_LIMIT_INVALID") from None

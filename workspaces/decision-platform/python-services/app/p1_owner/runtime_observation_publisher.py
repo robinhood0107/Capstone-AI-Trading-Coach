@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 import os
 import tempfile
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Final
@@ -14,7 +14,7 @@ from app.brokerage.kis_mock_portfolio_writer import append_kis_mock_portfolio_fi
 from app.data.kis.market_quote_observation_writer import append_market_quote_fixture
 from app.decision_source_cli import attest_source_writer_dsn
 from app.data.decision.deterministic_observation_writer import (
-    append_deterministic_metric_fixture,
+    append_deterministic_metric_fixtures,
 )
 from app.data.decision.observation_payloads import (
     GOLD_ETF_SYMBOLS,
@@ -25,6 +25,7 @@ from app.data.decision.observation_payloads import (
 )
 
 _SOURCE_VERSION: Final = "p1-runtime-observation-v1"
+_AUTOMATION_RISK_SOURCE_VERSION: Final = "p1-automation-risk-v1"
 # The automation projection reads only this balance source version.
 _BALANCE_SOURCE_VERSION: Final = "kis-mock-online-complete-v2"
 _PORTFOLIO_SOURCE: Final = "KIS_MOCK"
@@ -66,6 +67,8 @@ def publish_runtime_observations(
     trading_date: str,
     quotes: Mapping[str, int] | None = None,
     publish_risk_metrics: bool = True,
+    risk_excluded_symbols: Sequence[str] = (),
+    risk_baseline_equity_krw: int | None = None,
 ) -> str:
     """Publish pre-order observations and return a bounded outcome marker."""
 
@@ -80,6 +83,16 @@ def publish_runtime_observations(
         if isinstance(raw_positions, list)
         else []
     )
+    if (
+        not isinstance(risk_excluded_symbols, Sequence)
+        or len(risk_excluded_symbols) > 1_000
+        or any(
+            not isinstance(symbol, str) or len(symbol) != 6 or not symbol.isdigit()
+            for symbol in risk_excluded_symbols
+        )
+    ):
+        return "FAILED_ValueError"
+    excluded_symbols = set(risk_excluded_symbols)
     now = datetime.now(UTC)
     try:
         scope_hash = owner_scope_hash(account_id)
@@ -93,18 +106,38 @@ def publish_runtime_observations(
             source_version=_BALANCE_SOURCE_VERSION,
             gold_etf_symbols=GOLD_ETF_SYMBOLS,
         )
+        risk_equity_krw = int(portfolio["portfolioEquityKrw"]) - sum(
+            int(item["marketValueKrw"])
+            for item in positions
+            if str(item["symbol"]) in excluded_symbols
+        )
+        if risk_equity_krw <= 0:
+            return "FAILED_RISK_EQUITY_INVALID"
         metrics = (
-            deterministic_metrics_payload(
-                owner_user_id=owner_user_id,
-                scope_hash=scope_hash,
-                portfolio_source=_PORTFOLIO_SOURCE,
-                equity_krw=int(portfolio["portfolioEquityKrw"]),
-                baseline_equity_krw=baseline_equity_krw,
-                daily_order_count=0,
-                trading_date=trading_date,
-                now=now,
-                source_version=_SOURCE_VERSION,
-            )
+            [
+                deterministic_metrics_payload(
+                    owner_user_id=owner_user_id,
+                    scope_hash=scope_hash,
+                    portfolio_source=_PORTFOLIO_SOURCE,
+                    equity_krw=int(portfolio["portfolioEquityKrw"]),
+                    baseline_equity_krw=baseline_equity_krw,
+                    daily_order_count=0,
+                    trading_date=trading_date,
+                    now=now,
+                    source_version=_SOURCE_VERSION,
+                ),
+                deterministic_metrics_payload(
+                    owner_user_id=owner_user_id,
+                    scope_hash=scope_hash,
+                    portfolio_source=_PORTFOLIO_SOURCE,
+                    equity_krw=risk_equity_krw,
+                    baseline_equity_krw=risk_baseline_equity_krw or baseline_equity_krw,
+                    daily_order_count=0,
+                    trading_date=trading_date,
+                    now=now,
+                    source_version=_AUTOMATION_RISK_SOURCE_VERSION,
+                ),
+            ]
             if publish_risk_metrics
             else None
         )
@@ -138,8 +171,8 @@ def publish_runtime_observations(
         )
         if metrics is not None:
             _write(
-                metrics,
-                append_deterministic_metric_fixture,
+                {"fixtures": metrics},
+                append_deterministic_metric_fixtures,
                 risk_dsn,
                 expected_role="decision_risk_writer",
                 allowed_insert_tables=(

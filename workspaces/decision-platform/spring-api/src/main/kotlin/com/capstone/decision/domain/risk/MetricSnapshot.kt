@@ -134,6 +134,7 @@ data class MetricSnapshot(
     val requestedOptionalComponents: List<String> = emptyList(),
     val observedOptionalComponentEvidence: List<OptionalComponentEvidence> = emptyList(),
     val disclosureEvidence: DisclosureEvidenceIdentity? = null,
+    val riskExcludedPositionSymbols: List<String> = emptyList(),
 ) {
     init {
         require(snapshotSchemaVersion.isNotBlank() && snapshotSchemaVersion.length <= EvaluationBounds.MAX_ID_OR_CODE_CHARS)
@@ -162,6 +163,8 @@ data class MetricSnapshot(
                 .distinct()
                 .size == observedOptionalComponentEvidence.size,
         )
+        require(riskExcludedPositionSymbols == riskExcludedPositionSymbols.distinct().sorted())
+        require(riskExcludedPositionSymbols.all { symbol -> symbol.length == 6 && symbol.all { it.isDigit() } })
     }
 
     fun metric(key: MetricKey): MetricCell<MetricValue> = metrics[key] ?: MetricCell.Missing(MetricIssueCode.SOURCE_MISSING)

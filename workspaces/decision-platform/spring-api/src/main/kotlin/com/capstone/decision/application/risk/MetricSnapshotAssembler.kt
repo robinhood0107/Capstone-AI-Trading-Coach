@@ -54,6 +54,8 @@ data class MetricAssemblyRequest(
     val readinessPolicyVersion: String,
     val acquisitionPlan: MetricAcquisitionPlan,
     val decisionId: String = evaluationId,
+    val riskExcludedPositionSymbols: Set<String> = emptySet(),
+    val automationRiskScope: Boolean = false,
 )
 
 data class PortfolioRiskAssemblyRequest(
@@ -180,6 +182,7 @@ class MetricSnapshotAssembler(
                 evaluationAsOf = request.evaluationAsOf,
                 evaluationId = request.evaluationId,
                 decisionId = request.decisionId,
+                automationRiskScope = request.automationRiskScope,
             )
         val plan = request.acquisitionPlan
         val price =
@@ -210,6 +213,11 @@ class MetricSnapshotAssembler(
             } else {
                 MetricCell.NotApplicable(MetricIssueCode.NOT_APPLICABLE)
             }
+        val riskBalance =
+            excludeRiskPositions(
+                balance,
+                request.riskExcludedPositionSymbols,
+            )
         val margin =
             if (plan.requires(MetricKey.MARGIN_REQUIREMENT_KRW)) {
                 validateNonNegativeWholeMetric(
@@ -351,12 +359,12 @@ class MetricSnapshotAssembler(
         val disclosure = (disclosureCell as? MetricCell.Available)?.value
         metrics[MetricKey.DISCLOSURE_RISK_SCORE] = disclosureMetric(disclosureCell)
 
-        addBalanceMetrics(metrics, balance, request.orderIntent.symbol)
+        addBalanceMetrics(metrics, riskBalance, request.orderIntent.symbol)
         metrics[MetricKey.ORDER_AMOUNT_KRW] = orderAmountMetric(price, request.orderIntent)
         metrics[MetricKey.ASSET_WEIGHT] =
-            assetWeightMetric(balance, price, request.orderIntent)
+            assetWeightMetric(riskBalance, price, request.orderIntent)
         metrics[MetricKey.GOLD_ETF_ETN_WEIGHT] =
-            goldWeightMetric(balance, price, instrumentCell, request.orderIntent)
+            goldWeightMetric(riskBalance, price, instrumentCell, request.orderIntent)
 
         val portfolioIdentity = portfolioIdentity(request.portfolioContext, balance)
         val optionalEvidence =
@@ -413,6 +421,7 @@ class MetricSnapshotAssembler(
                             sourceRefs = it.sourceRefs.sorted(),
                         )
                     },
+                riskExcludedPositionSymbols = request.riskExcludedPositionSymbols.sorted(),
             )
         return snapshot
     }
@@ -809,6 +818,38 @@ class MetricSnapshotAssembler(
             MetricCell.Incomplete(MetricIssueCode.SOURCE_INCOMPLETE)
         } else {
             cell
+        }
+    }
+
+    /** Keep manual holdings in the account identity while excluding them from bot risk limits. */
+    private fun excludeRiskPositions(
+        balance: MetricCell<BalanceSnapshot>,
+        excludedSymbols: Set<String>,
+    ): MetricCell<BalanceSnapshot> {
+        val available = balance as? MetricCell.Available ?: return balance
+        if (excludedSymbols.isEmpty()) return balance
+        return try {
+            val excludedValue =
+                available.value.positions
+                    .filter { it.symbol in excludedSymbols }
+                    .fold(0L) { total, position -> Math.addExact(total, position.marketValueKrw) }
+            val filteredEquity = Math.subtractExact(available.value.portfolioEquityKrw, excludedValue)
+            if (filteredEquity <= 0 || filteredEquity < available.value.cashKrw) return sourceError()
+            MetricCell.Available(
+                value =
+                    available.value.copy(
+                        portfolioEquityKrw = filteredEquity,
+                        positions = available.value.positions.filterNot { it.symbol in excludedSymbols },
+                    ),
+                observedAt = available.observedAt,
+                retrievedAt = available.retrievedAt,
+                freshUntil = available.freshUntil,
+                source = available.source,
+                sourceRef = available.sourceRef,
+                sourceVersion = available.sourceVersion,
+            )
+        } catch (_: ArithmeticException) {
+            sourceError()
         }
     }
 

@@ -61,6 +61,38 @@ class JdbcPrincipleSnapshotAdapter(
                 )
             }.singleOrNull()
 
+    override fun findAutomationRiskExcludedSymbols(
+        actorUserId: String,
+        principleId: PrincipleId,
+        runId: String,
+        claimHash: String,
+    ): Set<String> =
+        jdbc()
+            .query(
+                """
+                SELECT symbol FROM read_automation_risk_exclusions_authorized_v231(
+                  :capability,:actor,:principle,:run,:claim
+                )
+                """.trimIndent(),
+                mapOf(
+                    "capability" to
+                        actorCapabilityIssuer.issue(
+                            AuthenticatedActorRef.current(actorUserId),
+                            ActorCapabilityBinding.target(
+                                "READ_ACTIVE_PRINCIPLE",
+                                "PRINCIPLE",
+                                principleId.value,
+                                ActorCapabilityRolePolicy.OWNER,
+                            ),
+                        ),
+                    "actor" to actorUserId,
+                    "principle" to principleId.value,
+                    "run" to runId,
+                    "claim" to claimHash,
+                ),
+            ) { result, _ -> result.getString("symbol") }
+            .toSet()
+
     override fun findActiveOwned(
         actorUserId: String,
         principleId: PrincipleId,

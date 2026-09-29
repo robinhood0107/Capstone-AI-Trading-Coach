@@ -114,11 +114,10 @@ def load_deterministic_metric_batch_fixture(path: Path) -> tuple[DeterministicMe
         raise ValueError("deterministic metric batch size is invalid")
     fixtures: list[DeterministicMetricFixture] = []
     for item in raw_fixtures:
-        encoded = json.dumps(item, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode(
-            "utf-8"
-        )
-        fixtures.append(_metric_fixture(item, hashlib.sha256(encoded).hexdigest())
-        )
+        encoded = json.dumps(
+            item, ensure_ascii=False, sort_keys=True, separators=(",", ":")
+        ).encode("utf-8")
+        fixtures.append(_metric_fixture(item, hashlib.sha256(encoded).hexdigest()))
     return tuple(fixtures)
 
 

@@ -233,9 +233,7 @@ def test_account_and_automation_risk_metrics_append_in_one_idempotent_batch(
 
     assert inserted == 4
     assert replay == 0
-    assert rows == sorted(
-        [("p1-automation-risk-v1", 1), (account_metric["sourceVersion"], 1)]
-    )
+    assert rows == sorted([("p1-automation-risk-v1", 1), (account_metric["sourceVersion"], 1)])
 
 
 @pytest.mark.parametrize(

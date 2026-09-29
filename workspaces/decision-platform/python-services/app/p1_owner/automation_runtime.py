@@ -2348,9 +2348,14 @@ def _transient_continuation_error(error: BaseException) -> bool:
 
     cause: BaseException | None = error
     while cause is not None:
-        if isinstance(cause, (AutomationObservationUnavailable, KISTransportError, psycopg.OperationalError)):
+        if isinstance(
+            cause, (AutomationObservationUnavailable, KISTransportError, psycopg.OperationalError)
+        ):
             return True
-        if isinstance(cause, AutomationRuntimeError) and str(cause) == "AUTOMATION_EXTERNAL_ORDER_PENDING":
+        if (
+            isinstance(cause, AutomationRuntimeError)
+            and str(cause) == "AUTOMATION_EXTERNAL_ORDER_PENDING"
+        ):
             return True
         cause = cause.__cause__ or cause.__context__
     return False

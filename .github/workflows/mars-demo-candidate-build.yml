@@ -96,6 +96,8 @@ jobs:
           severity: HIGH,CRITICAL
           ignore-unfixed: true
           exit-code: '1'
+      - name: Prepare candidate artifact directory
+        run: mkdir -p mars-demo-candidate
       - name: Generate DEMO SBOM
         uses: anchore/sbom-action@f8bdd1d8ac5e901a77a92f111440fdb1b593736b # v0.20.6
         with:

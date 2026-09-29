@@ -136,6 +136,7 @@ class MarsDockerHubReleaseWorkflowTest(unittest.TestCase):
         self.assertIn("astral-sh/setup-uv@d31148d669074a8d0a63714ba94f3201e7020bc3", demo_sync)
         self.assertIn("scan-type: image", demo)
         self.assertLess(demo.index("Scan standalone DEMO image"), demo.index("Upload DEMO candidate-only artifacts"))
+        self.assertLess(demo.index("Prepare candidate artifact directory"), demo.index("Generate DEMO SBOM"))
         self.assertNotIn("DOCKERHUB_TOKEN", demo)
 
     def test_product_impact_check_fails_closed_on_unclassified_paths(self) -> None:

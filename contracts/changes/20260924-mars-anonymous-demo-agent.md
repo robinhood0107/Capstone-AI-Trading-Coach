@@ -1,5 +1,7 @@
 # MARS 익명 데모 Agent의 예제·비용·이력 경계
 
+> 2026-09-30: 이 변경 기록은 기존 v1 Docker image에 있던 기능의 역사 문서입니다. v2에서는 `/api/v1/demo/agent/ask`와 Spring `mars-demo` profile을 폐기했고, 독립 Next.js/SQLite/Vertex 경계로 옮겼습니다. 현재 계약은 [`mars-demo-v2.openapi.json`](../openapi/mars-demo-v2.openapi.json)입니다.
+
 데모 제품의 `POST /api/v1/demo/agent/ask`는 로그인을 받지 않고 `questionId` 한 필드만
 받는다. 허용값은 `diversification`, `asset_allocation`, `past_performance` 세 개다.
 추가 필드·알 수 없는 ID·JSON 중복 키를 거부한다. 사용자 자유 입력은 provider에

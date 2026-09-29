@@ -73,7 +73,7 @@ class FullPasswordAuthController(
 
 /** Minimal email signup and adding a password method to the signed-in account. */
 @RestController
-@Profile("!mars-demo")
+@Profile("mars-full")
 @RequestMapping("/api/v1/auth")
 class PasswordAccountController(
     private val accounts: FullPasswordAccountService,

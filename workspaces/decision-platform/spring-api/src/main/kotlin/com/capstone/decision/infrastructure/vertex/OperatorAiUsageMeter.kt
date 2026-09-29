@@ -11,7 +11,7 @@ import org.springframework.transaction.support.TransactionTemplate
 
 /** Records estimated provider exposure without placing a usage or cost gate in front of a call. */
 @Service
-@Profile("mars-full", "mars-demo")
+@Profile("mars-full")
 class OperatorAiUsageMeter(
     private val jdbcProvider: ObjectProvider<NamedParameterJdbcTemplate>,
     transactionManager: PlatformTransactionManager,

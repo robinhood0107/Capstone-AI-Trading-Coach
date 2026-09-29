@@ -7,8 +7,15 @@ deploy/p1/.state
 deploy/p1/.state/**
 **/.state
 private?reference
+private-reference/
+private-reference/**
 .venv
 **/.venv
+node_modules
+**/node_modules
+**/*.tsbuildinfo
+.next
+**/.next
 .gradle
 **/.gradle
 build

@@ -6,13 +6,13 @@ import { apiFetch } from '@/shared/api/client';
 import { session } from '@/shared/api/session';
 import type { LoginResponse } from '@/shared/api/wire';
 import { toErrorState } from '@/shared/lib/useResource';
+import { LoginCardFrame } from '@/shared/ui/LoginCardFrame';
 
 type AuthMode = 'login' | 'signup';
 type AuthOptions = { signup: boolean; providers: string[] };
 
 /** ID/email password login, minimal email signup, and provider login when the server enables it. */
 export function LoginCard() {
-  if (process.env.NEXT_PUBLIC_MARS_PRODUCT === 'demo') return null;
   return <AccountAuthCard />;
 }
 
@@ -61,17 +61,12 @@ function AccountAuthCard() {
   const signingUp = mode === 'signup';
 
   return (
-    <div className="mx-auto w-full max-w-[420px] pb-40 sm:pb-0">
-      <section
-        aria-labelledby="full-auth-title"
-        className="rounded-panel border border-line bg-panel px-6 py-8 shadow-card sm:px-8"
-      >
-        <h1 id="full-auth-title" className="text-center text-[24px] font-semibold tracking-tight text-ink">
-          {signingUp ? '계정 만들기' : '로그인'}
-        </h1>
-        <p className="mt-2 text-center text-[14px] leading-6 text-muted">
-          투자 원칙과 운용 데이터를 계정에 안전하게 보관합니다.
-        </p>
+    <LoginCardFrame
+      headingId="full-auth-title"
+      title={signingUp ? '계정 만들기' : '로그인'}
+      description="투자 원칙과 운용 데이터를 계정에 안전하게 보관합니다."
+      className="shadow-card"
+    >
 
         <div className="mt-6 grid grid-cols-2 rounded-control bg-subtle p-1" role="tablist" aria-label="계정 사용 방식">
           <button
@@ -185,7 +180,6 @@ function AccountAuthCard() {
         </p>
         </>
         ) : null}
-      </section>
-    </div>
+    </LoginCardFrame>
   );
 }

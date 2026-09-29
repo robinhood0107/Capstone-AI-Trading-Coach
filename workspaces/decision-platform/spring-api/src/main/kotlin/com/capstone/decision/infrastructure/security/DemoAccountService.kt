@@ -1,6 +1,5 @@
 package com.capstone.decision.infrastructure.security
 
-import org.springframework.context.annotation.Profile
 import org.springframework.security.crypto.password.PasswordEncoder
 import org.springframework.stereotype.Service
 import java.nio.charset.StandardCharsets
@@ -12,7 +11,6 @@ internal val MAX_ACTOR_SESSION_TTL: Duration = Duration.ofDays(7)
 
 // demo login도 DB users를 source of truth로 사용해 이후 owner FK와 같은 user_id namespace를 보장한다.
 @Service
-@Profile("!mars-demo")
 class DemoAccountService(
     private val userSecurityRepository: UserSecurityRepository,
     private val passwordEncoder: PasswordEncoder,

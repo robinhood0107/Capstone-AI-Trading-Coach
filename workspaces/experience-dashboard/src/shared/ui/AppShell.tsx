@@ -7,7 +7,6 @@ import { apiMode } from '@/shared/api/client';
 import { session, useSession } from '@/shared/api/session';
 import { NavRail } from '@/shared/ui/NavRail';
 import { StatusBar } from '@/shared/ui/StatusBar';
-import { LoginCard } from '@/shared/ui/LoginCard';
 import { IntroExperience } from '@/features/intro/IntroExperience';
 
 /**
@@ -23,17 +22,11 @@ import { IntroExperience } from '@/features/intro/IntroExperience';
 /** 크롬도 로그인 판단도 씌우지 않고 그대로 내보내는 라우트. */
 const BARE_ROUTES = new Set(['/intro', '/auth/complete']);
 
-export function AppShell({ children }: { children: ReactNode }) {
-  if (process.env.NEXT_PUBLIC_MARS_PRODUCT === 'demo') return <DemoShell>{children}</DemoShell>;
-  return <AuthenticatedAppShell>{children}</AuthenticatedAppShell>;
+export function AppShell({ children, loginCard }: { children: ReactNode; loginCard: ReactNode }) {
+  return <AuthenticatedAppShell loginCard={loginCard}>{children}</AuthenticatedAppShell>;
 }
 
-function DemoShell({ children }: { children: ReactNode }) {
-  const pathname = usePathname();
-  return pathname === '/' ? <>{children}</> : null;
-}
-
-function AuthenticatedAppShell({ children }: { children: ReactNode }) {
+function AuthenticatedAppShell({ children, loginCard }: { children: ReactNode; loginCard: ReactNode }) {
   const { authenticated, restoring, restoreError } = useSession();
   const pathname = usePathname();
 
@@ -65,7 +58,7 @@ function AuthenticatedAppShell({ children }: { children: ReactNode }) {
   if (apiMode() !== 'mock' && !authenticated) {
     return (
       <IntroExperience endLabel="시작하기">
-        <LoginCard />
+        {loginCard}
       </IntroExperience>
     );
   }

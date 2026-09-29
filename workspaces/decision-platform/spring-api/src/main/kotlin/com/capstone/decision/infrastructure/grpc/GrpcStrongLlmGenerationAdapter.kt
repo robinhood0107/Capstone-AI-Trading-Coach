@@ -23,7 +23,6 @@ import com.capstone.decision.infrastructure.mcp.ResearchToolFacade
 import com.capstone.decision.infrastructure.mcp.S49SearchUnavailableException
 import com.capstone.decision.infrastructure.security.PublicSurfaceMode
 import com.capstone.decision.infrastructure.vertex.OwnerVertexCredentialResolver
-import com.capstone.decision.infrastructure.vertex.S49GoogleBudgetPermit
 import com.capstone.decision.infrastructure.vertex.S49GoogleGroundingBudgetPort
 import com.capstone.decision.infrastructure.vertex.S49PublicAgentUsageMeter
 import com.capstone.decision.infrastructure.vertex.S49StrongLlmCompletionPort
@@ -52,9 +51,6 @@ import java.util.concurrent.LinkedBlockingQueue
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicReference
 
-/** Memory-only marker; DEMO_AGENT writes a null owner and never creates a login session. */
-internal const val DEMO_INTERNAL_OWNER_USER_ID = "usr_mars_demo_agent"
-
 /** Kotlin이 permit·budget·tool·검증·ledger를 소유하고 Python은 provider 대화 상태만 수행한다. */
 @Component
 @ConditionalOnProperty(name = ["app.s4-9.strong-llm.enabled"], havingValue = "true")
@@ -72,7 +68,6 @@ internal class GrpcStrongLlmGenerationAdapter(
     private val credentialResolver: ObjectProvider<OwnerVertexCredentialResolver>? = null,
 ) : RagV2VertexGenerationPort {
     private val publicMode = PublicSurfaceMode.valueOf(rawMode)
-    private val demoMode = publicMode == PublicSurfaceMode.DEMO
     private val validator = RagV2VertexResponseValidator()
     private val mapper = JsonMapper.builder().build()
     private val channel: ManagedChannel
@@ -98,9 +93,6 @@ internal class GrpcStrongLlmGenerationAdapter(
     override fun isActivationEnabled(): Boolean = true
 
     override fun generate(command: RagV2VertexGenerationCommand): RagV2VertexGenerationResult {
-        if (demoMode) {
-            DemoAgentRuntimeBoundary.requireInput(command)
-        }
         if (command.evidence.any { it.ownerPrivate }) {
             require(command.consent.effective)
             require(command.consent.policyDigest == strongLlmProperties.ownerConsentPolicySha256)
@@ -108,7 +100,7 @@ internal class GrpcStrongLlmGenerationAdapter(
         }
         val runId = "s49_run_${sha256(command.requestId).take(32)}"
         // FULL: 자동매매 AI 검토와 같은 규칙으로 자격증명을 고른다(자기 키 → 허용 시 공용). 어느 쪽도 아니면
-        // 부르지 않는다. LOCAL·DEMO 는 예전처럼 배포 서비스 계정 하나다.
+        // 부르지 않는다. LOCAL 은 개발용 기본 자격 증명 경로를 유지한다.
         val credential =
             if (publicMode == PublicSurfaceMode.FULL) {
                 credentialResolver?.getIfAvailable()?.let { resolver ->
@@ -130,11 +122,10 @@ internal class GrpcStrongLlmGenerationAdapter(
         credential: AutomationAiCredential?,
     ): RagV2VertexGenerationResult {
         val ownKey = credential?.source == AutomationAiCredentialSource.OWNER
-        val researchTools = if (demoMode) null else researchToolsProvider.getIfAvailable()
+        val researchTools = researchToolsProvider.getIfAvailable()
         researchTools?.openSession(runId)
         researchTools?.registerUserRoots(runId, command.question)
-        val googlePermit =
-            if (demoMode) S49GoogleBudgetPermit(false, null) else googleBudget.reserve(command.ownerUserId, command.requestId)
+        val googlePermit = googleBudget.reserve(command.ownerUserId, command.requestId)
         val inbound = LinkedBlockingQueue<AgentEvent>()
         val terminalError = AtomicReference<Throwable?>()
         var requestObserver: StreamObserver<HostEvent>? = null
@@ -319,7 +310,6 @@ internal class GrpcStrongLlmGenerationAdapter(
                         requestObserver.onNext(toolFrame)
                     }
                     AgentEvent.PayloadCase.REGISTER_GROUNDING_ROOTS -> {
-                        check(!demoMode) { "DEMO_AGENT_GROUNDING_FORBIDDEN" }
                         contextBytesFromEvents += event.serializedSize
                         registerGrounding(runId, event.registerGroundingRoots.rootsList, researchTools)
                     }
@@ -333,9 +323,6 @@ internal class GrpcStrongLlmGenerationAdapter(
             hostBudget.verifyCompleted(result.vertexGenerateCallCount, result.searchBackend)
             if (publicMode != PublicSurfaceMode.LOCAL) {
                 check(result.providerId == "vertex") { "PUBLIC_AGENT_PROVIDER_MISMATCH" }
-            }
-            if (demoMode) {
-                DemoAgentRuntimeBoundary.requireOutput(result, hostBudget)
             }
             registerGrounding(runId, result.groundingRootsList, researchTools)
             if (result.groundingRootsCount > 0) {
@@ -366,9 +353,6 @@ internal class GrpcStrongLlmGenerationAdapter(
                     .take(5)
                     .mapIndexed { index, evidence -> evidence.copy(ordinal = index + 1) }
             val validated = validator.validateForDisplay(result.answerJson, validationEvidence)
-            if (demoMode) {
-                DemoAgentRuntimeBoundary.requireBasis(validated.basis)
-            }
             val usage =
                 S49StrongLlmUsageV2(
                     result.promptTokenCount,
@@ -381,20 +365,16 @@ internal class GrpcStrongLlmGenerationAdapter(
                     result.searchBackend,
                     result.evidenceValidationMode,
                 )
-            if (!demoMode) {
-                // Owner-scoped S4.9 usage needs an authenticated actor. The demo
-                // records only its content-free V201 gross reservation.
-                completion.commit(
-                    command.ownerUserId,
-                    googlePermit.reservationId,
-                    result.googleGroundingQueryCount,
-                    command.requestId,
-                    strongLlmProperties.modelId,
-                    validated.basis,
-                    validationEvidence,
-                    usage,
-                )
-            }
+            completion.commit(
+                command.ownerUserId,
+                googlePermit.reservationId,
+                result.googleGroundingQueryCount,
+                command.requestId,
+                strongLlmProperties.modelId,
+                validated.basis,
+                validationEvidence,
+                usage,
+            )
             val webCitations = webCitations(result) + readWebCitations
             return RagV2VertexGenerationResult(
                 generationStatus =
@@ -443,20 +423,16 @@ internal class GrpcStrongLlmGenerationAdapter(
                     "NONE",
                     "NONE",
                 )
-            if (!demoMode) {
-                // A failed anonymous request must not open owner RLS or persist
-                // the visitor's prompt/evidence in the full-product usage ledger.
-                runCatching {
-                    usageLedger.failed(
-                        command.ownerUserId,
-                        command.requestId,
-                        strongLlmProperties.modelId,
-                        command.evidence,
-                        usage,
-                        leaf,
-                        sentProviderPermits > 0,
-                    )
-                }
+            runCatching {
+                usageLedger.failed(
+                    command.ownerUserId,
+                    command.requestId,
+                    strongLlmProperties.modelId,
+                    command.evidence,
+                    usage,
+                    leaf,
+                    sentProviderPermits > 0,
+                )
             }
             LOGGER.warn("s4_9_strong_llm_grpc_failed leaf={}", leaf)
             return RagV2VertexGenerationResult(
@@ -498,7 +474,7 @@ internal class GrpcStrongLlmGenerationAdapter(
                 .addAllPublicEvidence(publicEvidence)
                 .addAllOwnerEvidence(ownerEvidence)
                 .setGoogleSearchEnabled(googleEnabled)
-                .setMaxToolRounds(if (demoMode) 0 else 3)
+                .setMaxToolRounds(3)
                 .setCurrentTime(DateTimeFormatter.ISO_INSTANT.format(clock.instant()))
                 .setTimezone(ZoneId.systemDefault().id)
                 .setLanguage("ko")
@@ -648,34 +624,6 @@ internal class GrpcStrongLlmGenerationAdapter(
         val FAILURE_LEAF = Regex("^[A-Z0-9_]{3,96}$")
         val SQL_STATE = Regex("^[0-9A-Z]{5}$")
         val LOGGER: org.slf4j.Logger = LoggerFactory.getLogger(GrpcStrongLlmGenerationAdapter::class.java)
-    }
-}
-
-/** The anonymous product has no actor RLS scope, web tools, or model-only answers. */
-internal object DemoAgentRuntimeBoundary {
-    fun requireInput(command: RagV2VertexGenerationCommand) {
-        require(command.ownerUserId == DEMO_INTERNAL_OWNER_USER_ID)
-        require(command.question.isNotBlank() && command.question.length <= 500)
-        require(command.evidence.size in 1..5 && command.evidence.none { it.ownerPrivate })
-    }
-
-    fun requireOutput(
-        result: Completed,
-        hostBudget: StrongLlmHostBudget,
-    ) {
-        check(
-            result.googleGroundingQueryCount == 0 &&
-                result.groundingRootsCount == 0 &&
-                result.groundingSupportsCount == 0 &&
-                hostBudget.searchCalls == 0 &&
-                hostBudget.readCalls == 0,
-        ) { "DEMO_AGENT_EXTERNAL_EVIDENCE_FORBIDDEN" }
-    }
-
-    fun requireBasis(basis: StrongLlmAnswerBasis) {
-        check(basis != StrongLlmAnswerBasis.MODEL_KNOWLEDGE) {
-            "DEMO_AGENT_UNGROUNDED_ANSWER_FORBIDDEN"
-        }
     }
 }
 

@@ -246,47 +246,16 @@ class AuthTrustRootIntegrationTest(
     }
 
     @Test
-    fun `local signup creates a separate owner that logs in by email beside the fixed demo accounts`() {
-        mockMvc.get("/api/v1/auth/options").andExpect {
-            status { isOk() }
-            jsonPath("$.data.signup") { value(true) }
-            jsonPath("$.data.providers.length()") { value(0) }
-        }
-        val email = "local-${Instant.now().toEpochMilli()}@example.test"
-        val password = "local-signup-password-01"
-        val signupUserId =
-            objectMapper
-                .readTree(
-                    mockMvc
-                        .post("/api/v1/auth/signup") {
-                            contentType = MediaType.APPLICATION_JSON
-                            content = objectMapper.writeValueAsString(mapOf("email" to email, "password" to password))
-                        }.andExpect {
-                            status { isOk() }
-                            jsonPath("$.data.user.role") { value("USER") }
-                        }.andReturn()
-                        .response
-                        .contentAsString,
-                ).at("/data/user/userId")
-                .stringValue()
-        assertNotEquals("usr_demo_user", signupUserId)
-
-        val token = login(email, password, signupUserId, "USER")
+    fun `local legacy controller keeps only fixed-account login while signup is full owned`() {
+        mockMvc.get("/api/v1/auth/options").andExpect { status { isNotFound() } }
         mockMvc
-            .get("/api/v1/auth/identities") {
-                header("Authorization", "Bearer $token")
-            }.andExpect {
-                status { isOk() }
-                jsonPath("$.data.length()") { value(1) }
-                jsonPath("$.data[0].provider") { value("password") }
-                jsonPath("$.data[0].email") { value(email) }
-            }
-        mockMvc
-            .post("/api/v1/auth/identities/google/link/start") {
-                header("Authorization", "Bearer $token")
+            .post("/api/v1/auth/signup") {
+                contentType = MediaType.APPLICATION_JSON
+                content = objectMapper.writeValueAsString(mapOf("email" to "local@example.test", "password" to "local-signup-password-01"))
             }.andExpect { status { isNotFound() } }
+
         login("demo-user", userPassword(), "usr_demo_user", "ADMIN")
-        postInvalidLogin(email, "wrong-password-value", "req-local-email-wrong-password")
+        postInvalidLogin("demo-user", "wrong-password-value", "req-local-wrong-password")
     }
 
     private fun login(

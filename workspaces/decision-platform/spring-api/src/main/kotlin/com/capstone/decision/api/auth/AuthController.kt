@@ -29,7 +29,7 @@ import io.swagger.v3.oas.annotations.responses.ApiResponse as OpenApiResponse
 
 // 고정 demo 계정은 아이디로, 가입 계정은 이메일로 같은 경로에서 로그인한다.
 @RestController
-@Profile("!mars-full & !mars-demo")
+@Profile("!mars-full")
 @RequestMapping("/api/v1/auth")
 class AuthController(
     private val demoAccountService: DemoAccountService,

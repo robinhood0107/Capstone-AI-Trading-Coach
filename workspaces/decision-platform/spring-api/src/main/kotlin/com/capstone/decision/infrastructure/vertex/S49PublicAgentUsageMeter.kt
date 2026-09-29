@@ -38,7 +38,6 @@ internal class S49PublicAgentUsageMeter(
         googleSearchAttached: Boolean,
     ) {
         if (mode == PublicSurfaceMode.LOCAL) return
-        check(mode != PublicSurfaceMode.DEMO || !googleSearchAttached) { "DEMO_AGENT_GOOGLE_SEARCH_FORBIDDEN" }
         if (runId.isBlank() || plannedCallId.isBlank()) return
         val maxGrossMicrousd =
             runCatching {
@@ -55,10 +54,8 @@ internal class S49PublicAgentUsageMeter(
             }.getOrNull() ?: return
         val reservationId = "aibr_" + sha256("$runId:$plannedCallId").take(32)
         val meter = operatorUsageMeterProvider.getIfAvailable() ?: return
-        val source = if (mode == PublicSurfaceMode.FULL) "FULL_AGENT" else "DEMO_AGENT"
-        val chargedOwner = ownerUserId.takeIf { mode == PublicSurfaceMode.FULL }
         runCatching {
-            meter.recordGrossEstimate(reservationId, chargedOwner, source, "VERTEX", maxGrossMicrousd)
+            meter.recordGrossEstimate(reservationId, ownerUserId, "FULL_AGENT", "VERTEX", maxGrossMicrousd)
         }
     }
 

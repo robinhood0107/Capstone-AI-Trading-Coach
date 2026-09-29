@@ -105,7 +105,7 @@ class FlywayMigrationIntegrationTest(
         // must appear alongside the SQL migrations; missing numbers are not failed migrations.
         val numericVersions = versions.map(String::toInt)
         assertEquals(numericVersions.sorted().distinct(), numericVersions)
-        assertEquals("230", versions.last())
+        assertEquals("231", versions.last())
 
         val requiredTables =
             listOf(
@@ -117,6 +117,8 @@ class FlywayMigrationIntegrationTest(
                 "automation_policy_versions",
                 "automation_policy_idempotency",
                 "automation_account_lineage",
+                "automation_account_sync_events_v231",
+                "automation_account_sync_events_v231",
                 "order_events",
                 "order_fill_observations",
                 "order_fill_application_receipts",
@@ -262,6 +264,118 @@ class FlywayMigrationIntegrationTest(
         assertTrue(functionExists("public.p1_read_mock_credential_identity_envelope_v218(text)"))
         assertTrue(functionExists("public.p1_resolve_or_bind_mock_account_identity_v218(text,text,text,text)"))
         assertTrue(functionExists("public.p1_read_owner_mock_credential_state_for_automation_v218(text)"))
+        assertTrue(functionExists("public.p1_list_recoverable_automation_account_halts_v1()"))
+        assertTrue(functionExists("public.p1_automation_account_lineage_digest_v1(jsonb)"))
+        assertTrue(functionExists("public.p1_read_automation_asset_weight_limit_v1(text,text)"))
+        assertTrue(tableExists("automation_risk_session_baselines_v231"))
+        assertFalse(hasTablePrivilege("decision_app", "automation_risk_session_baselines_v231", "SELECT"))
+        assertFalse(
+            hasTablePrivilege("decision_automation_runtime", "automation_risk_session_baselines_v231", "SELECT"),
+        )
+        assertTrue(functionExists("public.p1_get_or_initialize_automation_risk_baseline_v231(text,text,bigint,bigint,boolean,timestamptz)"))
+        assertTrue(
+            functionExists(
+                "public.p1_automation_released_continuation_claim_valid_v231(text,text,text,text,timestamptz)",
+            ),
+        )
+        assertTrue(functionExists("public.read_automation_risk_snapshot_authorized_v231(text,text,text)"))
+        assertFalse(
+            hasTablePrivilege("decision_app", "deterministic_risk_observations", "SELECT"),
+            "decision_app must not read the automation risk table directly",
+        )
+        assertFalse(
+            hasFunctionPrivilege(
+                "decision_app",
+                "public.p1_get_or_initialize_automation_risk_baseline_v231(text,text,bigint,bigint,boolean,timestamptz)",
+            ),
+        )
+        assertTrue(
+            hasFunctionPrivilege(
+                "decision_automation_runtime",
+                "public.p1_get_or_initialize_automation_risk_baseline_v231(text,text,bigint,bigint,boolean,timestamptz)",
+            ),
+        )
+        assertTrue(
+            hasFunctionPrivilege(
+                "decision_app",
+                "public.read_automation_risk_snapshot_authorized_v231(text,text,text)",
+            ),
+        )
+        assertFalse(
+            hasFunctionPrivilege(
+                "decision_automation_runtime",
+                "public.read_automation_risk_snapshot_authorized_v231(text,text,text)",
+            ),
+        )
+        assertTrue(
+            functionExists(
+                "public.read_automation_risk_exclusions_authorized_v231(text,text,text,text,text)",
+            ),
+        )
+        assertTrue(
+            hasFunctionPrivilege(
+                "decision_app",
+                "public.read_automation_risk_exclusions_authorized_v231(text,text,text,text,text)",
+            ),
+        )
+        assertFalse(
+            hasFunctionPrivilege(
+                "decision_automation_runtime",
+                "public.read_automation_risk_exclusions_authorized_v231(text,text,text,text,text)",
+            ),
+        )
+        assertTrue(
+            functionExists(
+                "public.p1_reconcile_automation_account_v1(text,text,integer,text,jsonb,text,text,integer,date,boolean)",
+            ),
+        )
+        assertTrue(
+            hasFunctionPrivilege(
+                "decision_automation_runtime",
+                "public.p1_reconcile_automation_account_v1(text,text,integer,text,jsonb,text,text,integer,date,boolean)",
+            ),
+        )
+        assertFalse(
+            hasFunctionPrivilege(
+                "decision_app",
+                "public.p1_reconcile_automation_account_v1(text,text,integer,text,jsonb,text,text,integer,date,boolean)",
+            ),
+        )
+        assertFalse(hasTablePrivilege("decision_automation_runtime", "automation_account_sync_events_v231", "SELECT"))
+        val recoverableAccountHalts =
+            DriverManager
+                .getConnection(postgres.jdbcUrl, postgres.username, postgres.password)
+                .use { connection ->
+                    connection.createStatement().use { statement ->
+                        statement.execute("SET SESSION AUTHORIZATION decision_automation_runtime")
+                        statement
+                            .executeQuery("select count(*) from p1_list_recoverable_automation_account_halts_v1()")
+                            .use { rows ->
+                                assertTrue(rows.next())
+                                rows.getInt(1)
+                            }
+                    }
+                }
+        assertEquals(0, recoverableAccountHalts)
+        val lineageDigest =
+            DriverManager.getConnection(postgres.jdbcUrl, postgres.username, postgres.password).use { connection ->
+                connection
+                    .prepareStatement("select p1_automation_account_lineage_digest_v1(?::jsonb)")
+                    .use { statement ->
+                        statement.setString(
+                            1,
+                            """{"accountId":"acct_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","cashKrw":123456,"positions":[{"symbol":"005930","quantity":2},{"symbol":"086790","quantity":1}]}""",
+                        )
+                        statement.executeQuery().use { rows ->
+                            assertTrue(rows.next())
+                            rows.getString(1)
+                        }
+                    }
+            }
+        assertEquals(
+            "74d955393281f6cd8623414ce6fbdc6b5f26c4caf5800e130a9e272bb4e4050c",
+            lineageDigest,
+        )
 
         assertEquals(1, countMarketCalendarRows("KRX", "2026-06-23", true))
         assertEquals(1, countMarketCalendarRows("KRX", "2026-01-01", false))
@@ -273,6 +387,728 @@ class FlywayMigrationIntegrationTest(
             indexDefinitionLike("rag_chunk_embeddings", "%ivfflat%"),
             "ivfflat must wait until real embeddings are loaded",
         )
+    }
+
+    @Test
+    fun `V231 rebases a manual account trade and rearms only a clean pre-order halt`() {
+        val suffix =
+            java.util.UUID
+                .randomUUID()
+                .toString()
+                .replace("-", "")
+        val owner = "usr_account_sync_$suffix"
+        val username = "account_sync_$suffix"
+        val principle = "prc_account_sync_$suffix"
+        val principleVersion = "pvr_$suffix"
+        val policy = "auto_pol_$suffix"
+        val account = "acct_${"a".repeat(32)}"
+        // V6 only contains two tiny calendar fixtures; use the closed-day fixture so the
+        // one open session in the database is a deterministic future recovery target.
+        val session = "2026-01-01"
+        val claimHash = "sha256:${"2".repeat(64)}"
+        val expectedDigest = "e".repeat(64)
+
+        DriverManager.getConnection(postgres.jdbcUrl, postgres.username, postgres.password).use { admin ->
+            admin.createStatement().use { statement ->
+                statement.executeUpdate(
+                    "insert into users(user_id,username,password_hash,role,status,security_version) values " +
+                        "('$owner','$username','runtime-fixture-hash','USER','ACTIVE',1)",
+                )
+                statement.executeUpdate(
+                    "insert into principles(principle_id,user_id,preset_id,title,mode,status,current_version) values " +
+                        "('$principle','$owner','balanced','account sync fixture','GUIDE','ACTIVE',1)",
+                )
+                statement.executeUpdate(
+                    "insert into principle_versions(principle_version_id,principle_id,version,rules_json,created_by," +
+                        "preset_id,title,mode,status,changed_fields) " +
+                        "select '$principleVersion','$principle',1,rules_json,'$owner','balanced'," +
+                        "'account sync fixture','GUIDE','ACTIVE',array['rules'] " +
+                        "from principle_presets where preset_id='balanced'",
+                )
+                statement.executeUpdate(
+                    "insert into automation_policy_versions(" +
+                        "policy_id,version,user_id,capital_limit_krw,stop_loss_bps,take_profit_bps," +
+                        "risk_profile,principle_id,principle_version_id,principle_version) values " +
+                        "('$policy',1,'$owner',1000000,500,1000,'BALANCED','$principle','$principleVersion',1)",
+                )
+                statement.executeUpdate(
+                    "insert into automation_control(" +
+                        "user_id,control_state,version,brokerage_mode,account_id,principle_id,strategy_id," +
+                        "baseline_account_digest,certification_status,kill_switch_active,policy_id,policy_version," +
+                        "principle_version_id,principle_version,team_b_integrity_receipt_sha256_v2," +
+                        "initial_account_digest_v2,expected_account_digest_v2,expected_account_projection_v2) values " +
+                        "('$owner','ARMED',1,'KIS_MOCK','$account','$principle','strategy_account_sync_v1'," +
+                        "repeat('b',64),'VALID',false,'$policy',1,'$principleVersion',1,repeat('d',64)," +
+                        "repeat('c',64),repeat('e',64)," +
+                        "jsonb_build_object('accountId','$account','cashKrw','1000000','schemaVersion',2," +
+                        "'positions','[]'::jsonb))",
+                )
+                statement.executeUpdate(
+                    "insert into automation_runtime_schedule(" +
+                        "schedule_id,user_id,session_date,control_version,schedule_state,run_at) values " +
+                        "('auto_sched_$suffix','$owner','$session',1,'ARMED'," +
+                        "timestamptz '2026-08-28 08:55:00+09')",
+                )
+                statement.executeUpdate(
+                    "insert into automation_positions(" +
+                        "position_id,user_id,account_id,symbol,quantity,entry_session,expiry_session,status," +
+                        "bot_owned,short_allowed,created_at,entry_order_id,entry_ordered_quantity," +
+                        "entry_filled_quantity,entry_unfilled_quantity,entry_average_fill_price_krw," +
+                        "policy_id,policy_version,stop_loss_bps,take_profit_bps) values " +
+                        "('auto_pos_${"5".repeat(32)}','$owner','$account','005930',1,'$session','2026-06-23'," +
+                        "'OPEN',true,false,now(),'ord_mock_${"6".repeat(32)}',1,1,0,70000,'$policy',1,500,1000)",
+                )
+            }
+        }
+
+        val runId =
+            DriverManager
+                .getConnection(postgres.jdbcUrl, "decision_automation_runtime", "automation-runtime-test-0001")
+                .use { runtime ->
+                    runtime
+                        .prepareStatement(
+                            "select run_id from p1_claim_automation_session_for_owner_v1(?,?,?)",
+                        ).use { statement ->
+                            statement.setString(1, owner)
+                            statement.setDate(2, java.sql.Date.valueOf(session))
+                            statement.setString(3, claimHash)
+                            statement.executeQuery().use { rows ->
+                                assertTrue(rows.next())
+                                rows.getString(1)
+                            }
+                        }
+                }
+
+        val riskBaselineValues =
+            DriverManager
+                .getConnection(postgres.jdbcUrl, "decision_automation_runtime", "automation-runtime-test-0001")
+                .use { runtime ->
+                    runtime
+                        .prepareStatement("select p1_get_or_initialize_automation_risk_baseline_v231(?,?,?,?,?,?::timestamptz)")
+                        .use { query ->
+                            query.setString(1, runId)
+                            query.setString(2, claimHash)
+                            query.setLong(3, 1_000_000)
+                            query.setLong(4, 1_000_000)
+                            query.setBoolean(5, false)
+                            query.setString(6, "${session}T08:55:00+09:00")
+                            query.executeQuery().use { rows ->
+                                assertTrue(rows.next())
+                                val initial = rows.getLong(1)
+                                rows.close()
+                                runtime
+                                    .prepareStatement(
+                                        "select p1_get_or_initialize_automation_risk_baseline_v231(?,?,?,?,?,?::timestamptz)",
+                                    ).use { replay ->
+                                        replay.setString(1, runId)
+                                        replay.setString(2, claimHash)
+                                        replay.setLong(3, 750_000)
+                                        replay.setLong(4, 750_000)
+                                        replay.setBoolean(5, false)
+                                        replay.setString(6, "${session}T08:55:00+09:00")
+                                        replay.executeQuery().use { repeated ->
+                                            assertTrue(repeated.next())
+                                            initial to repeated.getLong(1)
+                                        }
+                                    }
+                            }
+                        }
+                }
+        assertEquals(1_000_000L to 1_000_000L, riskBaselineValues)
+
+        val assetWeightLimit =
+            DriverManager
+                .getConnection(postgres.jdbcUrl, "decision_automation_runtime", "automation-runtime-test-0001")
+                .use { runtime ->
+                    runtime.prepareStatement("select p1_read_automation_asset_weight_limit_v1(?,?)").use { query ->
+                        query.setString(1, runId)
+                        query.setString(2, claimHash)
+                        query.executeQuery().use { rows ->
+                            assertTrue(rows.next())
+                            rows.getString(1)
+                        }
+                    }
+                }
+        assertEquals("0.2", assetWeightLimit)
+
+        DriverManager.getConnection(postgres.jdbcUrl, postgres.username, postgres.password).use { admin ->
+            admin.createStatement().use { statement ->
+                statement.executeUpdate(
+                    "update automation_control set control_state='HALTED',version=2 where user_id='$owner'",
+                )
+                statement.executeUpdate(
+                    "update automation_runtime_schedule set schedule_state='HALTED' where user_id='$owner'",
+                )
+                statement.executeUpdate(
+                    "update automation_runtime_claim set claim_state='RELEASED',released_at=statement_timestamp() " +
+                        "where user_id='$owner'",
+                )
+                statement.executeUpdate(
+                    "update automation_runs set state='HALTED' where run_id='$runId'",
+                )
+                statement.executeUpdate(
+                    "update automation_runtime_checkpoint set state='HALTED' where run_id='$runId'",
+                )
+                statement.executeUpdate(
+                    "insert into automation_events(event_id,run_id,user_id,sequence,event_type,occurred_at," +
+                        "payload_hash,provider_calls,order_submits,sanitized) values " +
+                        "('auto_evt_${runId.removePrefix("auto_run_")}','$runId','$owner',3,'DRIFT_DETECTED',now()," +
+                        "repeat('9',64),0,0,true)",
+                )
+            }
+        }
+
+        fun candidateCount(): Int =
+            DriverManager
+                .getConnection(postgres.jdbcUrl, "decision_automation_runtime", "automation-runtime-test-0001")
+                .use { runtime ->
+                    runtime
+                        .prepareStatement(
+                            "select count(*) from p1_list_recoverable_automation_account_halts_v1() where user_id=?",
+                        ).use { statement ->
+                            statement.setString(1, owner)
+                            statement.executeQuery().use { rows ->
+                                assertTrue(rows.next())
+                                rows.getInt(1)
+                            }
+                        }
+                }
+
+        assertEquals(0, candidateCount(), "a different halt reason must not be recovered")
+        DriverManager.getConnection(postgres.jdbcUrl, postgres.username, postgres.password).use { admin ->
+            admin.createStatement().use { statement ->
+                statement.executeUpdate(
+                    "insert into automation_events(event_id,run_id,user_id,sequence,event_type,occurred_at," +
+                        "payload_hash,provider_calls,order_submits,sanitized) values " +
+                        "('auto_evt_${"8".repeat(32)}','$runId','$owner',4,'DRIFT_DETECTED',now()," +
+                        "'09ed4e6112ac2721795539344195397292b9248845ffb8b409a58166bd5c3f31',0,0,true)",
+                )
+                statement.executeUpdate(
+                    "update automation_control set kill_switch_active=true where user_id='$owner'",
+                )
+            }
+        }
+        assertEquals(0, candidateCount(), "an owner control stop must keep recovery closed")
+        DriverManager.getConnection(postgres.jdbcUrl, postgres.username, postgres.password).use { admin ->
+            admin.createStatement().use { statement ->
+                statement.executeUpdate(
+                    "update automation_control set kill_switch_active=false where user_id='$owner'",
+                )
+                statement.executeUpdate(
+                    "update owner_kill_switch set active=true,generation=generation+1," +
+                        "reason_class='USER_MANUAL_STOP',changed_at=statement_timestamp() where user_id='$owner'",
+                )
+            }
+        }
+        assertEquals(0, candidateCount(), "an owner stop must keep recovery closed")
+        DriverManager.getConnection(postgres.jdbcUrl, postgres.username, postgres.password).use { admin ->
+            admin.createStatement().use { statement ->
+                statement.executeUpdate(
+                    "update owner_kill_switch set active=false,generation=generation+1," +
+                        "reason_class='USER_RESUME',changed_at=statement_timestamp() where user_id='$owner'",
+                )
+                statement.executeUpdate(
+                    "update risk_kill_switch set active=true,reason_class='OPERATOR_MANUAL_STOP'," +
+                        "generation=generation+1,changed_by='$owner',changed_by_role='ADMIN'," +
+                        "changed_at=statement_timestamp(),request_id='v231-test-global-stop' " +
+                        "where kill_switch_id='GLOBAL'",
+                )
+            }
+        }
+        assertEquals(0, candidateCount(), "the global stop must keep recovery closed")
+        DriverManager.getConnection(postgres.jdbcUrl, postgres.username, postgres.password).use { admin ->
+            admin.createStatement().use { statement ->
+                statement.executeUpdate(
+                    "update risk_kill_switch set active=false,reason_class='INITIAL_STATE',generation=1," +
+                        "changed_by=null,changed_by_role='SYSTEM',changed_at=statement_timestamp(),request_id=null " +
+                        "where kill_switch_id='GLOBAL'",
+                )
+                statement.executeUpdate(
+                    "update automation_runs set provider_calls=1 where run_id='$runId'",
+                )
+            }
+        }
+        assertEquals(0, candidateCount(), "provider activity makes a halt ineligible")
+        DriverManager.getConnection(postgres.jdbcUrl, postgres.username, postgres.password).use { admin ->
+            admin.createStatement().use { statement ->
+                statement.executeUpdate(
+                    "update automation_runs set provider_calls=0 where run_id='$runId'",
+                )
+                statement.executeUpdate(
+                    "insert into automation_order_reservations(" +
+                        "reservation_id,run_id,user_id,session_date,symbol,side,quantity,limit_price_krw," +
+                        "logical_submit_count,leaves_quantity,created_at,updated_at) values " +
+                        "('auto_res_${"7".repeat(32)}','$runId','$owner','$session','005930','BUY',1,70000,0,1,now(),now())",
+                )
+            }
+        }
+        assertEquals(0, candidateCount(), "an order reservation makes a halt ineligible")
+        DriverManager.getConnection(postgres.jdbcUrl, postgres.username, postgres.password).use { admin ->
+            admin.createStatement().use { statement ->
+                statement.executeUpdate(
+                    "delete from automation_order_reservations where run_id='$runId'",
+                )
+                statement.executeUpdate(
+                    "update automation_runs set physical_submit_count=1 where run_id='$runId'",
+                )
+            }
+        }
+        assertEquals(0, candidateCount(), "a physical submit makes a halt ineligible")
+        DriverManager.getConnection(postgres.jdbcUrl, postgres.username, postgres.password).use { admin ->
+            admin.createStatement().use { statement ->
+                statement.executeUpdate(
+                    "update automation_runs set physical_submit_count=0,selected_symbol='005930'," +
+                        "selected_side='BUY' where run_id='$runId'",
+                )
+            }
+        }
+        assertEquals(0, candidateCount(), "a selected symbol/side makes a halt ineligible")
+        DriverManager.getConnection(postgres.jdbcUrl, postgres.username, postgres.password).use { admin ->
+            admin.createStatement().use { statement ->
+                statement.executeUpdate(
+                    "update automation_runs set selected_symbol=null,selected_side=null where run_id='$runId'",
+                )
+            }
+        }
+        assertEquals(1, candidateCount())
+
+        val observedProjection =
+            """{"accountId":"$account","cashKrw":982540,"marginRequirementKrw":0,"portfolioEquityKrw":1000000,"positions":[{"marketValueKrw":17460,"quantity":1,"symbol":"086790"}],"positionsComplete":true}"""
+        val lineageDigest =
+            DriverManager.getConnection(postgres.jdbcUrl, postgres.username, postgres.password).use { admin ->
+                admin.prepareStatement("select p1_automation_account_lineage_digest_v1(?::jsonb)").use { statement ->
+                    statement.setString(1, observedProjection)
+                    statement.executeQuery().use { rows ->
+                        assertTrue(rows.next())
+                        rows.getString(1)
+                    }
+                }
+            }
+        val nextSession =
+            DriverManager.getConnection(postgres.jdbcUrl, postgres.username, postgres.password).use { admin ->
+                admin.createStatement().use { statement ->
+                    statement
+                        .executeQuery(
+                            "select min(session_date) from trading_sessions where exchange_mic='XKRX' " +
+                                "and is_open and session_date>date '$session'",
+                        ).use { rows ->
+                            assertTrue(rows.next())
+                            rows.getDate(1).toLocalDate().toString()
+                        }
+                }
+            }
+
+        fun reconcileOutcome(
+            targetSession: String,
+            openOrderCount: Int = 0,
+            expectedControlVersion: Int = 2,
+            expectedDigestValue: String = expectedDigest,
+            accountProjectionValue: String = observedProjection,
+            lineageDigestValue: String = lineageDigest,
+            recoverHalted: Boolean = true,
+        ): String =
+            try {
+                DriverManager
+                    .getConnection(postgres.jdbcUrl, "decision_automation_runtime", "automation-runtime-test-0001")
+                    .use { runtime ->
+                        runtime
+                            .prepareStatement(
+                                "select result->>'controlState',(result->>'controlVersion')::integer," +
+                                    "result->'quarantinedSymbols'::text from (select " +
+                                    "p1_reconcile_automation_account_v1(?,?,?,?,?::jsonb,?,?,?,?,?) result) state",
+                            ).use { reconcile ->
+                                reconcile.setString(1, runId)
+                                reconcile.setString(2, claimHash)
+                                reconcile.setInt(3, expectedControlVersion)
+                                reconcile.setString(4, expectedDigestValue)
+                                reconcile.setString(5, accountProjectionValue)
+                                reconcile.setString(6, lineageDigestValue)
+                                reconcile.setString(7, "f".repeat(64))
+                                reconcile.setInt(8, openOrderCount)
+                                reconcile.setDate(9, java.sql.Date.valueOf(targetSession))
+                                reconcile.setBoolean(10, recoverHalted)
+                                reconcile.executeQuery().use { rows ->
+                                    assertTrue(rows.next())
+                                    "${rows.getString(1)}:${rows.getInt(2)}:${rows.getString(3)}"
+                                }
+                            }
+                    }
+            } catch (error: SQLException) {
+                "DENIED:${error.sqlState}"
+            }
+
+        fun adminUpdate(sql: String) {
+            DriverManager.getConnection(postgres.jdbcUrl, postgres.username, postgres.password).use { admin ->
+                admin.createStatement().use { statement -> statement.executeUpdate(sql) }
+            }
+        }
+
+        fun assertRecoveryRechecked(
+            updateSql: String,
+            resetSql: String,
+        ) {
+            adminUpdate(updateSql)
+            assertEquals("DENIED:40001", reconcileOutcome(nextSession), updateSql)
+            adminUpdate(resetSql)
+            assertEquals(1, candidateCount(), "the rejected mutation must leave the recovery candidate intact")
+        }
+
+        assertRecoveryRechecked(
+            "update automation_control set kill_switch_active=true where user_id='$owner'",
+            "update automation_control set kill_switch_active=false where user_id='$owner'",
+        )
+        assertRecoveryRechecked(
+            "update owner_kill_switch set active=true,generation=generation+1," +
+                "reason_class='USER_MANUAL_STOP',changed_at=statement_timestamp() where user_id='$owner'",
+            "update owner_kill_switch set active=false,generation=generation+1," +
+                "reason_class='USER_RESUME',changed_at=statement_timestamp() where user_id='$owner'",
+        )
+        assertRecoveryRechecked(
+            "update risk_kill_switch set active=true,reason_class='OPERATOR_MANUAL_STOP'," +
+                "generation=generation+1,changed_by='$owner',changed_by_role='ADMIN'," +
+                "changed_at=statement_timestamp(),request_id='v231-test-global-stop-2' where kill_switch_id='GLOBAL'",
+            "update risk_kill_switch set active=false,reason_class='INITIAL_STATE',generation=1," +
+                "changed_by=null,changed_by_role='SYSTEM',changed_at=statement_timestamp(),request_id=null " +
+                "where kill_switch_id='GLOBAL'",
+        )
+        assertRecoveryRechecked(
+            "update automation_runs set provider_calls=1 where run_id='$runId'",
+            "update automation_runs set provider_calls=0 where run_id='$runId'",
+        )
+        assertRecoveryRechecked(
+            "update automation_runs set physical_submit_count=1 where run_id='$runId'",
+            "update automation_runs set physical_submit_count=0 where run_id='$runId'",
+        )
+        assertRecoveryRechecked(
+            "update automation_runs set selected_symbol='005930' where run_id='$runId'",
+            "update automation_runs set selected_symbol=null where run_id='$runId'",
+        )
+        assertRecoveryRechecked(
+            "update automation_runs set selected_side='BUY' where run_id='$runId'",
+            "update automation_runs set selected_side=null where run_id='$runId'",
+        )
+        adminUpdate(
+            "insert into automation_order_reservations(" +
+                "reservation_id,run_id,user_id,session_date,symbol,side,quantity,limit_price_krw," +
+                "logical_submit_count,leaves_quantity,created_at,updated_at) values " +
+                "('auto_res_${"7".repeat(32)}','$runId','$owner','$session','005930','BUY',1,70000,0,1,now(),now())",
+        )
+        assertEquals("DENIED:40001", reconcileOutcome(nextSession), "a reservation must be rechecked at mutation")
+        adminUpdate("delete from automation_order_reservations where run_id='$runId'")
+
+        val manualDecisionId = "dec_account_sync_$suffix"
+        val manualEvaluationId = "eval_account_sync_$suffix"
+        val manualOrderId = "ord_mock_$suffix"
+        adminUpdate(
+            """
+            insert into decisions (
+              decision_id,evaluation_id,user_id,principle_id,principle_version_id,principle_version,
+              portfolio_source,symbol,side,outcome,mode,can_submit_order,enforcement_action,
+              evaluation_as_of,created_at,valid_until,result_schema_version,snapshot_schema_version,
+              catalog_version,readiness_policy_version,mapping_versions_json,semantic_input_hash,
+              snapshot_artifact_hash,result_json
+            ) values (
+              '$manualDecisionId','$manualEvaluationId','$owner','$principle','$principleVersion',1,
+              'KIS_MOCK','086790','BUY','ALLOW','GUIDE',true,'NONE',now(),now(),
+              now()+interval '10 minutes','risk-decision.v1','s2.2-metric-snapshot-v2',1,
+              's2.3-readiness-v1','{}'::jsonb,repeat('a',64),repeat('b',64),'{}'::jsonb
+            )
+            """.trimIndent(),
+        )
+        adminUpdate(
+            """
+            insert into orders (
+              order_id,user_id,account_id,account_scope_hash,decision_id,decision_evaluation_id,
+              brokerage_mode,idempotency_scope_hash,idempotency_owner_scope_hash,request_hash,
+              symbol,side,order_type,quantity,submitted_price_krw,status,order_intent_json,
+              result_canonical_json,acknowledged_by,acknowledged_at,submitted_at
+            ) values (
+              '$manualOrderId','$owner','$account',repeat('c',64),'$manualDecisionId','$manualEvaluationId',
+              'KIS_MOCK',repeat('d',64),repeat('e',64),repeat('f',64),'086790','BUY','MARKET',1,null,
+              'SUBMITTED','{"symbol":"086790","side":"BUY","orderType":"MARKET","quantity":"1"}'::jsonb,
+              '{"orderId":"$manualOrderId","status":"SUBMITTED"}','$owner',now(),now()
+            )
+            """.trimIndent(),
+        )
+        assertEquals(
+            "DENIED:40001",
+            reconcileOutcome(nextSession),
+            "an unresolved local manual order must be rechecked at recovery mutation",
+        )
+        adminUpdate("delete from orders where order_id='$manualOrderId'")
+        adminUpdate("delete from decisions where decision_id='$manualDecisionId'")
+
+        assertEquals(1, candidateCount())
+        assertEquals(
+            "DENIED:40001",
+            reconcileOutcome("2026-02-01"),
+            "a future date absent from the open XKRX calendar must be rejected",
+        )
+        assertEquals(
+            "DENIED:40001",
+            reconcileOutcome(nextSession, openOrderCount = 1),
+            "an unresolved KIS order must be rejected",
+        )
+
+        val ready = java.util.concurrent.CountDownLatch(2)
+        val start = java.util.concurrent.CountDownLatch(1)
+        val executor = Executors.newFixedThreadPool(2)
+        val outcomes =
+            try {
+                val attempts =
+                    (1..2).map {
+                        executor.submit<String> {
+                            ready.countDown()
+                            check(start.await(10, TimeUnit.SECONDS))
+                            reconcileOutcome(nextSession)
+                        }
+                    }
+                assertTrue(ready.await(10, TimeUnit.SECONDS))
+                start.countDown()
+                attempts.map { it.get(30, TimeUnit.SECONDS) }
+            } finally {
+                executor.shutdownNow()
+            }
+        assertEquals(1, outcomes.count { it == "ARMED:3:[\"005930\"]" }, outcomes.toString())
+        assertEquals(1, outcomes.count { it.startsWith("DENIED:") }, outcomes.toString())
+        assertEquals(1, outcomes.count { it == "DENIED:22023" }, outcomes.toString())
+
+        val restoredSchedules =
+            DriverManager.getConnection(postgres.jdbcUrl, postgres.username, postgres.password).use { admin ->
+                admin
+                    .prepareStatement(
+                        "select session_date::text||':'||schedule_state from automation_runtime_schedule " +
+                            "where user_id=? order by session_date",
+                    ).use { query ->
+                        query.setString(1, owner)
+                        query.executeQuery().use { rows ->
+                            val values = mutableListOf<String>()
+                            while (rows.next()) values += rows.getString(1)
+                            values
+                        }
+                    }
+            }
+        assertEquals(listOf("$session:COMPLETED", "$nextSession:ARMED"), restoredSchedules)
+        DriverManager.getConnection(postgres.jdbcUrl, postgres.username, postgres.password).use { admin ->
+            admin
+                .prepareStatement(
+                    "select position.status,(select count(*) from automation_account_lineage lineage " +
+                        "where lineage.user_id=position.user_id and lineage.reason='EXTERNAL_RECONCILIATION')," +
+                        "(select quarantined_symbols::text from automation_account_sync_events_v231 event " +
+                        "where event.user_id=position.user_id and event.event_type='HALTED_RECOVERED') " +
+                        "from automation_positions position where position.user_id=? and position.symbol='005930'",
+                ).use { query ->
+                    query.setString(1, owner)
+                    query.executeQuery().use { rows ->
+                        assertTrue(rows.next())
+                        assertEquals("HALTED_MISMATCH", rows.getString(1))
+                        assertEquals(1, rows.getInt(2), "the losing concurrent snapshot must not advance lineage")
+                        assertEquals("[\"005930\"]", rows.getString(3))
+                    }
+                }
+            admin
+                .prepareStatement(
+                    "select control.control_state,control.version,control.expected_account_projection_v2->>'cashKrw'," +
+                        "control.expected_account_projection_v2->'positions'->0->>'symbol'," +
+                        "control.expected_account_projection_v2->'positions'->0->>'quantity'," +
+                        "control.expected_account_digest_v2," +
+                        "encode(digest(convert_to(control.expected_account_projection_v2::text,'UTF8'),'sha256'),'hex')," +
+                        "run.state,run.physical_submit_count,run.provider_calls,checkpoint.state,claim.claim_state " +
+                        "from automation_control control join automation_runs run on run.user_id=control.user_id " +
+                        "join automation_runtime_checkpoint checkpoint on checkpoint.run_id=run.run_id " +
+                        "join automation_runtime_claim claim on claim.run_id=run.run_id where control.user_id=?",
+                ).use { query ->
+                    query.setString(1, owner)
+                    query.executeQuery().use { rows ->
+                        assertTrue(rows.next())
+                        assertEquals("ARMED", rows.getString(1))
+                        assertEquals(3, rows.getInt(2))
+                        assertEquals("982540", rows.getString(3))
+                        assertEquals("086790", rows.getString(4))
+                        assertEquals("1", rows.getString(5))
+                        assertNotEquals(expectedDigest, rows.getString(6))
+                        assertEquals(rows.getString(6), rows.getString(7))
+                        assertEquals("HALTED", rows.getString(8))
+                        assertEquals(0, rows.getInt(9))
+                        assertEquals(0, rows.getInt(10))
+                        assertEquals("HALTED", rows.getString(11))
+                        assertEquals("RELEASED", rows.getString(12))
+                    }
+                }
+        }
+
+        // A resumed portfolio continuation runs after the primary run is COMPLETED. It must
+        // still rebase a fresh manual cash delta without treating it as bot loss.
+        adminUpdate("update automation_runtime_claim set claim_state='ACTIVE',released_at=null where run_id='$runId'")
+        adminUpdate("update automation_runs set state='COMPLETED' where run_id='$runId'")
+        val completedRunExpectedDigest =
+            DriverManager.getConnection(postgres.jdbcUrl, postgres.username, postgres.password).use { admin ->
+                admin
+                    .prepareStatement("select expected_account_digest_v2 from automation_control where user_id=?")
+                    .use { query ->
+                        query.setString(1, owner)
+                        query.executeQuery().use { rows ->
+                            assertTrue(rows.next())
+                            rows.getString(1)
+                        }
+                    }
+            }
+        assertEquals(
+            "ARMED:3:[]",
+            reconcileOutcome(
+                nextSession,
+                expectedControlVersion = 3,
+                expectedDigestValue = completedRunExpectedDigest,
+                recoverHalted = false,
+            ),
+        )
+        val laterManualCashProjection =
+            """{"accountId":"$account","cashKrw":972540,"marginRequirementKrw":0,"portfolioEquityKrw":1000000,"positions":[{"marketValueKrw":27460,"quantity":1,"symbol":"086790"}],"positionsComplete":true}"""
+        val laterManualCashDigest =
+            DriverManager.getConnection(postgres.jdbcUrl, postgres.username, postgres.password).use { admin ->
+                admin.prepareStatement("select p1_automation_account_lineage_digest_v1(?::jsonb)").use { query ->
+                    query.setString(1, laterManualCashProjection)
+                    query.executeQuery().use { rows ->
+                        assertTrue(rows.next())
+                        rows.getString(1)
+                    }
+                }
+            }
+        assertEquals(
+            "ARMED:3:[]",
+            reconcileOutcome(
+                nextSession,
+                expectedControlVersion = 3,
+                expectedDigestValue = completedRunExpectedDigest,
+                accountProjectionValue = laterManualCashProjection,
+                lineageDigestValue = laterManualCashDigest,
+                recoverHalted = false,
+            ),
+        )
+        val rebasedRiskBaseline =
+            jdbcTemplate.queryForMap(
+                "select baseline_equity_krw,baseline_cash_snapshot_krw " +
+                    "from automation_risk_session_baselines_v231 where user_id=? and account_id=?",
+                owner,
+                account,
+            )
+        assertEquals(972_540L, (rebasedRiskBaseline["baseline_equity_krw"] as Number).toLong())
+        assertEquals(972_540L, (rebasedRiskBaseline["baseline_cash_snapshot_krw"] as Number).toLong())
+        val rebasedAccountProjection =
+            jdbcTemplate.queryForMap(
+                "select expected_account_projection_v2->>'cashKrw' as cash_krw," +
+                    "expected_account_projection_v2->'positions'->0->>'symbol' as symbol," +
+                    "expected_account_projection_v2->'positions'->0->>'quantity' as quantity," +
+                    "expected_account_digest_v2 as digest," +
+                    "encode(digest(convert_to(expected_account_projection_v2::text,'UTF8'),'sha256'),'hex') as projection_digest " +
+                    "from automation_control where user_id=?",
+                owner,
+            )
+        assertEquals("972540", rebasedAccountProjection["cash_krw"])
+        assertEquals("086790", rebasedAccountProjection["symbol"])
+        assertEquals("1", rebasedAccountProjection["quantity"])
+        assertEquals(rebasedAccountProjection["digest"], rebasedAccountProjection["projection_digest"])
+        assertEquals(
+            "DENIED:22023",
+            reconcileOutcome(
+                nextSession,
+                expectedControlVersion = 3,
+                expectedDigestValue = completedRunExpectedDigest,
+                accountProjectionValue = laterManualCashProjection,
+                lineageDigestValue = laterManualCashDigest,
+                recoverHalted = false,
+            ),
+            "replaying the prior expected digest must not reapply a manual cash delta",
+        )
+        val riskBaselineAfterStaleReplay =
+            jdbcTemplate.queryForObject(
+                "select baseline_equity_krw from automation_risk_session_baselines_v231 " +
+                    "where user_id=? and account_id=?",
+                Long::class.java,
+                owner,
+                account,
+            )
+        assertEquals(972_540L, riskBaselineAfterStaleReplay)
+        adminUpdate("update automation_runtime_claim set claim_state='RELEASED',released_at=now() where run_id='$runId'")
+        adminUpdate("update automation_runtime_checkpoint set state='COMPLETED' where run_id='$runId'")
+
+        fun continuationClaimValidAt(localTime: String): Boolean =
+            DriverManager
+                .getConnection(postgres.jdbcUrl, "decision_automation_runtime", "automation-runtime-test-0001")
+                .use { runtime ->
+                    runtime
+                        .prepareStatement(
+                            "select p1_automation_released_continuation_claim_valid_v231(?,?,?,?,?::timestamptz)",
+                        ).use { query ->
+                            query.setString(1, runId)
+                            query.setString(2, claimHash)
+                            query.setString(3, owner)
+                            query.setString(4, principle)
+                            query.setString(5, "$session $localTime+09")
+                            query.executeQuery().use { rows ->
+                                assertTrue(rows.next())
+                                rows.getBoolean(1)
+                            }
+                        }
+                }
+
+        assertTrue(continuationClaimValidAt("14:00:00"))
+        assertTrue(continuationClaimValidAt("15:20:00"), "the continuation cutoff is inclusive")
+        assertFalse(continuationClaimValidAt("15:20:01"), "continuations must stop after the cutoff")
+        assertFalse(continuationClaimValidAt("15:21:00"))
+
+        // If an eligible pre-order drift halt is recovered without a session baseline,
+        // only the explicit halted-recovery path may initialize one.
+        adminUpdate(
+            "delete from automation_risk_session_baselines_v231 where user_id='$owner' and account_id='$account' " +
+                "and session_date='$session'",
+        )
+        adminUpdate("update automation_control set control_state='HALTED' where user_id='$owner'")
+        adminUpdate("update automation_runs set state='HALTED' where run_id='$runId'")
+        adminUpdate("update automation_runtime_checkpoint set state='HALTED' where run_id='$runId'")
+        adminUpdate(
+            "insert into automation_events(event_id,run_id,user_id,sequence,event_type,occurred_at," +
+                "payload_hash,provider_calls,order_submits,sanitized) values " +
+                "('auto_evt_${"9".repeat(32)}','$runId','$owner',5,'DRIFT_DETECTED',now()," +
+                "'09ed4e6112ac2721795539344195397292b9248845ffb8b409a58166bd5c3f31',0,0,true)",
+        )
+
+        fun initializeHaltedRecoveryBaseline(recoverHalted: Boolean): Long? =
+            DriverManager
+                .getConnection(postgres.jdbcUrl, "decision_automation_runtime", "automation-runtime-test-0001")
+                .use { runtime ->
+                    runtime
+                        .prepareStatement(
+                            "select p1_get_or_initialize_automation_risk_baseline_v231(?,?,?,?,?,?::timestamptz)",
+                        ).use { query ->
+                            query.setString(1, runId)
+                            query.setString(2, claimHash)
+                            query.setLong(3, 900_000)
+                            query.setLong(4, 850_000)
+                            query.setBoolean(5, recoverHalted)
+                            query.setString(6, "${session}T09:00:00+09:00")
+                            try {
+                                query.executeQuery().use { rows ->
+                                    assertTrue(rows.next())
+                                    rows.getLong(1)
+                                }
+                            } catch (error: java.sql.SQLException) {
+                                if (error.sqlState == "42501") null else throw error
+                            }
+                        }
+                }
+
+        assertEquals(null, initializeHaltedRecoveryBaseline(recoverHalted = false))
+        assertEquals(900_000L, initializeHaltedRecoveryBaseline(recoverHalted = true))
+        val recoveredBaseline =
+            jdbcTemplate.queryForMap(
+                "select baseline_equity_krw,baseline_cash_snapshot_krw " +
+                    "from automation_risk_session_baselines_v231 where user_id=? and account_id=?",
+                owner,
+                account,
+            )
+        assertEquals(900_000L, (recoveredBaseline["baseline_equity_krw"] as Number).toLong())
+        assertEquals(850_000L, (recoveredBaseline["baseline_cash_snapshot_krw"] as Number).toLong())
     }
 
     @Test
@@ -3603,6 +4439,12 @@ class FlywayMigrationIntegrationTest(
               '2026-06-23T06:31:00Z', '2026-06-23T06:31:01Z',
               'deterministic-risk-observation.v1', 'risk-fixture-v1',
               '{"ownerScopeHash":"sanitized"}'::jsonb, repeat('5', 64), repeat('6', 64)
+            ), (
+              'risk-s23-automation-read', 'usr_demo_user', repeat('c', 64), 'KIS_MOCK',
+              -0.0550, -0.0700, 0.3300, 'COMPLETE',
+              '2026-06-23T06:31:00Z', '2026-06-23T06:31:01Z',
+              'deterministic-risk-observation.v1', 'p1-automation-risk-v1',
+              '{"ownerScopeHash":"automation-sanitized"}'::jsonb, repeat('9', 64), repeat('a', 64)
             )
             """.trimIndent(),
         )
@@ -3663,6 +4505,13 @@ class FlywayMigrationIntegrationTest(
         assertEquals("-0.0125", metricDecimal(risk.dailyLossRate))
         assertEquals("-0.08", metricDecimal(risk.maxDrawdown))
         assertEquals("0.22", metricDecimal(risk.annualizedVolatility))
+
+        val automationRiskRequest = request.copy(automationRiskScope = true)
+        val automationRisk =
+            asTestActor(actorCapabilityIssuer) { riskSnapshotPort.load(automationRiskRequest) }
+        assertEquals("-0.055", metricDecimal(automationRisk.dailyLossRate))
+        assertEquals("-0.07", metricDecimal(automationRisk.maxDrawdown))
+        assertEquals("0.33", metricDecimal(automationRisk.annualizedVolatility))
 
         val orderCount = asTestActor(actorCapabilityIssuer) { orderMetricPort.loadDailyOrderCount(request) } as MetricCell.Available
         assertEquals(0L, (orderCount.value as MetricValue.Whole).value)

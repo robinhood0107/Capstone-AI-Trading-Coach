@@ -110,6 +110,7 @@ class JdbcDeterministicRiskAdapter(
             ownerScopeHash = request.portfolioContext.ownerScopeHash,
             portfolioSource = request.portfolioContext.source.name,
             evaluationAsOf = request.evaluationAsOf,
+            automationRiskScope = request.automationRiskScope,
         )
 
     override fun loadPortfolio(request: PortfolioSourceRequest): RiskMetricBundle =
@@ -118,6 +119,7 @@ class JdbcDeterministicRiskAdapter(
             ownerScopeHash = request.portfolioContext.ownerScopeHash,
             portfolioSource = request.portfolioContext.source.name,
             evaluationAsOf = request.evaluationAsOf,
+            automationRiskScope = false,
         )
 
     private fun loadStored(
@@ -125,28 +127,50 @@ class JdbcDeterministicRiskAdapter(
         ownerScopeHash: String,
         portfolioSource: String,
         evaluationAsOf: Instant,
+        automationRiskScope: Boolean,
     ): RiskMetricBundle {
         val rows =
             actorScopedReadQuery.query(
                 actorUserId = actorUserId,
                 sql =
-                    """
-                    SELECT daily_loss_rate,
-                           max_drawdown,
-                           annualized_volatility,
-                           completeness,
-                           observed_at,
-                           received_at,
-                           source_version,
-                           source_ref
-                    FROM latest_deterministic_risk_observations
-                    WHERE owner_scope_hash = ?
-                      AND portfolio_source = ?
-                    LIMIT 2
-                    """.trimIndent(),
+                    if (automationRiskScope) {
+                        """
+                        SELECT daily_loss_rate,
+                               max_drawdown,
+                               annualized_volatility,
+                               completeness,
+                               observed_at,
+                               received_at,
+                               source_version,
+                               source_ref
+                        FROM read_automation_risk_snapshot_authorized_v231(?, ?, ?)
+                        LIMIT 2
+                        """.trimIndent()
+                    } else {
+                        """
+                        SELECT daily_loss_rate,
+                               max_drawdown,
+                               annualized_volatility,
+                               completeness,
+                               observed_at,
+                               received_at,
+                               source_version,
+                               source_ref
+                        FROM latest_deterministic_risk_observations
+                        WHERE owner_scope_hash = ?
+                          AND portfolio_source = ?
+                        LIMIT 2
+                        """.trimIndent()
+                    },
                 binder = { statement ->
-                    statement.setString(1, ownerScopeHash)
-                    statement.setString(2, portfolioSource)
+                    if (automationRiskScope) {
+                        statement.setString(1, actorUserId)
+                        statement.setString(2, ownerScopeHash)
+                        statement.setString(3, portfolioSource)
+                    } else {
+                        statement.setString(1, ownerScopeHash)
+                        statement.setString(2, portfolioSource)
+                    }
                 },
             ) { result ->
                 StoredRiskRow(

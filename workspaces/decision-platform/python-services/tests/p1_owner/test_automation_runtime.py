@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from typing import Any, cast
 from zoneinfo import ZoneInfo
 
@@ -18,6 +18,7 @@ from app.p1_owner.automation import (
     Quote,
 )
 from app.p1_owner.automation_runtime import (
+    AutomationAccountRecoveryCandidate,
     AccountLineageAdvance,
     AdvanceCommand,
     AiJudgementRecord,
@@ -43,6 +44,15 @@ def test_preparation_is_due_before_order_opening(minute: int) -> None:
     assert planner.next_wakeup(now) == datetime(2026, 9, 8, 9, 30, tzinfo=_KST)
     holiday = datetime(2026, 8, 14, 16, 0, tzinfo=_KST)
     assert planner.preparation_wakeup(holiday) == datetime(2026, 8, 18, 8, 30, tzinfo=_KST)
+    missed_today = datetime(2026, 8, 28, 16, 0, tzinfo=_KST)
+    assert (
+        planner.next_wakeup(
+            missed_today,
+            state="SCHEDULED",
+            session=date(2026, 8, 28),
+        )
+        == missed_today
+    )
 
 
 @pytest.mark.parametrize("outcome", ["IMPORTED", "REPLAYED", "MODEL_OR_MARKET_DATA_UNAVAILABLE"])
@@ -372,6 +382,51 @@ def test_persistent_runner_reloads_state_and_cas_persists_each_boundary() -> Non
     assert port.physical_calls == port.physical_submit_calls == 0
 
 
+def test_live_account_sync_happens_before_a_scheduled_tick_reads_drift_gate() -> None:
+    state = _state()
+    state["accountDigestMatches"] = False
+    state["expectedAccountProjection"] = {
+        "accountId": state["accountId"],
+        "cashKrw": "1000000",
+        "positions": [],
+        "schemaVersion": 2,
+    }
+    state["expectedAccountDigest"] = "f" * 64
+    order: list[str] = []
+
+    class RecordingRepository(FakeRepository):
+        def read_state(self, claim: RuntimeClaim) -> dict[str, Any]:
+            order.append("read")
+            return super().read_state(claim)
+
+    repository = RecordingRepository(state)
+
+    class SyncPort(FakeRuntimePort):
+        def sync_account(self, **kwargs: Any) -> dict[str, Any]:
+            assert kwargs["state"]["accountDigestMatches"] is False
+            order.append("sync")
+            repository.state["accountDigestMatches"] = True
+            return {"reconciled": True}
+
+        def inputs(self, *, state: dict[str, Any], run: object, now: datetime) -> AutomationInputs:
+            assert state["accountDigestMatches"] is True
+            order.append("inputs")
+            return super().inputs(state=state, run=run, now=now)
+
+    port = SyncPort(quotes={"005930": Quote("005930", 75_000, 52_500, 97_500)})
+    result = PersistentAutomationRunner(cast(Any, repository)).run_tick(
+        claim=_claim(),
+        tick_id="account-sync-before-boundary",
+        now=datetime(2026, 8, 28, 9, 30, tzinfo=_KST),
+        port=port,
+        next_session=date(2026, 8, 31),
+    )
+
+    assert result["state"] == "PRECHECK"
+    assert order.index("sync") < order.index("inputs")
+    assert order.count("read") == 2
+
+
 def test_inputs_from_state_preserve_rule_lstm_and_fail_closed_flags() -> None:
     state = _state()
     state["killSwitchActive"] = True
@@ -383,6 +438,64 @@ def test_inputs_from_state_preserve_rule_lstm_and_fail_closed_flags() -> None:
     assert inputs.account_digest_matches is False
     assert inputs.risk_allow is False
     assert inputs.buyable_quantity == 0
+
+
+def test_external_account_reconcile_passes_expected_digest_and_snapshot_as_parameters(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    executed: list[tuple[str, tuple[Any, ...]]] = []
+
+    class Cursor:
+        def __enter__(self) -> Cursor:
+            return self
+
+        def __exit__(self, *_args: object) -> None:
+            return None
+
+        def execute(self, query: str, params: tuple[Any, ...]) -> None:
+            executed.append((query, params))
+
+        def fetchone(self) -> tuple[dict[str, Any]]:
+            return ({"reconciled": True, "quarantinedSymbols": []},)
+
+    class Connection:
+        def __enter__(self) -> Connection:
+            return self
+
+        def __exit__(self, *_args: object) -> None:
+            return None
+
+        def cursor(self) -> Cursor:
+            return Cursor()
+
+    repository = PostgresAutomationRuntimeRepository(
+        "user=decision_automation_runtime host=postgres dbname=runtime_test"
+    )
+    monkeypatch.setattr(repository, "_connect", lambda **_kwargs: Connection())
+    projection = {
+        "accountId": _claim().account_id,
+        "cashKrw": 1_000_000,
+        "marginRequirementKrw": 0,
+        "portfolioEquityKrw": 1_000_000,
+        "positionsComplete": True,
+        "positions": [],
+    }
+
+    result = repository.reconcile_external_account(
+        _claim(),
+        account_projection=projection,
+        expected_account_digest="e" * 64,
+        order_snapshot_sha256="f" * 64,
+        open_order_count=0,
+        next_session=date(2026, 8, 31),
+    )
+
+    assert result["reconciled"] is True
+    query, params = executed[0]
+    assert "p1_reconcile_automation_account_v1" in query
+    assert params[3] == "e" * 64
+    assert params[6] == "f" * 64
+    assert params[7] == 0
 
 
 def test_atr_reader_uses_the_largest_immutable_position_snapshot_period() -> None:
@@ -1709,6 +1822,80 @@ def test_a_hole_in_the_chain_is_filled_when_the_claim_comes_back_empty() -> None
     # 굴렸다고 알려야 호출자가 그날 claim 을 다시 시도한다. 여기서 False 를 돌려주면
     # 빈칸을 메워 놓고도 다음 세션까지 자서 그날 운용이 통째로 날아간다.
     assert armed is True
+
+
+@pytest.mark.parametrize("sync_fails", [False, True])
+def test_halted_account_recovery_syncs_next_session_without_replaying_old_run(
+    monkeypatch: pytest.MonkeyPatch,
+    sync_fails: bool,
+) -> None:
+    from app.p1_owner import automation_runtime as runtime
+
+    now_utc = datetime(2026, 9, 29, 4, 0, tzinfo=ZoneInfo("UTC"))
+
+    class FrozenDateTime(datetime):
+        @classmethod
+        def now(cls, tz: Any = None) -> datetime:
+            return now_utc.astimezone(tz) if tz is not None else now_utc.replace(tzinfo=None)
+
+    class Planner:
+        def next_session(self, session: date) -> date:
+            assert session == _claim().session_date
+            return date(2026, 8, 31)
+
+        def current_or_next_session(self, observed_at: datetime) -> date:
+            assert observed_at.date() == date(2026, 9, 29)
+            return date(2026, 9, 30)
+
+    monkeypatch.setattr(runtime, "datetime", FrozenDateTime)
+    calls: list[object] = []
+
+    class Port:
+        def sync_account(self, **kwargs: Any) -> dict[str, Any]:
+            calls.append(kwargs)
+            assert kwargs["run"] is None
+            assert kwargs["recover_halted"] is True
+            assert kwargs["next_session"] == date(2026, 9, 30)
+            if sync_fails:
+                raise AutomationRuntimeError("AUTOMATION_KIS_UNAVAILABLE")
+            return {"reconciled": True}
+
+        def close(self) -> None:
+            calls.append("closed")
+
+    class PortFactory:
+        def build(self, claim: RuntimeClaim, state: dict[str, Any]) -> Port:
+            assert claim == _claim()
+            assert state["sessionDate"] == claim.session_date.isoformat()
+            assert state["providerCallCount"] == state["logicalSubmitCount"] == 0
+            assert state["reservation"] is None
+            calls.append("built")
+            return Port()
+
+    service = AutomationRuntimeService(cast(Any, None), cast(Any, PortFactory()), "x" * 32)
+    service._planner = cast(Any, Planner())
+    candidate = AutomationAccountRecoveryCandidate(
+        claim=_claim(),
+        expected_projection={
+            "accountId": _claim().account_id,
+            "cashKrw": "1000000",
+            "schemaVersion": 2,
+            "positions": [],
+        },
+        expected_digest="e" * 64,
+    )
+
+    outcome, retry_at = service._recover_halted_account(candidate)
+
+    assert calls[0] == "built"
+    assert isinstance(calls[1], dict)
+    assert calls[-1] == "closed"
+    if sync_fails:
+        assert outcome == "RETRY"
+        assert retry_at == FrozenDateTime.now(ZoneInfo("Asia/Seoul")) + timedelta(seconds=60)
+    else:
+        assert outcome == "REARMED"
+        assert retry_at == FrozenDateTime.now(ZoneInfo("Asia/Seoul")) + timedelta(seconds=1)
 
 
 def test_advancing_stops_once_the_cursor_reaches_the_target() -> None:

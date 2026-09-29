@@ -8,7 +8,7 @@ from enum import StrEnum
 
 from app.data._shared.repository_root import repository_root
 from threading import Lock
-from typing import Any, cast
+from typing import Any, Literal, cast
 
 import httpx
 from pydantic import Field, SecretStr, ValidationError
@@ -418,11 +418,18 @@ class KISMockBrokerageHttpClient:
         *,
         params: dict[str, str] | None = None,
         json_body: dict[str, str] | None = None,
+        continuation: Literal["N"] | None = None,
     ) -> dict[str, Any]:
         """caller가 origin/header/account/TR을 주입하지 못하는 exact mock allowlist 경계다."""
         normalized_method = method.upper()
         if (normalized_method, path, tr_id) not in _APPROVED_OPERATIONS:
             raise ValueError("KIS mock brokerage endpoint/TR allowlist rejected the request")
+        if continuation is not None and (
+            continuation != "N"
+            or normalized_method != "GET"
+            or path not in {EXECUTIONS_PATH, BALANCE_PATH}
+        ):
+            raise ValueError("KIS mock brokerage continuation is invalid")
         if normalized_method == "POST":
             if params is not None or json_body is None:
                 raise ValueError("KIS mock brokerage POST shape is invalid")
@@ -467,10 +474,13 @@ class KISMockBrokerageHttpClient:
             body = None
         brokerage_before = self._budget.counts["brokerage"]
         try:
+            request_headers = {_INTERNAL_TR_ID_HEADER: tr_id}
+            if continuation is not None:
+                request_headers["tr_cont"] = continuation
             response = self._http.request(
                 normalized_method,
                 f"{self._origin}{path}",
-                headers={_INTERNAL_TR_ID_HEADER: tr_id},
+                headers=request_headers,
                 params=query,
                 json=body,
             )
@@ -520,7 +530,11 @@ class KISMockBrokerageHttpClient:
                 KISMockFailureReason.PROVIDER_REJECTED,
                 provider_code=provider_code if isinstance(provider_code, str) else None,
             )
-        return _sanitize_payload(payload)
+        sanitized = _sanitize_payload(payload)
+        # Cursor continuation is transport metadata and contains no account identifier.
+        # Keep it inside the bounded reader contract so pagination can be explicit.
+        sanitized["_tr_cont"] = response.headers.get("tr_cont", "")
+        return sanitized
 
     def close(self) -> None:
         if self._closed:

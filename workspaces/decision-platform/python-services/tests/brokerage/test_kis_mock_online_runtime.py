@@ -20,9 +20,11 @@ from app.brokerage.mock_order_reference_store import MockProviderOrderReference
 
 
 class FakeClient:
-    def __init__(self, payload: dict[str, Any]) -> None:
-        self.payload = payload
+    def __init__(self, payload: dict[str, Any] | list[dict[str, Any]]) -> None:
+        self.payloads = payload if isinstance(payload, list) else [payload]
+        self.call_count = 0
         self.calls: list[tuple[str, str, str, dict[str, str]]] = []
+        self.continuations: list[str | None] = []
 
     def request(
         self,
@@ -32,10 +34,14 @@ class FakeClient:
         *,
         params: dict[str, str] | None = None,
         json_body: dict[str, str] | None = None,
+        continuation: str | None = None,
     ) -> dict[str, Any]:
         assert json_body is None
         self.calls.append((method, path, tr_id, dict(params or {})))
-        return self.payload
+        self.continuations.append(continuation)
+        payload = self.payloads[min(self.call_count, len(self.payloads) - 1)]
+        self.call_count += 1
+        return payload
 
 
 def test_online_server_defaults_closed_before_any_runtime_client_is_built(
@@ -159,6 +165,35 @@ def test_online_balance_probe_parses_source_without_fabricating_risk_fields() ->
     assert market_value_only.reconciliation_digest() == source.reconciliation_digest()
     assert cash_changed.reconciliation_digest() != source.reconciliation_digest()
     assert quantity_changed.reconciliation_digest() != source.reconciliation_digest()
+
+
+def test_balance_probe_follows_continuation_pages_before_calling_holdings_complete() -> None:
+    pages = [
+        {
+            "rt_cd": "0",
+            "_tr_cont": "M",
+            "ctx_area_fk100": "fk-2",
+            "ctx_area_nk100": "nk-2",
+            "output1": [{"pdno": "005930", "hldg_qty": "2", "evlu_amt": "140,000"}],
+            "output2": [{"prvs_rcdl_excc_amt": "1,000,000", "tot_evlu_amt": "1,280,000"}],
+        },
+        {
+            "rt_cd": "0",
+            "_tr_cont": "E",
+            "ctx_area_fk100": "",
+            "ctx_area_nk100": "",
+            "output1": [{"pdno": "000660", "hldg_qty": "1", "evlu_amt": "140,000"}],
+            "output2": [],
+        },
+    ]
+    client = FakeClient(pages)
+    source = KISMockOnlineBalanceReader(client).probe_balance_source("acct_" + "a" * 32)  # type: ignore[arg-type]
+
+    assert source.positions_complete is True
+    assert source.positions == (("000660", 1, 140_000), ("005930", 2, 140_000))
+    assert len(client.calls) == 2
+    assert client.continuations == [None, "N"]
+    assert client.calls[1][3]["CTX_AREA_FK100"] == "fk-2"
 
 
 def test_online_buyable_parser_returns_only_sanitized_projection() -> None:
@@ -588,21 +623,187 @@ def test_execution_probe_allows_blank_cursor_and_singleton_row_shape() -> None:
         )
 
 
-def test_balance_probe_marks_partial_page_without_publishing_complete_positions() -> None:
+def test_balance_probe_marks_page_limit_exhaustion_incomplete() -> None:
+    pages = [
+        {
+            "rt_cd": "0",
+            "_tr_cont": "M",
+            "ctx_area_fk100": f"fk-{index + 1}",
+            "ctx_area_nk100": f"nk-{index + 1}",
+            "output1": [{"pdno": f"{index + 1:06d}", "hldg_qty": "1", "evlu_amt": "70,000"}],
+            "output2": [{"prvs_rcdl_excc_amt": "0", "tot_evlu_amt": "0"}],
+        }
+        for index in range(4)
+    ]
     balance_reader = KISMockOnlineBalanceReader(
+        FakeClient(pages)  # type: ignore[arg-type]
+    )
+    source = balance_reader.probe_balance_source("acct_" + "a" * 32)
+    assert len(source.positions) == 4
+    assert source.positions_complete is False
+
+
+def test_account_order_scan_paginates_and_detects_pending_external_order() -> None:
+    pages = [
+        {
+            "rt_cd": "0",
+            "ctx_area_fk100": "orders-2",
+            "ctx_area_nk100": "orders-2",
+            "_tr_cont": "M",
+            "output1": [
+                {
+                    "odno": "raw-order-1",
+                    "pdno": "086790",
+                    "sll_buy_dvsn_cd": "02",
+                    "ord_qty": "1",
+                    "tot_ccld_qty": "0",
+                    "rmn_qty": "1",
+                    "cncl_cfrm_qty": "0",
+                    "rjct_qty": "0",
+                    "cncl_yn": "N",
+                }
+            ],
+        },
+        {
+            "rt_cd": "0",
+            "_tr_cont": "E",
+            "ctx_area_fk100": "",
+            "ctx_area_nk100": "",
+            "output1": [
+                {
+                    "odno": "raw-order-2",
+                    "pdno": "005930",
+                    "sll_buy_dvsn_cd": "01",
+                    "ord_qty": "1",
+                    "tot_ccld_qty": "1",
+                    "rmn_qty": "0",
+                    "cncl_cfrm_qty": "0",
+                    "rjct_qty": "0",
+                    "cncl_yn": "N",
+                }
+            ],
+        },
+    ]
+    client = FakeClient(pages)
+    orders = KISMockExecutionReader(client).read_session_orders(session_date=date(2026, 9, 29))  # type: ignore[arg-type]
+
+    assert len(orders) == 2
+    assert sum(order.unresolved for order in orders) == 1
+    assert all("raw-order" not in repr(order) for order in orders)
+    assert client.continuations == [None, "N"]
+
+
+def test_account_order_scan_rejects_unaccounted_quantity_and_duplicate_pages() -> None:
+    base_row = {
+        "odno": "raw-order-1",
+        "pdno": "086790",
+        "sll_buy_dvsn_cd": "02",
+        "ord_qty": "2",
+        "tot_ccld_qty": "1",
+        "rmn_qty": "0",
+        "cncl_cfrm_qty": "0",
+        "rjct_qty": "0",
+        "cncl_yn": "N",
+    }
+    with pytest.raises(ValueError, match="quantities are invalid"):
+        KISMockExecutionReader(
+            FakeClient({"rt_cd": "0", "output1": [base_row]})
+        ).read_session_orders(  # type: ignore[arg-type]
+            session_date=date(2026, 9, 29)
+        )
+
+    first = {
+        "rt_cd": "0",
+        "_tr_cont": "M",
+        "ctx_area_fk100": "next",
+        "ctx_area_nk100": "next",
+        "output1": [{**base_row, "tot_ccld_qty": "0", "rmn_qty": "2"}],
+    }
+    duplicate = {
+        "rt_cd": "0",
+        "_tr_cont": "E",
+        "ctx_area_fk100": "",
+        "ctx_area_nk100": "",
+        "output1": [{**base_row, "tot_ccld_qty": "0", "rmn_qty": "2"}],
+    }
+    with pytest.raises(ValueError, match="duplicate"):
+        KISMockExecutionReader(FakeClient([first, duplicate])).read_session_orders(  # type: ignore[arg-type]
+            session_date=date(2026, 9, 29)
+        )
+
+
+def test_account_order_scan_fails_closed_when_page_limit_still_has_more() -> None:
+    pages = [
+        {
+            "rt_cd": "0",
+            "_tr_cont": "M",
+            "ctx_area_fk100": f"fk-{index + 1}",
+            "ctx_area_nk100": f"nk-{index + 1}",
+            "output1": [
+                {
+                    "odno": f"order-{index + 1}",
+                    "pdno": "086790",
+                    "sll_buy_dvsn_cd": "02",
+                    "ord_qty": "1",
+                    "tot_ccld_qty": "1",
+                    "rmn_qty": "0",
+                    "cncl_cfrm_qty": "0",
+                    "rjct_qty": "0",
+                    "cncl_yn": "N",
+                }
+            ],
+        }
+        for index in range(4)
+    ]
+    client = FakeClient(pages)
+
+    with pytest.raises(ValueError, match="page limit"):
+        KISMockExecutionReader(client).read_session_orders(session_date=date(2026, 9, 29))  # type: ignore[arg-type]
+
+    assert len(client.calls) == 4
+
+
+def test_balance_reader_rejects_a_more_pages_header_without_cursors() -> None:
+    reader = KISMockOnlineBalanceReader(
         FakeClient(
             {
                 "rt_cd": "0",
-                "ctx_area_fk100": "next",
-                "ctx_area_nk100": "next",
+                "_tr_cont": "M",
+                "ctx_area_fk100": "",
+                "ctx_area_nk100": "",
                 "output1": [{"pdno": "005930", "hldg_qty": "1", "evlu_amt": "70,000"}],
-                "output2": [{"dnca_tot_amt": "0", "prvs_rcdl_excc_amt": "0", "tot_evlu_amt": "0"}],
+                "output2": [{"prvs_rcdl_excc_amt": "0", "tot_evlu_amt": "70,000"}],
             }
         )  # type: ignore[arg-type]
     )
-    source = balance_reader.probe_balance_source("acct_" + "a" * 32)
-    assert source.positions == (("005930", 1, 70_000),)
-    assert source.positions_complete is False
+    with pytest.raises(ValueError, match="no cursor"):
+        reader.probe_balance_source("acct_" + "a" * 32)
+
+
+def test_balance_probe_rejects_duplicate_symbols_across_pages() -> None:
+    pages = [
+        {
+            "rt_cd": "0",
+            "_tr_cont": "M",
+            "ctx_area_fk100": "next",
+            "ctx_area_nk100": "next",
+            "output1": [{"pdno": "086790", "hldg_qty": "1", "evlu_amt": "17,460"}],
+            "output2": [{"prvs_rcdl_excc_amt": "982,540", "tot_evlu_amt": "1,000,000"}],
+        },
+        {
+            "rt_cd": "0",
+            "_tr_cont": "E",
+            "ctx_area_fk100": "",
+            "ctx_area_nk100": "",
+            "output1": [{"pdno": "086790", "hldg_qty": "2", "evlu_amt": "34,920"}],
+            "output2": [],
+        },
+    ]
+
+    with pytest.raises(KISMockProjectionError, match="duplicate positions"):
+        KISMockOnlineBalanceReader(FakeClient(pages)).probe_balance_source(  # type: ignore[arg-type]
+            "acct_" + "a" * 32
+        )
 
 
 def test_execution_rejects_incomplete_or_oversized_mock_pages() -> None:

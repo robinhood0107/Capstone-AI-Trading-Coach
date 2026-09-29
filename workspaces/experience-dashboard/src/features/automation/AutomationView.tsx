@@ -1036,7 +1036,7 @@ function PositionPanel({ positions, instruments }: { positions: AutomationPositi
                         ? '청산 대기'
                         : position.status === 'CLOSED'
                           ? '종료'
-                          : '대사 확인 필요'}
+                          : '계좌 수량 변경 · 자동 매매 격리'}
                     {position.exitReason ? (
                       <span className="ml-1.5 text-faint">
                         · {AUTOMATION_EXIT_REASON_LABELS[position.exitReason]}

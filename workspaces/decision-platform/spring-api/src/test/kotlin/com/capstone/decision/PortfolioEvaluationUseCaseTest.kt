@@ -107,6 +107,60 @@ class PortfolioEvaluationUseCaseTest {
     }
 
     @Test
+    fun `automation manual gold holding is excluded from risk exposure but stays in account identity`() {
+        val ownerScope = "b".repeat(64)
+        val fullBalance =
+            available(
+                BalanceSnapshot(
+                    source = PortfolioSource.KIS_MOCK,
+                    revision = "kis-revision-7",
+                    ownerScopeHash = ownerScope,
+                    cashKrw = 200_000,
+                    portfolioEquityKrw = 1_200_000,
+                    positions =
+                        listOf(
+                            PortfolioPosition("005930", 1, 100_000, false),
+                            PortfolioPosition("000660", 1, 100_000, false),
+                            PortfolioPosition("132030", 1, 800_000, true),
+                        ),
+                ),
+                MetricSource.KIS_MOCK,
+                "3",
+            )
+        val harness = Harness(kisBalanceCell = fullBalance)
+
+        val snapshot =
+            requireNotNull(
+                harness.useCase
+                    .evaluate(
+                        harness.command(
+                            portfolioSource = PortfolioSource.KIS_MOCK.name,
+                            riskExcludedPositionSymbols = setOf("132030"),
+                            automationRiskScope = true,
+                        ),
+                    ).snapshot,
+            )
+        val goldWeight = snapshot.metric(MetricKey.GOLD_ETF_ETN_WEIGHT) as MetricCell.Available
+        val effectiveEquity = snapshot.metric(MetricKey.PORTFOLIO_EQUITY_KRW) as MetricCell.Available
+
+        val ratio = goldWeight.value as MetricValue.RatioFraction
+        assertThat(ratio.numerator).isZero()
+        assertThat(ratio.denominator).isEqualTo(400_000)
+        assertThat((effectiveEquity.value as MetricValue.Whole).value).isEqualTo(400_000)
+        assertThat(snapshot.portfolio.positionCount).isEqualTo(3)
+        assertThat(snapshot.riskExcludedPositionSymbols).containsExactly("132030")
+        assertThat(harness.riskAutomationScopes).containsExactly(true)
+        assertThat(SnapshotHashService().snapshotArtifactHash(snapshot))
+            .isNotEqualTo(
+                SnapshotHashService().snapshotArtifactHash(
+                    snapshot.copy(riskExcludedPositionSymbols = emptyList()),
+                ),
+            )
+        assertThat(SnapshotHashService().snapshotArtifactCanonicalJson(snapshot))
+            .contains("\"riskExcludedPositionSymbols\":[\"132030\"]")
+    }
+
+    @Test
     fun `explicit PAPER mode never probes KIS and pins one immutable principle snapshot`() {
         val harness = Harness()
 
@@ -694,6 +748,7 @@ class PortfolioEvaluationUseCaseTest {
         var marginCalls = 0
         var orderMetricCalls = 0
         var riskCalls = 0
+        val riskAutomationScopes = mutableListOf<Boolean>()
         var instrumentCalls = 0
         var newsCalls = 0
         var disclosureCalls = 0
@@ -822,6 +877,7 @@ class PortfolioEvaluationUseCaseTest {
                             object : RiskSnapshotPort {
                                 override fun load(request: EvaluationSourceRequest): RiskMetricBundle {
                                     riskCalls += 1
+                                    riskAutomationScopes += request.automationRiskScope
                                     return RiskMetricBundle(
                                         dailyLossRate =
                                             dailyLossRateCell
@@ -892,6 +948,8 @@ class PortfolioEvaluationUseCaseTest {
             portfolioSource: String = PortfolioSource.INTERNAL_PAPER.name,
             optionalComponents: Set<OptionalEvaluationComponent> = emptySet(),
             evaluationId: String = "evl_0123456789abcdef",
+            riskExcludedPositionSymbols: Set<String> = emptySet(),
+            automationRiskScope: Boolean = false,
             orderIntent: OrderIntentSnapshot =
                 OrderIntentSnapshot(
                     symbol = "005930",
@@ -912,6 +970,8 @@ class PortfolioEvaluationUseCaseTest {
                 evaluationAsOf = AS_OF,
                 orderIntent = orderIntent,
                 optionalComponents = optionalComponents,
+                riskExcludedPositionSymbols = riskExcludedPositionSymbols,
+                automationRiskScope = automationRiskScope,
             )
 
         fun sourceCalls(): Int = allSourceCallCounts().sum()

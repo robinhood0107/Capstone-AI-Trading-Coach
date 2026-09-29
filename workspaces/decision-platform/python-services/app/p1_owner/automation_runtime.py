@@ -39,6 +39,7 @@ from app.p1_owner.automation import (
     AutomationEngine,
     AutomationError,
     AutomationInputs,
+    AccountLineageSnapshot,
     AutomationPolicySnapshot,
     AutomationRun,
     AutomationStore,
@@ -153,6 +154,10 @@ class AutomationRuntimeError(RuntimeError):
         self.failure_code = failure_code
 
 
+class AutomationObservationUnavailable(AutomationRuntimeError):
+    """Fresh risk observations were not published, so the decision must retry without evaluating."""
+
+
 @dataclass(frozen=True, slots=True)
 class RuntimeClaim:
     user_id: str
@@ -172,6 +177,13 @@ class ReadinessResult:
     markers: dict[str, bool]
     current_control_version: int
     all_ready: bool
+
+
+@dataclass(frozen=True, slots=True)
+class AutomationAccountRecoveryCandidate:
+    claim: RuntimeClaim
+    expected_projection: dict[str, Any]
+    expected_digest: str
 
 
 @dataclass(frozen=True, slots=True)
@@ -527,6 +539,126 @@ class PostgresAutomationRuntimeRepository:
             raise AutomationRuntimeError("AUTOMATION_RESUME_UNAVAILABLE")
         return int(row[0])
 
+    def reconcile_external_account(
+        self,
+        claim: RuntimeClaim,
+        *,
+        account_projection: Mapping[str, object],
+        expected_account_digest: str,
+        order_snapshot_sha256: str,
+        open_order_count: int,
+        next_session: date,
+        recover_halted: bool = False,
+    ) -> dict[str, Any]:
+        """Advance the account expectation from a complete, owner-bound KIS snapshot."""
+        if re.fullmatch(r"[0-9a-f]{64}", order_snapshot_sha256) is None:
+            raise AutomationRuntimeError("AUTOMATION_ACCOUNT_ORDER_SNAPSHOT_HASH_INVALID")
+        if re.fullmatch(r"[0-9a-f]{64}", expected_account_digest) is None:
+            raise AutomationRuntimeError("AUTOMATION_ACCOUNT_EXPECTED_DIGEST_INVALID")
+        try:
+            lineage = AccountLineageSnapshot.from_projection(account_projection)
+        except (AutomationError, TypeError, ValueError) as error:
+            raise AutomationRuntimeError("AUTOMATION_ACCOUNT_LINEAGE_INVALID") from error
+        if lineage.account_id != claim.account_id:
+            raise AutomationRuntimeError("AUTOMATION_ACCOUNT_IDENTITY_MISMATCH")
+        with self._connect() as connection, connection.cursor() as cursor:
+            cursor.execute(
+                "select p1_reconcile_automation_account_v1(%s,%s,%s,%s,%s::jsonb,%s,%s,%s,%s,%s)",
+                (
+                    claim.run_id,
+                    claim.claim_token_hash,
+                    claim.control_version,
+                    expected_account_digest,
+                    canonical_json_bytes(dict(account_projection)).decode(),
+                    lineage.digest,
+                    order_snapshot_sha256,
+                    open_order_count,
+                    next_session,
+                    recover_halted,
+                ),
+            )
+            row = cursor.fetchone()
+        if row is None or not isinstance(row[0], dict) or row[0].get("reconciled") is not True:
+            raise AutomationRuntimeError("AUTOMATION_ACCOUNT_RECONCILIATION_FAILED")
+        return dict(row[0])
+
+    def get_or_initialize_risk_baseline(
+        self,
+        claim: RuntimeClaim,
+        observed_equity_krw: int,
+        observed_cash_krw: int,
+        *,
+        recover_halted: bool = False,
+        as_of: datetime,
+    ) -> int:
+        if (
+            isinstance(observed_equity_krw, bool)
+            or observed_equity_krw <= 0
+            or isinstance(observed_cash_krw, bool)
+            or observed_cash_krw < 0
+            or as_of.tzinfo is None
+            or as_of.utcoffset() is None
+        ):
+            raise AutomationRuntimeError("AUTOMATION_RISK_BASELINE_INVALID")
+        with self._connect() as connection, connection.cursor() as cursor:
+            cursor.execute(
+                "select p1_get_or_initialize_automation_risk_baseline_v231(%s,%s,%s,%s,%s,%s)",
+                (
+                    claim.run_id,
+                    claim.claim_token_hash,
+                    observed_equity_krw,
+                    observed_cash_krw,
+                    recover_halted,
+                    as_of,
+                ),
+            )
+            row = cursor.fetchone()
+        if row is None or not isinstance(row[0], int) or row[0] <= 0:
+            raise AutomationRuntimeError("AUTOMATION_RISK_BASELINE_UNAVAILABLE")
+        return row[0]
+
+    def recoverable_account_sync_halts(self) -> tuple[AutomationAccountRecoveryCandidate, ...]:
+        """Find only pre-order ACCOUNT_DRIFT halts that can be safely rebaselined."""
+        with self._connect(row_factory=dict_row) as connection, connection.cursor() as cursor:
+            cursor.execute("select * from p1_list_recoverable_automation_account_halts_v1()")
+            rows = cursor.fetchall()
+        if len(rows) > 100:
+            raise AutomationRuntimeError("AUTOMATION_ACCOUNT_RECOVERY_OWNER_CAP_EXCEEDED")
+        result: list[AutomationAccountRecoveryCandidate] = []
+        for row in rows:
+            owner = str(row["user_id"])
+            run_id = str(row["run_id"])
+            session_date = row["session_date"]
+            if not isinstance(session_date, date):
+                raise AutomationRuntimeError("AUTOMATION_ACCOUNT_RECOVERY_SESSION_INVALID")
+            expected_projection = row["expected_account_projection"]
+            if not isinstance(expected_projection, dict):
+                raise AutomationRuntimeError("AUTOMATION_ACCOUNT_RECOVERY_BASELINE_MISSING")
+            expected_digest = str(row["expected_account_digest"])
+            if re.fullmatch(r"[0-9a-f]{64}", expected_digest) is None:
+                raise AutomationRuntimeError("AUTOMATION_ACCOUNT_RECOVERY_DIGEST_INVALID")
+            claim = RuntimeClaim(
+                user_id=owner,
+                run_id=run_id,
+                control_version=int(row["control_version"]),
+                account_id=str(row["account_id"]),
+                principle_id=str(row["principle_id"]),
+                strategy_id=str(row["strategy_id"]),
+                baseline_account_digest=str(row["baseline_account_digest"]),
+                replayed=True,
+                session_date=session_date,
+                claim_token_hash=str(row["claim_token_hash"]),
+            )
+            _require_hash(claim.claim_token_hash)
+            result.append(
+                AutomationAccountRecoveryCandidate(
+                    claim=claim,
+                    expected_projection=expected_projection,
+                    expected_digest=expected_digest,
+                )
+            )
+        return tuple(result)
+
     def claim(self, session_date: date, claim_token_hash: str) -> RuntimeClaim | None:
         _require_hash(claim_token_hash)
         with self._connect(row_factory=dict_row) as connection, connection.cursor() as cursor:
@@ -653,12 +785,19 @@ class PostgresAutomationRuntimeRepository:
             row = cursor.fetchone()
             if row is None or not isinstance(row[0], str):
                 raise AutomationRuntimeError("AUTOMATION_STATE_UNAVAILABLE")
+            cursor.execute(
+                "select p1_read_automation_asset_weight_limit_v1(%s,%s)",
+                (claim.run_id, claim.claim_token_hash),
+            )
+            weight_row = cursor.fetchone()
         try:
             value = json.loads(row[0])
         except json.JSONDecodeError as error:
             raise AutomationRuntimeError("AUTOMATION_STATE_INVALID") from error
         if not isinstance(value, dict) or value.get("runId") != claim.run_id:
             raise AutomationRuntimeError("AUTOMATION_STATE_IDENTITY_MISMATCH")
+        if weight_row is not None and (weight_row[0] is None or isinstance(weight_row[0], str)):
+            value["principleAssetWeightLimit"] = weight_row[0]
         value["aiJudgement"] = self.read_ai_judgement(claim)
         metadata = self.read_v3_metadata(claim)
         if metadata:
@@ -920,11 +1059,32 @@ class PersistentAutomationRunner:
         tick_id: str,
         now: datetime,
         port: AutomationRuntimePort,
+        next_session: date | None = None,
     ) -> dict[str, object]:
         state = self._repository.read_state(claim)
         store, run = _store_from_state(claim, state)
         if run.state in _TERMINAL_STATES:
             return run.projection()
+        sync_account = getattr(port, "sync_account", None)
+        if run.state in {"SCHEDULED", "ORDER_SIZING", "ORDER_SUBMITTING"} and callable(
+            sync_account
+        ):
+            if now.astimezone(_KST).time().replace(tzinfo=None) < _CANCEL_BOUNDARY:
+                sync_account(
+                    state=state,
+                    run=run,
+                    now=now,
+                    next_session=next_session or claim.session_date + timedelta(days=1),
+                )
+                state = self._repository.read_state(claim)
+                store, run = _store_from_state(claim, state)
+            else:
+                # End today's attempt as a late/data-unavailable skip. A stale account
+                # digest after the order boundary must never convert that skip to HALTED.
+                state = dict(state)
+                state["accountDigestMatches"] = True
+                state["accountComplete"] = False
+                store, run = _store_from_state(claim, state)
         inputs = port.inputs(state=state, run=run, now=now)
         result = AutomationEngine(store).tick(
             run_id=claim.run_id,
@@ -1194,6 +1354,11 @@ class XkrxBoundaryPlanner:
                 # 정각 15:20 은 아래 경로가 이미 `local` 을 돌려주므로(경계가 `<=`),
                 # 이 가지는 "늦게 도착한" 경우만 바꾼다.
                 return local
+        if local.date() == session and local.timetz().replace(tzinfo=None) > _CANCEL_BOUNDARY:
+            # Close today's run as a no-order terminal state so schedule roll can
+            # continue tomorrow. Waiting until tomorrow here made the old claim
+            # encounter SESSION_DRIFT and permanently broke the schedule chain.
+            return local
         opening = datetime.combine(session, _OPEN_BOUNDARY, _KST)
         if local < opening:
             return opening
@@ -1556,8 +1721,31 @@ class AutomationRuntimeService:
                         next_attempt[owner_user_id] = retry_at or now + timedelta(seconds=60)
 
                 if now.time() < _CANCEL_BOUNDARY:
-                    owners = self._repository.armed_owner_user_ids()
+                    # A pre-order ACCOUNT_DRIFT halt is recoverable only after a fresh,
+                    # complete KIS balance and same-session order scan. Keep retries in
+                    # this bounded worker pool; never rewrite or replay the halted run.
+                    try:
+                        recovery_candidates = self._repository.recoverable_account_sync_halts()
+                    except (AutomationRuntimeError, psycopg.Error) as error:
+                        recovery_candidates = ()
+                        print(
+                            f"AUTOMATION_ACCOUNT_RECOVERY_SCAN=FAILED error={type(error).__name__}",
+                            flush=True,
+                        )
                     active_owners = set(active.values())
+                    for candidate in recovery_candidates:
+                        owner_user_id = candidate.claim.user_id
+                        if (
+                            owner_user_id in active_owners
+                            or owner_user_id in completed_owners
+                            or next_attempt.get(owner_user_id, now) > now
+                        ):
+                            continue
+                        future = executor.submit(self._recover_halted_account, candidate)
+                        active[future] = owner_user_id
+                        active_owners.add(owner_user_id)
+
+                    owners = self._repository.armed_owner_user_ids()
                     for owner_user_id in owners:
                         if owner_user_id in active_owners or owner_user_id in completed_owners:
                             continue
@@ -1580,6 +1768,53 @@ class AutomationRuntimeService:
                     continue
                 if self._stop.wait(5.0):
                     return
+
+    def _recover_halted_account(
+        self, candidate: AutomationAccountRecoveryCandidate
+    ) -> tuple[str, datetime | None]:
+        claim = candidate.claim
+        now = datetime.now(UTC).astimezone(_KST)
+        target_session = (
+            self._planner.next_session(claim.session_date)
+            if claim.session_date >= now.date()
+            else self._planner.current_or_next_session(now)
+        )
+        state: dict[str, Any] = {
+            "expectedAccountProjection": candidate.expected_projection,
+            "expectedAccountDigest": candidate.expected_digest,
+            "providerCallCount": 0,
+            "logicalSubmitCount": 0,
+            "reservation": None,
+            "sessionDate": claim.session_date.isoformat(),
+        }
+        port = self._port_factory.build(claim, state)
+        try:
+            sync_account = getattr(port, "sync_account", None)
+            if not callable(sync_account):
+                raise AutomationRuntimeError("AUTOMATION_ACCOUNT_SYNC_UNAVAILABLE")
+            sync_account(
+                state=state,
+                run=None,
+                now=now,
+                next_session=target_session,
+                recover_halted=True,
+            )
+            print(
+                f"AUTOMATION_HALTED_ACCOUNT_RECOVERY=PASS session={claim.session_date.isoformat()}",
+                flush=True,
+            )
+            # Recovery restores the next schedule; it is not today's completed owner
+            # session when the old halt is repaired before the next XKRX opening.
+            return "REARMED", now + timedelta(seconds=1)
+        except Exception as error:
+            print(
+                "AUTOMATION_HALTED_ACCOUNT_RECOVERY=RETRY "
+                f"session={claim.session_date.isoformat()} error={type(error).__name__}",
+                flush=True,
+            )
+            return "RETRY", now + timedelta(seconds=60)
+        finally:
+            port.close()
 
     def _process_full_owner_session(
         self,
@@ -1858,6 +2093,7 @@ class AutomationRuntimeService:
                 return False
             transient_failures = 0
             continuation = None
+            account_synced = False
             while True:
                 now_kst = datetime.now(UTC).astimezone(_KST)
                 # 매수 창이 닫힌 뒤에도 이미 제출된 주문은 반드시 대사한다.
@@ -1871,6 +2107,27 @@ class AutomationRuntimeService:
                     and now_kst.timetz().replace(tzinfo=None) <= _BUY_SUBMIT_DEADLINE
                 )
                 try:
+                    if (
+                        not account_synced
+                        and now_kst.date() == claim.session_date
+                        and now_kst.timetz().replace(tzinfo=None) <= _CANCEL_BOUNDARY
+                    ):
+                        # A terminal claim may still own an unresolved local order. Let
+                        # continue_session reconcile it before the account-sync gate runs.
+                        if state.get("unfinishedPreviousOrder") is True:
+                            account_synced = True
+                        else:
+                            sync_account = getattr(port, "sync_account", None)
+                            if callable(sync_account):
+                                state = self._repository.read_state(claim)
+                                sync_account(
+                                    state=state,
+                                    run=None,
+                                    now=now_kst,
+                                    next_session=claim.session_date,
+                                )
+                                state = self._repository.read_state(claim)
+                            account_synced = True
                     continuation = runner.continue_session(
                         claim=claim,
                         state=state,
@@ -2004,6 +2261,7 @@ class AutomationRuntimeService:
                         tick_id=f"{claim.run_id}:boundary:{index}",
                         now=wakeup,
                         port=port,
+                        next_session=self._planner.next_session(claim.session_date),
                     )
                 except KISCallBudgetExceeded as error:
                     # 예산이 바닥난 상태에서 같은 호출을 반복하는 것은 절대 성공하지 못한다.
@@ -2090,7 +2348,9 @@ def _transient_continuation_error(error: BaseException) -> bool:
 
     cause: BaseException | None = error
     while cause is not None:
-        if isinstance(cause, (KISTransportError, psycopg.OperationalError)):
+        if isinstance(cause, (AutomationObservationUnavailable, KISTransportError, psycopg.OperationalError)):
+            return True
+        if isinstance(cause, AutomationRuntimeError) and str(cause) == "AUTOMATION_EXTERNAL_ORDER_PENDING":
             return True
         cause = cause.__cause__ or cause.__context__
     return False
@@ -2291,6 +2551,18 @@ def inputs_from_state(
     manual = state.get("manualPositionSymbols")
     if not isinstance(manual, list) or not all(isinstance(item, str) for item in manual):
         raise AutomationRuntimeError("AUTOMATION_MANUAL_POSITIONS_INVALID")
+    raw_positions = state.get("positions")
+    quarantined = (
+        [
+            str(item["symbol"])
+            for item in raw_positions
+            if isinstance(item, dict)
+            and item.get("status") == "HALTED_MISMATCH"
+            and isinstance(item.get("symbol"), str)
+        ]
+        if isinstance(raw_positions, list)
+        else []
+    )
     atr_histories = _atr_histories_from_state(state)
     session_date = date.fromisoformat(str(state["sessionDate"]))
     expected_sessions = _expected_atr_sessions(session_date, 101) if atr_histories else ()
@@ -2334,7 +2606,7 @@ def inputs_from_state(
         ai_judgement_enabled=state.get("aiJudgementEnabled") is True,
         ai_thinking_level=cast(Any, str(state.get("thinkingLevel", "low"))),
         ai_settings_sha256=_optional_text(state.get("aiSettingsSha256")),
-        manual_position_symbols=frozenset(cast(list[str], manual)),
+        manual_position_symbols=frozenset([*cast(list[str], manual), *quarantined]),
         signals=signals,
         atr_histories=atr_histories,
         atr_expected_sessions=expected_sessions,
@@ -2642,7 +2914,7 @@ def main() -> int:
 
     service = AutomationRuntimeService(
         repository,
-        LiveAutomationPortFactory(),
+        LiveAutomationPortFactory(repository),
         shared_secret,
         connectivity_check=kis_mock_connectivity_ready,
         portfolio_runner=PortfolioContinuationRunner(

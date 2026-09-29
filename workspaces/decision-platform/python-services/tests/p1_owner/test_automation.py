@@ -224,6 +224,7 @@ def test_buy_full_fill_is_restart_safe_exact_one_and_contract_valid() -> None:
     assert (transport.vertex_calls, transport.quote_calls, transport.submit_calls) == (1, 1, 1)
     assert transport.reconcile_calls == 1
     assert transport.cancel_calls == transport.physical_calls == 0
+    run = store.runs[_RUN_ID]
     assert run.logical_submit_count == 1
     assert len(store.positions) == 1
     position = store.positions[0]
@@ -240,6 +241,34 @@ def test_buy_full_fill_is_restart_safe_exact_one_and_contract_valid() -> None:
     control = store.control_projection(kill_switch_active=False)
     assert control["projectionState"] == "ARMED"
     assert list(_validator("automation-control.v1").iter_errors(control)) == []
+
+
+def test_external_account_change_after_sizing_skips_stale_submit_without_halting() -> None:
+    store = _store()
+    _create(store)
+    transport = _transport()
+    inputs = _inputs(_buy())
+    states = [
+        cast(
+            str,
+            _tick(store, transport, inputs, index)["state"],
+        )
+        for index in range(1, 7)
+    ]
+    assert states[-1] == "RISK_CHECKING"
+
+    submitting = _tick(store, transport, inputs, 7)
+    assert submitting["state"] == "ORDER_SUBMITTING"
+    skipped = _tick(
+        store,
+        transport,
+        replace(inputs, account_sync_changed=True),
+        8,
+    )
+
+    assert skipped["state"] == "SKIPPED_DATA_UNAVAILABLE"
+    assert transport.submit_calls == 0
+    assert store.control_state == "ARMED"
 
 
 @pytest.mark.parametrize("verdict", ["ABSTAIN", "NO_VETO"])

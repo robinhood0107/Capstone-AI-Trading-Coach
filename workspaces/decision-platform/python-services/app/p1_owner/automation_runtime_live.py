@@ -1253,12 +1253,22 @@ class LiveAutomationPort:
         as_of: datetime,
     ) -> int:
         observed_equity = risk_balance.get("portfolioEquityKrw")
-        if not isinstance(observed_equity, int) or isinstance(observed_equity, bool) or observed_equity <= 0:
+        if (
+            not isinstance(observed_equity, int)
+            or isinstance(observed_equity, bool)
+            or observed_equity <= 0
+        ):
             raise AutomationRuntimeError("AUTOMATION_RISK_EQUITY_INVALID")
         observed_cash = risk_balance.get("cashKrw")
-        if not isinstance(observed_cash, int) or isinstance(observed_cash, bool) or observed_cash < 0:
+        if (
+            not isinstance(observed_cash, int)
+            or isinstance(observed_cash, bool)
+            or observed_cash < 0
+        ):
             raise AutomationRuntimeError("AUTOMATION_RISK_CASH_INVALID")
-        baseline_reader = getattr(self._account_sync_repository, "get_or_initialize_risk_baseline", None)
+        baseline_reader = getattr(
+            self._account_sync_repository, "get_or_initialize_risk_baseline", None
+        )
         if callable(baseline_reader):
             baseline = baseline_reader(
                 self._claim,

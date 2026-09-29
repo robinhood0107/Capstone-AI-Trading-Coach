@@ -174,6 +174,18 @@ class DecisionApiIntegrationTest(
         )
         jdbcTemplate.update(
             """
+            insert into automation_control(
+              user_id,control_state,version,brokerage_mode,account_id,principle_id,strategy_id,
+              baseline_account_digest,certification_status,kill_switch_active
+            ) values (
+              'usr_demo_user','ARMED',1,'KIS_MOCK','acct_${"f".repeat(32)}',?,
+              'strategy_rule_lstm_v1',repeat('e',64),'VALID',false
+            ) on conflict (user_id) do nothing
+            """.trimIndent(),
+            principleId,
+        )
+        jdbcTemplate.update(
+            """
             insert into automation_runtime_claim(user_id,session_date,run_id,claim_token_hash,claim_state,claimed_at)
             values ('usr_demo_user','2030-01-02',?,?,'ACTIVE',now())
             """.trimIndent(),
@@ -218,7 +230,7 @@ class DecisionApiIntegrationTest(
                     content = objectMapper.writeValueAsString(value)
                 }.andReturn()
         val response = call(body)
-        assertEquals(200, response.response.status)
+        assertEquals(200, response.response.status, response.response.contentAsString)
         assertEquals(1, json(response).at("/data/principleVersion").intValue())
         assertEquals(versionId, jdbcTemplate.queryForObject("select principle_version_id from decisions", String::class.java))
         assertEquals(200, call(body).response.status)

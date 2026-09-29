@@ -113,10 +113,14 @@ def test_manual_gold_holding_stays_in_account_snapshot_but_is_excluded_from_risk
     metric_fixtures = metric_batch["fixtures"]
     assert isinstance(metric_fixtures, list)
     full_risk = next(
-        fixture for fixture in metric_fixtures if fixture["sourceVersion"] == "p1-runtime-observation-v1"
+        fixture
+        for fixture in metric_fixtures
+        if fixture["sourceVersion"] == "p1-runtime-observation-v1"
     )
     automation_risk = next(
-        fixture for fixture in metric_fixtures if fixture["sourceVersion"] == "p1-automation-risk-v1"
+        fixture
+        for fixture in metric_fixtures
+        if fixture["sourceVersion"] == "p1-automation-risk-v1"
     )
     assert len([role for role, _payload in captured if role == "decision_risk_writer"]) == 1
     assert portfolio["portfolioEquityKrw"] == 1_100_000

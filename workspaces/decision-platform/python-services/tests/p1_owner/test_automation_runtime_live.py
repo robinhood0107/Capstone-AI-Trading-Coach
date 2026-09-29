@@ -489,8 +489,12 @@ def test_portfolio_risk_publish_failure_blocks_evaluate_and_can_retry(
         account_sync_repository=repository,  # type: ignore[arg-type]
     )
 
-    intent = ExactOrderIntent("005930", "BUY", "LIMIT", 1, 75_000, 75_000, "1d", _claim().strategy_id)
-    with pytest.raises(AutomationObservationUnavailable, match="AUTOMATION_RISK_OBSERVATION_UNAVAILABLE"):
+    intent = ExactOrderIntent(
+        "005930", "BUY", "LIMIT", 1, 75_000, 75_000, "1d", _claim().strategy_id
+    )
+    with pytest.raises(
+        AutomationObservationUnavailable, match="AUTOMATION_RISK_OBSERVATION_UNAVAILABLE"
+    ):
         port.portfolio_evaluate(intent, ordinal=1)
 
     assert bridge.calls == []

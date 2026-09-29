@@ -57,6 +57,11 @@ configurations.all {
         "org.apache.tomcat.embed:tomcat-embed-core:11.0.25",
         "org.apache.tomcat.embed:tomcat-embed-el:11.0.25",
         "org.apache.tomcat.embed:tomcat-embed-websocket:11.0.25",
+        "com.fasterxml.jackson.core:jackson-databind:2.21.6",
+        "tools.jackson.core:jackson-core:3.1.6",
+        "tools.jackson.core:jackson-databind:3.1.6",
+        "tools.jackson.dataformat:jackson-dataformat-yaml:3.1.6",
+        "tools.jackson.module:jackson-module-kotlin:3.1.6",
     )
     // Spring Boot BOM이 고정한 4.2.15의 SNI 취약점을 피하면서 Netty 모듈을 같은 patch로 맞춘다.
     resolutionStrategy.eachDependency {
@@ -70,10 +75,12 @@ dependencyManagement {
     imports {
         mavenBom("io.grpc:grpc-bom:1.81.0")
         mavenBom("org.springframework.ai:spring-ai-bom:2.0.0")
+        mavenBom("com.fasterxml.jackson:jackson-bom:2.21.6")
+        mavenBom("tools.jackson:jackson-bom:3.1.6")
     }
     dependencies {
         // Boot BOM의 다음 patch 반영 전에도 공개 취약점 수정 버전을 우선한다.
-        dependency("com.fasterxml.jackson.core:jackson-databind:2.21.5")
+        dependency("com.fasterxml.jackson.core:jackson-databind:2.21.6")
         dependency("ch.qos.logback:logback-core:1.5.35")
         dependency("ch.qos.logback:logback-classic:1.5.35")
         // CVE-2026-65182 / CVE-2026-65905 / CVE-2026-68525 - 전부 인증·권한 우회다.
@@ -712,8 +719,11 @@ val verifySecurityDependencyVersions by tasks.registering {
         check(selectedVersion(runtime, "ch.qos.logback", "logback-core") == "1.5.35") {
             "logback-core must include the GHSA-jhq6-gfmj-v8fx fix"
         }
-        check(selectedVersion(runtime, "com.fasterxml.jackson.core", "jackson-databind") == "2.21.5") {
-            "jackson-databind must include the GHSA-5jmj-h7xm-6q6v fix"
+        check(selectedVersion(runtime, "com.fasterxml.jackson.core", "jackson-databind") == "2.21.6") {
+            "jackson-databind must include the CVE-2026-68497 fix"
+        }
+        check(selectedVersion(runtime, "tools.jackson.core", "jackson-databind") == "3.1.6") {
+            "Jackson 3 databind must include the CVE-2026-68497 fix"
         }
         check(
             selectedVersion(runtime, "org.apache.tomcat.embed", "tomcat-embed-core") == "11.0.25",

@@ -18,7 +18,7 @@ class PublicSurfaceGateTest {
                 "/api/v1/rag/ask",
                 "/internal/automation-runtime/run",
             )
-        for (mode in listOf(PublicSurfaceMode.DEMO, PublicSurfaceMode.FULL)) {
+        for (mode in listOf(PublicSurfaceMode.FULL)) {
             for (path in paths) {
                 val response = MockHttpServletResponse()
                 val chain = MockFilterChain()
@@ -46,15 +46,14 @@ class PublicSurfaceGateTest {
         for (loopback in listOf("127.0.0.1", "::1", "0:0:0:0:0:0:0:1")) {
             assertEquals(200 to true, status(PublicSurfaceMode.FULL, "POST", "/internal/automation-runtime/command", loopback))
         }
-        // 웹 프록시·다른 container·다른 method·다른 경로·DEMO 는 모두 닫힌다.
+        // 웹 프록시·다른 container·다른 method·다른 경로는 모두 닫힌다.
         assertEquals(404 to false, status(PublicSurfaceMode.FULL, "POST", "/internal/automation-runtime/command", "172.18.0.5"))
         assertEquals(404 to false, status(PublicSurfaceMode.FULL, "GET", "/internal/automation-runtime/command", "127.0.0.1"))
         assertEquals(404 to false, status(PublicSurfaceMode.FULL, "POST", "/internal/automation-runtime/run", "127.0.0.1"))
-        assertEquals(404 to false, status(PublicSurfaceMode.DEMO, "POST", "/internal/automation-runtime/command", "127.0.0.1"))
     }
 
     @Test
-    fun `full permits every owner scoped user feature and the admin console while demo denies them`() {
+    fun `full permits every owner scoped user feature and the admin console`() {
         val allowed =
             listOf(
                 "GET" to "/api/v1/principle-presets",
@@ -77,9 +76,6 @@ class PublicSurfaceGateTest {
             val fullChain = MockFilterChain()
             PublicSurfaceGate(PublicSurfaceMode.FULL).doFilter(MockHttpServletRequest(method, path), MockHttpServletResponse(), fullChain)
             assertEquals(path, (fullChain.request as MockHttpServletRequest).requestURI, "$method $path")
-            val demoResponse = MockHttpServletResponse()
-            PublicSurfaceGate(PublicSurfaceMode.DEMO).doFilter(MockHttpServletRequest(method, path), demoResponse, MockFilterChain())
-            assertEquals(404, demoResponse.status, "$method $path")
         }
         val readOnly = MockHttpServletResponse()
         PublicSurfaceGate(PublicSurfaceMode.FULL).doFilter(
@@ -91,7 +87,7 @@ class PublicSurfaceGateTest {
     }
 
     @Test
-    fun `full permits account login signup and provider link routes while demo denies them`() {
+    fun `full permits account login signup and provider link routes`() {
         val allowed =
             listOf(
                 "POST" to "/api/v1/auth/login",
@@ -114,18 +110,11 @@ class PublicSurfaceGateTest {
                 fullChain,
             )
             assertEquals(path, (fullChain.request as MockHttpServletRequest).requestURI, "$method $path")
-            val demoResponse = MockHttpServletResponse()
-            PublicSurfaceGate(PublicSurfaceMode.DEMO).doFilter(
-                MockHttpServletRequest(method, path),
-                demoResponse,
-                MockFilterChain(),
-            )
-            assertEquals(404, demoResponse.status, "$method $path")
         }
     }
 
     @Test
-    fun `full agent permits only the owner scoped RAG routes while demo denies them`() {
+    fun `full agent permits only the owner scoped RAG routes`() {
         val detail = "/api/v2/rag/history/rag_abcdefghijkl"
         val allowed =
             listOf(
@@ -149,13 +138,6 @@ class PublicSurfaceGateTest {
                 fullChain,
             )
             assertEquals(path, (fullChain.request as MockHttpServletRequest).requestURI)
-            val demoResponse = MockHttpServletResponse()
-            PublicSurfaceGate(PublicSurfaceMode.DEMO).doFilter(
-                MockHttpServletRequest(method, path),
-                demoResponse,
-                MockFilterChain(),
-            )
-            assertEquals(404, demoResponse.status)
         }
         val deniedRag =
             listOf(
@@ -182,7 +164,7 @@ class PublicSurfaceGateTest {
 
     @Test
     fun `public mode permits only read only liveness`() {
-        for (mode in listOf(PublicSurfaceMode.DEMO, PublicSurfaceMode.FULL)) {
+        for (mode in listOf(PublicSurfaceMode.FULL)) {
             val response = MockHttpServletResponse()
             val chain = MockFilterChain()
             PublicSurfaceGate(mode).doFilter(MockHttpServletRequest("GET", "/actuator/health"), response, chain)
@@ -192,7 +174,7 @@ class PublicSurfaceGateTest {
     }
 
     @Test
-    fun `full mode permits only its two social login handoffs while demo keeps them closed`() {
+    fun `full mode permits only its two social login handoffs`() {
         val paths =
             listOf(
                 "/api/v1/auth/oidc/start/google",
@@ -208,18 +190,11 @@ class PublicSurfaceGateTest {
                 fullChain,
             )
             assertEquals(path, (fullChain.request as MockHttpServletRequest).requestURI)
-            val demoResponse = MockHttpServletResponse()
-            PublicSurfaceGate(PublicSurfaceMode.DEMO).doFilter(
-                MockHttpServletRequest("GET", path),
-                demoResponse,
-                MockFilterChain(),
-            )
-            assertEquals(404, demoResponse.status)
         }
     }
 
     @Test
-    fun `full mode permits owner credential setup but demo has no KIS surface`() {
+    fun `full mode permits owner credential setup`() {
         val routes =
             listOf(
                 "GET" to "/api/v1/brokerage/mock/credential",
@@ -237,18 +212,11 @@ class PublicSurfaceGateTest {
                 fullChain,
             )
             assertEquals(path, (fullChain.request as MockHttpServletRequest).requestURI)
-            val demoResponse = MockHttpServletResponse()
-            PublicSurfaceGate(PublicSurfaceMode.DEMO).doFilter(
-                MockHttpServletRequest(method, path),
-                demoResponse,
-                MockFilterChain(),
-            )
-            assertEquals(404, demoResponse.status)
         }
     }
 
     @Test
-    fun `full automation surface allows exact owner routes and demo or neighboring routes stay closed`() {
+    fun `full automation surface allows exact owner routes and neighboring routes stay closed`() {
         val allowed =
             listOf(
                 "GET" to "/api/v1/automation/status",
@@ -273,13 +241,6 @@ class PublicSurfaceGateTest {
                 fullChain,
             )
             assertEquals(path, (fullChain.request as MockHttpServletRequest).requestURI)
-            val demoResponse = MockHttpServletResponse()
-            PublicSurfaceGate(PublicSurfaceMode.DEMO).doFilter(
-                MockHttpServletRequest(method, path),
-                demoResponse,
-                MockFilterChain(),
-            )
-            assertEquals(404, demoResponse.status, "$method $path")
         }
         val denied =
             listOf(
@@ -303,18 +264,11 @@ class PublicSurfaceGateTest {
     }
 
     @Test
-    fun `demo permits only its anonymous ask method while full cannot reach it`() {
+    fun `legacy demo Agent route is closed on the full API`() {
         val path = "/api/v1/demo/agent/ask"
-        val demoChain = MockFilterChain()
-        PublicSurfaceGate(PublicSurfaceMode.DEMO).doFilter(
-            MockHttpServletRequest("POST", path),
-            MockHttpServletResponse(),
-            demoChain,
-        )
-        assertEquals(path, (demoChain.request as MockHttpServletRequest).requestURI)
-        for ((mode, method) in listOf(PublicSurfaceMode.DEMO to "GET", PublicSurfaceMode.FULL to "POST")) {
+        for (method in listOf("GET", "POST")) {
             val response = MockHttpServletResponse()
-            PublicSurfaceGate(mode).doFilter(MockHttpServletRequest(method, path), response, MockFilterChain())
+            PublicSurfaceGate(PublicSurfaceMode.FULL).doFilter(MockHttpServletRequest(method, path), response, MockFilterChain())
             assertEquals(404, response.status)
         }
     }
@@ -330,6 +284,9 @@ class PublicSurfaceGateTest {
         assertEquals("/api/v1/auth/login", (chain.request as MockHttpServletRequest).requestURI)
         assertThrows(IllegalArgumentException::class.java) {
             PublicSurfaceGateConfiguration().publicSurfaceGate("UNKNOWN", MockEnvironment())
+        }
+        assertThrows(IllegalArgumentException::class.java) {
+            PublicSurfaceGateConfiguration().publicSurfaceGate("DEMO", MockEnvironment())
         }
         val fullEnvironment = MockEnvironment().apply { setActiveProfiles("mars-full") }
         assertThrows(IllegalArgumentException::class.java) {

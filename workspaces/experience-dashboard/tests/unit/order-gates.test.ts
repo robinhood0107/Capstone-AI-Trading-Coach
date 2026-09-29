@@ -130,10 +130,10 @@ test('만료된 판정으로는 제출하지 않는다', () => {
   assert.equal(gates.find((gate) => gate.id === 'G4')!.passed, false);
 });
 
-test('체결 조회 창은 서버가 받는 31일을 넘지 않는다', () => {
-  const { from, to } = fillWindow(new Date('2026-09-07T00:00:00Z'));
-  assert.equal(to, '2026-09-07');
-  assert.equal(from, '2026-08-08');
+test('체결 조회 창은 KST 날짜 기준으로 서버가 받는 31일을 넘지 않는다', () => {
+  const { from, to } = fillWindow(new Date('2026-09-29T18:50:00Z'));
+  assert.equal(to, '2026-09-30');
+  assert.equal(from, '2026-08-31');
   // inclusive 라 두 날짜 차이는 30일이어야 31일 창이 된다. 31이면 서버가 거절한다.
   const spanDays = (Date.parse(`${to}T00:00:00Z`) - Date.parse(`${from}T00:00:00Z`)) / 86_400_000;
   assert.equal(spanDays, FILL_WINDOW_MAX_DAYS - 1);

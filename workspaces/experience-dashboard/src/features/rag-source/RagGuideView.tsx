@@ -11,16 +11,13 @@ import { useResource, toErrorState } from '@/shared/lib/useResource';
 import { formatKstDateTime, formatRatio } from '@/shared/lib/format';
 import { safeExternalUrl } from '@/shared/api/session';
 import { api } from '@/shared/api/endpoints';
-import type { RagSourceResponse, RagV2HistoryDetail, WorldNewsPage } from '@/shared/api/wire';
+import type { RagSourceResponse, RagV2CorpusStatus, RagV2HistoryDetail, WorldNewsPage } from '@/shared/api/wire';
 import { buildNewsFeed } from './worldNewsPresentation';
 import { putJournalHandoff } from '@/shared/lib/journalHandoff';
 import type { ViewState } from '@/shared/lib/viewState';
 import {
-  EXTERNAL_DISCLOSURE,
-  EXTERNAL_POLICY,
-  EXTERNAL_PROCESSORS,
   askRag,
-  loadConsentGranted,
+  loadConsentProfile,
   loadRecentQuestions,
   loadRegistry,
   loadWorldNews,
@@ -44,12 +41,20 @@ const CITATION_KIND_LABEL: Record<string, string> = {
   LOCAL_DOCUMENT: '내 문서',
 };
 
+const CONSENT_PROFILE_LOADING = {
+  disclosure: '질문은 답변 생성에 필요한 외부 AI 서비스로 전송될 수 있습니다. 계좌와 주문 데이터는 전송하지 않습니다.',
+  policy: '처리자와 전송 범위를 확인한 뒤 동의를 저장합니다. 확인 전에는 질문을 보내지 않습니다.',
+  processors: '확인 중',
+};
+
 export function RagGuideView() {
   const [question, setQuestion] = useState('');
   const [answerMode, setAnswerMode] = useState<'CONCISE' | 'DETAILED'>('CONCISE');
   const [answerState, setAnswerState] = useState<ViewState<RagAnswerView> | null>(null);
   const [pending, setPending] = useState(false);
   const [consentGranted, setConsentGranted] = useState<boolean | null>(null);
+  const [consentCopy, setConsentCopy] = useState(CONSENT_PROFILE_LOADING);
+  const [agentUsage, setAgentUsage] = useState<RagV2CorpusStatus['agentUsage']>();
   const [consentPending, setConsentPending] = useState(false);
   const [consentError, setConsentError] = useState<string | null>(null);
   const [retryWithExampleFallback, setRetryWithExampleFallback] = useState(false);
@@ -59,8 +64,12 @@ export function RagGuideView() {
 
   useEffect(() => {
     let cancelled = false;
-    void loadConsentGranted().then((granted) => {
-      if (!cancelled) setConsentGranted(granted);
+    void loadConsentProfile().then((profile) => {
+      if (!cancelled) {
+        setConsentGranted(profile.granted);
+        setConsentCopy({ disclosure: profile.disclosure, policy: profile.policy, processors: profile.processors });
+        setAgentUsage(profile.agentUsage);
+      }
     });
     return () => {
       cancelled = true;
@@ -79,7 +88,7 @@ export function RagGuideView() {
     setConsentPending(true);
     setConsentError(null);
     try {
-      await recordConsent(action);
+      await recordConsent(action, consentCopy);
       setConsentGranted(action === 'GRANT');
       if (action === 'REVOKE') setAnswerState(null);
     } catch (cause) {
@@ -107,6 +116,7 @@ export function RagGuideView() {
       setAnswerState(toErrorState<RagAnswerView>(cause));
     } finally {
       setPending(false);
+      void loadConsentProfile().then((profile) => setAgentUsage(profile.agentUsage));
     }
   }
 
@@ -122,9 +132,20 @@ export function RagGuideView() {
           </span>
         }
       >
-        <p className="text-[13px] leading-6 text-muted">{EXTERNAL_DISCLOSURE}</p>
-        <p className="mt-2 text-[13px] leading-6 text-muted">{EXTERNAL_POLICY}</p>
-        <p className="mt-2 font-mono text-[11px] text-faint">처리자: {EXTERNAL_PROCESSORS}</p>
+        <p className="text-[13px] leading-6 text-muted">{consentCopy.disclosure}</p>
+        <p className="mt-2 text-[13px] leading-6 text-muted">{consentCopy.policy}</p>
+        <p className="mt-2 font-mono text-[11px] text-faint">처리자: {consentCopy.processors}</p>
+        {agentUsage ? (
+          <dl className="mt-4 grid gap-3 border-t border-line pt-4 text-[12px] sm:grid-cols-2 lg:grid-cols-3">
+            {agentUsage.configured !== undefined ? <div><dt className="text-faint">Vertex 설정</dt><dd className="mt-1 font-semibold text-ink">{agentUsage.configured ? '구성됨' : '설정 필요'}</dd></div> : null}
+            <div><dt className="text-faint">세션 호출</dt><dd className="mt-1 font-semibold text-ink">{agentUsage.sessionCalls}/{agentUsage.sessionLimit}회</dd></div>
+            <div><dt className="text-faint">전체 호출</dt><dd className="mt-1 font-semibold text-ink">{agentUsage.globalCalls}/{agentUsage.globalLimit}회</dd></div>
+            <div><dt className="text-faint">세션 토큰</dt><dd className="mt-1 font-semibold text-ink">입력 {agentUsage.sessionInputTokens.toLocaleString('ko-KR')} · 출력 {agentUsage.sessionOutputTokens.toLocaleString('ko-KR')}</dd></div>
+            <div><dt className="text-faint">전체 비용 추정</dt><dd className="mt-1 font-semibold text-ink">${agentUsage.estimatedGlobalCostUsd.toFixed(6)}</dd></div>
+            <div><dt className="text-faint">호출 상한 비용</dt><dd className="mt-1 font-semibold text-ink">${agentUsage.maxDailyCostUsd.toFixed(4)}/일</dd></div>
+            <div><dt className="text-faint">동시 생성</dt><dd className="mt-1 font-semibold text-ink">{agentUsage.activeCalls}건 · 미확인 {agentUsage.unknownOutcomes}건</dd></div>
+          </dl>
+        ) : null}
         <div className="mt-3 flex gap-2">
           <Button
                         onClick={() => void changeConsent('GRANT')}
@@ -205,6 +226,7 @@ export function RagGuideView() {
                 key={example.question}
                 variant="secondary"
                 size="sm"
+                disabled={consentPending || consentGranted !== true}
                 onClick={() => {
                   setQuestion(example.question);
                   void submit(example.question, true);
@@ -239,6 +261,11 @@ export function RagGuideView() {
                     잠시 후 다시 질문할 수 있습니다. 확인 가능한 근거가 있으면 아래에 표시합니다.
                   </p>
                 )}
+                {view.usage ? (
+                  <p className="mt-3 text-[11px] text-faint">
+                    {view.usage.modelVersion} · 입력 {view.usage.inputTokens} / 출력 {view.usage.outputTokens} tokens · 비용 추정 ${view.usage.estimatedCostUsd.toFixed(6)}
+                  </p>
+                ) : null}
               </article>
 
               <details open className="mt-5 border-t border-line pt-4">

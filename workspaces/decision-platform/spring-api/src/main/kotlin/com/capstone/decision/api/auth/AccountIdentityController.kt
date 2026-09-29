@@ -13,7 +13,6 @@ import io.swagger.v3.oas.annotations.Operation
 import jakarta.servlet.http.HttpServletRequest
 import jakarta.validation.constraints.Pattern
 import org.springframework.beans.factory.ObjectProvider
-import org.springframework.context.annotation.Profile
 import org.springframework.dao.DataIntegrityViolationException
 import org.springframework.security.core.annotation.AuthenticationPrincipal
 import org.springframework.web.bind.annotation.DeleteMapping
@@ -26,7 +25,6 @@ import java.time.OffsetDateTime
 
 /** Provider accounts are linked only by an already authenticated owner, never by matching email. */
 @RestController
-@Profile("!mars-demo")
 @RequestMapping("/api/v1/auth/identities")
 class AccountIdentityController(
     private val identities: SocialLoginSessionRepository,

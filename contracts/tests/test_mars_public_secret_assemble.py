@@ -165,6 +165,18 @@ class MarsPublicSecretAssembleTest(unittest.TestCase):
             (full_dir / "postgres.env").read_bytes(),
         )
 
+    def test_v2_demo_compose_rejects_legacy_database_secret_assembly(self) -> None:
+        base = self.base("v2-demo-base")
+        (self.release / "mars-public-demo.compose.yml").write_text(
+            (ROOT / "deploy/p1/compose.public-demo.yml").read_text(encoding="utf-8"),
+            encoding="utf-8",
+        )
+        result = self.assemble("demo", base)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("MARS_PUBLIC_SECRETS=FAIL", result.stderr)
+        self.assertNotIn("session-signing-key", result.stderr)
+        self.assertFalse((self.release / "demo-secrets").exists())
+
     def test_full_bundle_provides_every_compose_secret_and_the_worker_dsn(self) -> None:
         base = self.base("one-shot-base")
         self.assertEqual(self.assemble("full", base).returncode, 0)

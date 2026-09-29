@@ -146,11 +146,21 @@ export function firstBlocking(gates: Gate[]): Gate | null {
 export const FILL_WINDOW_MAX_DAYS = 31;
 
 export function fillWindow(now = new Date()): { from: string; to: string } {
-  const day = (date: Date) => date.toISOString().slice(0, 10);
-  const from = new Date(now);
+  const day = (date: Date) => {
+    const parts = new Intl.DateTimeFormat('en-CA', {
+      timeZone: 'Asia/Seoul',
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+    }).formatToParts(date);
+    const pick = (kind: string) => parts.find((part) => part.type === kind)?.value ?? '';
+    return `${pick('year')}-${pick('month')}-${pick('day')}`;
+  };
+  const to = day(now);
+  const from = new Date(`${to}T00:00:00+09:00`);
   // inclusive 라 30일을 빼야 31일 창이 된다.
   from.setUTCDate(from.getUTCDate() - (FILL_WINDOW_MAX_DAYS - 1));
-  return { from: day(from), to: day(now) };
+  return { from: day(from), to };
 }
 
 /** 수량과 단가에서 주문 의도를 만든다. 금액은 서버가 정확히 일치하기를 요구한다. */

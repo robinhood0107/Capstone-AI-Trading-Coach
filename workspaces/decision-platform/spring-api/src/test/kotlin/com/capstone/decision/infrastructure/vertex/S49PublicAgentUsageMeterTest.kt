@@ -8,7 +8,6 @@ import io.mockk.slot
 import io.mockk.verify
 import org.junit.jupiter.api.Assertions.assertDoesNotThrow
 import org.junit.jupiter.api.Assertions.assertEquals
-import org.junit.jupiter.api.Assertions.assertThrows
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.springframework.beans.factory.ObjectProvider
@@ -48,20 +47,6 @@ class S49PublicAgentUsageMeterTest {
         every { meter.recordGrossEstimate(any(), any(), any(), any(), any()) } throws IllegalStateException("db down")
         assertDoesNotThrow {
             gate("FULL", provider).record("usr_alice", "run_b", "call_2", 1_000, 0, 0, false)
-        }
-    }
-
-    @Test
-    fun `demo records anonymously and still rejects Google Search`() {
-        val meter = mockk<OperatorAiUsageMeter>()
-        val provider = provider(meter)
-        every { meter.recordGrossEstimate(any(), null, "DEMO_AGENT", "VERTEX", any()) } just Runs
-        val gate = gate("DEMO", provider)
-
-        assertDoesNotThrow { gate.record("usr_internal_demo", "run_demo", "call_1", 1_000, 0, 0, false) }
-        verify(exactly = 1) { meter.recordGrossEstimate(any(), null, "DEMO_AGENT", "VERTEX", any()) }
-        assertThrows(IllegalStateException::class.java) {
-            gate.record("usr_internal_demo", "run_demo", "call_2", 1_000, 0, 1, true)
         }
     }
 

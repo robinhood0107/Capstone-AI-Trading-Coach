@@ -1,0 +1,135 @@
+name: MARS DEMO candidate build
+
+on:
+  pull_request:
+    branches: [develop, main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: mars-demo-candidate-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  classify:
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-24.04
+    outputs:
+      demo_candidate_required: ${{ steps.impact.outputs.demo_candidate_required }}
+      sha: ${{ steps.identity.outputs.sha }}
+      version: ${{ steps.identity.outputs.version }}
+    steps:
+      - name: Checkout exact pull request source
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Classify changed paths
+        id: impact
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -Eeuo pipefail
+          python3 deploy/p1/classify_product_changes.py --base "$BASE_SHA" --head "$HEAD_SHA" --format github
+      - name: Read DEMO candidate version
+        id: identity
+        if: steps.impact.outputs.demo_candidate_required == 'true'
+        run: |
+          set -Eeuo pipefail
+          version=$(jq -r '.version' deploy/p1/mars-demo-release.json)
+          [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]
+          echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+  build-scan:
+    needs: classify
+    if: needs.classify.outputs.demo_candidate_required == 'true'
+    name: MARS DEMO candidate build
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout exact product source
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          ref: ${{ needs.classify.outputs.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Install pinned uv and Python
+        uses: astral-sh/setup-uv@d31148d669074a8d0a63714ba94f3201e7020bc3 # v8.3.0
+        with:
+          version: "0.11.26"
+          python-version: "3.12"
+      - name: Validate immutable fixture and release contract
+        run: |
+          set -Eeuo pipefail
+          [[ $(git rev-parse HEAD) == "${{ needs.classify.outputs.sha }}" ]]
+          python3 workspaces/mars-demo/scripts/validate_fixture.py workspaces/mars-demo/data/scenario.v1.json
+          python3 deploy/p1/test_classify_product_changes.py
+          python3 deploy/p1/test_mars_release_failure_isolation.py
+          uv run --frozen python -m unittest discover -s contracts/tests -p 'test_mars_demo_api_contract.py' -v
+          uv run --frozen python -m unittest discover -s contracts/tests -p 'test_mars_public_demo_compose.py' -v
+      - name: Set up Buildx
+        uses: docker/setup-buildx-action@e468171a9de216ec08956ac3ada2f0791b6bd435 # v3.11.1
+      - name: Build standalone DEMO image without provider secrets
+        env:
+          SHA: ${{ needs.classify.outputs.sha }}
+          VERSION: ${{ needs.classify.outputs.version }}
+        run: |
+          set -Eeuo pipefail
+          docker buildx build --platform linux/amd64 --load \
+            --file workspaces/mars-demo/Dockerfile \
+            --build-arg SOURCE_REVISION="$SHA" \
+            --build-arg RELEASE_VERSION="${VERSION}-candidate" \
+            --tag mars-demo-candidate:web .
+          [[ $(docker image inspect mars-demo-candidate:web --format '{{index .Config.Labels "org.opencontainers.image.revision"}}') == "$SHA" ]]
+          [[ $(docker image inspect mars-demo-candidate:web --format '{{index .Config.Labels "org.opencontainers.image.version"}}') == "${VERSION}-candidate" ]]
+      - name: Scan standalone DEMO image before any registry credentials
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          scan-type: image
+          image-ref: mars-demo-candidate:web
+          scanners: vuln,secret
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          exit-code: '1'
+      - name: Prepare candidate artifact directory
+        run: mkdir -p mars-demo-candidate
+      - name: Generate DEMO SBOM
+        uses: anchore/sbom-action@f8bdd1d8ac5e901a77a92f111440fdb1b593736b # v0.20.6
+        with:
+          image: mars-demo-candidate:web
+          format: spdx-json
+          output-file: mars-demo-candidate/mars-demo-web.spdx.json
+          upload-artifact: false
+      - name: Export DEMO candidate identity
+        env:
+          SHA: ${{ needs.classify.outputs.sha }}
+          VERSION: ${{ needs.classify.outputs.version }}
+        run: |
+          set -Eeuo pipefail
+          mkdir -p mars-demo-candidate
+          image_id=$(docker image inspect mars-demo-candidate:web --format '{{.Id}}')
+          [[ "$image_id" =~ ^sha256:[0-9a-f]{64}$ ]]
+          python3 - "$SHA" "$VERSION" "$image_id" <<'PY' > mars-demo-candidate/manifest.json
+          import json, sys
+          print(json.dumps({
+              "product": "demo",
+              "status": "CANDIDATE_VERIFIED",
+              "sourceSha": sys.argv[1],
+              "version": sys.argv[2],
+              "image": {"name": "pjjpjj111/mars-demo", "part": "web", "localConfigId": sys.argv[3]},
+              "registryPublished": False,
+              "nasPromoted": False
+          }, sort_keys=True, indent=2))
+          PY
+      - name: Upload DEMO candidate-only artifacts
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: mars-demo-candidate-${{ needs.classify.outputs.sha }}
+          path: mars-demo-candidate/*
+          if-no-files-found: error
+          retention-days: 30

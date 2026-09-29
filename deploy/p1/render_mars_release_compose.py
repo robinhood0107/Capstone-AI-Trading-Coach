@@ -11,7 +11,10 @@ from typing import Any
 
 ROOT = Path(__file__).resolve().parents[2]
 PRODUCTS = ("demo", "full")
-PARTS = ("api", "web", "postgres", "redis")
+PARTS_BY_PRODUCT = {
+    "demo": ("web",),
+    "full": ("api", "web", "postgres", "redis"),
+}
 SHA = re.compile(r"^[0-9a-f]{40}$")
 SEMVER_TAG = re.compile(
     r"^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(?:-([0-9a-f]{12}))?$"
@@ -34,8 +37,13 @@ def render_compose(product: str, source: str, manifest: dict[str, Any]) -> str:
     if not isinstance(images, dict):
         raise ValueError("images")
 
+    parts = PARTS_BY_PRODUCT[product]
+    expected_keys = {f"{product}-{part}" for part in parts}
+    if set(images) != expected_keys:
+        raise ValueError(f"{product} image inventory")
+
     refs: dict[str, str] = {}
-    for part in PARTS:
+    for part in parts:
         identity = images.get(f"{product}-{part}")
         if not isinstance(identity, dict) or set(identity) != {"reference", "digest"}:
             raise ValueError(f"{product}-{part}")
@@ -47,7 +55,7 @@ def render_compose(product: str, source: str, manifest: dict[str, Any]) -> str:
 
     variable = f"MARS_{product.upper()}_TAG"
     registry_prefix = f"pjjpjj111/mars-{product}:"
-    occurrences = {part: 0 for part in PARTS}
+    occurrences = {part: 0 for part in parts}
 
     def replace_image(match: re.Match[str]) -> str:
         image = match.group("image")
@@ -62,7 +70,7 @@ def render_compose(product: str, source: str, manifest: dict[str, Any]) -> str:
         return f"{match.group('prefix')}{refs[part]}{match.group('suffix')}"
 
     rendered = IMAGE_LINE.sub(replace_image, source)
-    if any(occurrences[part] == 0 for part in PARTS):
+    if any(occurrences[part] == 0 for part in parts):
         raise ValueError("compose image inventory")
     image_lines = [line for line in rendered.splitlines() if re.match(r"^\s*image:", line)]
     if any("@sha256:" not in line for line in image_lines):

@@ -1,6 +1,5 @@
 package com.capstone.decision.infrastructure.security
 
-import org.springframework.context.annotation.Profile
 import org.springframework.dao.DuplicateKeyException
 import org.springframework.security.crypto.password.PasswordEncoder
 import org.springframework.stereotype.Service
@@ -11,7 +10,6 @@ import java.util.Base64
 import java.util.Locale
 
 @Service
-@Profile("!mars-demo")
 class FullPasswordAccountService(
     private val accounts: FullPasswordAccountRepository,
     private val demoAccounts: DemoAccountService,

@@ -2,6 +2,7 @@ import type { Metadata } from 'next';
 import type { ReactNode } from 'react';
 import './globals.css';
 import { AppShell } from '@/shared/ui/AppShell';
+import { LoginCard } from '@/shared/ui/LoginCard';
 import { THEME_BOOT_SCRIPT } from '@/shared/ui/ThemeToggle';
 
 export const metadata: Metadata = {
@@ -27,7 +28,7 @@ export default function RootLayout({ children }: { children: ReactNode }) {
           본문으로 건너뛰기
         </a>
         {/* 로그인 상태에 따라 소개 페이지와 대시보드로 갈린다. */}
-        <AppShell>{children}</AppShell>
+        <AppShell loginCard={<LoginCard />}>{children}</AppShell>
       </body>
     </html>
   );

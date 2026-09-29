@@ -1,0 +1,128 @@
+{
+  "openapi": "3.1.1",
+  "info": {
+    "title": "MARS DEMO visitor API",
+    "version": "2.0.0",
+    "description": "Independent Next.js routes backed only by the versioned DEMO fixture and the DEMO state volume. No FULL API or brokerage route is used."
+  },
+  "servers": [{"url": "/"}],
+  "paths": {
+    "/healthz": {
+      "get": {
+        "operationId": "demoHealth",
+        "summary": "Container liveness",
+        "responses": {"200": {"description": "Healthy DEMO web process"}}
+      }
+    },
+    "/api/demo/session": {
+      "post": {
+        "operationId": "createDemoVisitorSession",
+        "summary": "Issue a random visitor session without account credentials",
+        "security": [],
+        "requestBody": {"required": true, "content": {"application/json": {"schema": {"type": "object", "maxProperties": 0}}}},
+        "responses": {
+          "200": {"description": "Session cookie set as HttpOnly, SameSite=Lax and Secure in production", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/SessionCreated"}}}},
+          "403": {"description": "Cross-origin request rejected"},
+          "429": {"description": "Session issuance rate limit reached"},
+          "503": {"description": "Session signing key unavailable"}
+        }
+      }
+    },
+    "/api/demo/logout": {
+      "post": {
+        "operationId": "deleteDemoVisitorSession",
+        "security": [{"demoVisitorCookie": []}],
+        "responses": {
+          "200": {"description": "Visitor cookie cleared"},
+          "401": {"description": "Visitor session missing or expired"},
+          "403": {"description": "Cross-origin request rejected"}
+        }
+      }
+    },
+    "/api/demo/state": {
+      "get": {
+        "operationId": "readDemoState",
+        "security": [{"demoVisitorCookie": []}],
+        "responses": {
+          "200": {"description": "Current clock projection, fixture, overlay and usage", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/DemoState"}}}},
+          "401": {"description": "Visitor session missing or expired"}
+        }
+      }
+    },
+    "/api/demo/overlay": {
+      "get": {
+        "operationId": "readDemoVisitorOverlay",
+        "security": [{"demoVisitorCookie": []}],
+        "responses": {"200": {"description": "Current visitor-only virtual choices and notes"}, "401": {"description": "Visitor session missing or expired"}}
+      },
+      "post": {
+        "operationId": "changeDemoVisitorOverlay",
+        "security": [{"demoVisitorCookie": []}],
+        "requestBody": {"required": true, "content": {"application/json": {"schema": {"oneOf": [
+          {"$ref": "#/components/schemas/SetAuto"},
+          {"$ref": "#/components/schemas/SetPrinciple"},
+          {"$ref": "#/components/schemas/PlaceVirtualOrder"},
+          {"$ref": "#/components/schemas/AddNote"},
+          {"$ref": "#/components/schemas/DeleteNote"},
+          {"$ref": "#/components/schemas/ResetOverlay"}
+        ]}}}},
+        "responses": {
+          "200": {"description": "Visitor overlay projection after simulated action"},
+          "400": {"description": "Invalid action or input"},
+          "401": {"description": "Visitor session missing or expired"},
+          "403": {"description": "Cross-origin request rejected"},
+          "409": {"description": "Virtual rule, order, note, or source-range limit"},
+          "413": {"description": "Request body too large"},
+          "503": {"description": "DEMO state store unavailable"}
+        }
+      }
+    },
+    "/api/demo/agent": {
+      "post": {
+        "operationId": "askDemoFinancialAgent",
+        "summary": "Send free text to the server-side DEMO Vertex client",
+        "security": [{"demoVisitorCookie": []}],
+        "requestBody": {"required": true, "content": {"application/json": {"schema": {"$ref": "#/components/schemas/AgentQuestion"}}}},
+        "responses": {
+          "200": {"description": "Grounded answer and actual provider token usage"},
+          "400": {"description": "Invalid request"},
+          "401": {"description": "Visitor session missing or expired"},
+          "413": {"description": "Question, context, or byte limit exceeded"},
+          "429": {"description": "Per-session/global quota, concurrency, or request-rate limit"},
+          "502": {"description": "Provider failure or outcome/usage unknown; call was reserved conservatively"},
+          "503": {"description": "DEMO Vertex secret/configuration unavailable"}
+        }
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "demoVisitorCookie": {"type": "apiKey", "in": "cookie", "name": "mars_demo_visitor"}
+    },
+    "schemas": {
+      "SessionCreated": {
+        "type": "object", "additionalProperties": false, "required": ["ok", "expiresAt"],
+        "properties": {"ok": {"type": "boolean", "const": true}, "expiresAt": {"type": "string", "format": "date-time"}}
+      },
+      "DemoState": {
+        "type": "object", "required": ["source", "clock", "showcase", "backtest", "bars", "overlay", "usage"],
+        "properties": {
+          "source": {"type": "object"},
+          "clock": {"type": "object", "required": ["utc", "kst", "phase", "sourceScenarioDate"]},
+          "showcase": {"oneOf": [{"type": "object"}, {"type": "null"}]},
+          "backtest": {"type": "object", "required": ["daily", "usesFutureData"], "properties": {"usesFutureData": {"type": "boolean", "const": false}}},
+          "bars": {"type": "array", "items": {"type": "object"}},
+          "overlay": {"type": "object"},
+          "usage": {"type": "object"}
+        }
+      },
+      "SetAuto": {"type": "object", "additionalProperties": false, "required": ["action", "armed"], "properties": {"action": {"const": "set-auto"}, "armed": {"type": "boolean"}}},
+      "SetPrinciple": {"type": "object", "additionalProperties": false, "required": ["action", "riskProfile"], "properties": {"action": {"const": "set-principle"}, "riskProfile": {"type": "string", "enum": ["conservative", "balanced", "growth"]}}},
+      "PlaceVirtualOrder": {"type": "object", "additionalProperties": false, "required": ["action", "side", "symbol", "quantity", "idempotencyKey"], "properties": {"action": {"const": "place-virtual-order"}, "side": {"type": "string", "enum": ["BUY", "SELL"]}, "symbol": {"type": "string", "maxLength": 20}, "quantity": {"type": "integer", "minimum": 1, "maximum": 100}, "idempotencyKey": {"type": "string", "minLength": 16, "maxLength": 128}}},
+      "AddNote": {"type": "object", "additionalProperties": false, "required": ["action", "text"], "properties": {"action": {"const": "add-note"}, "text": {"type": "string", "minLength": 1, "maxLength": 500}, "sourceEventId": {"type": "string", "maxLength": 100}}},
+      "DeleteNote": {"type": "object", "additionalProperties": false, "required": ["action", "noteId"], "properties": {"action": {"const": "delete-note"}, "noteId": {"type": "string", "maxLength": 100}}},
+      "ResetOverlay": {"type": "object", "additionalProperties": false, "required": ["action"], "properties": {"action": {"const": "reset"}}},
+      "AgentQuestion": {"type": "object", "additionalProperties": false, "required": ["question"], "properties": {"question": {"type": "string", "minLength": 1, "maxLength": 1500}}}
+    }
+  }
+}

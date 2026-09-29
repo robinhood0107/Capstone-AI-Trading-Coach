@@ -23,7 +23,6 @@ import jakarta.validation.constraints.Min
 import jakarta.validation.constraints.NotNull
 import jakarta.validation.constraints.Pattern
 import org.springframework.beans.factory.ObjectProvider
-import org.springframework.context.annotation.Profile
 import org.springframework.dao.DataAccessException
 import org.springframework.security.access.prepost.PreAuthorize
 import org.springframework.security.core.annotation.AuthenticationPrincipal
@@ -39,7 +38,6 @@ import java.time.OffsetDateTime
 
 /** Operator console: accounts, running automations, and service capacity. ADMIN only. */
 @RestController
-@Profile("!mars-demo")
 @RequestMapping("/api/v1/admin")
 @PreAuthorize("hasRole('ADMIN')")
 class AdminController(

@@ -7,16 +7,12 @@ function request(path: string, method = 'GET') {
   return new NextRequest(`http://localhost${path}`, { method });
 }
 
-test('DEMO exposes only its public page and bounded ask before the API rewrite', () => {
+test('FULL web closes the legacy anonymous DEMO API route', () => {
   const previous = process.env.NEXT_PUBLIC_MARS_PRODUCT;
   try {
-    process.env.NEXT_PUBLIC_MARS_PRODUCT = 'demo';
+    process.env.NEXT_PUBLIC_MARS_PRODUCT = 'full';
     assert.equal(middleware(request('/')).status, 200);
-    assert.equal(middleware(request('/api/v1/demo/agent/ask', 'POST')).status, 200);
-    for (const path of ['/settings', '/automation', '/rag', '/api/v1/brokerage/mock/credential']) {
-      assert.equal(middleware(request(path)).status, 404, path);
-    }
-    assert.equal(middleware(request('/api/v1/auth/login', 'POST')).status, 404);
+    assert.equal(middleware(request('/api/v1/demo/agent/ask', 'POST')).status, 404);
     assert.equal(middleware(request('/api/v1/demo/agent/ask')).status, 404);
   } finally {
     if (previous === undefined) delete process.env.NEXT_PUBLIC_MARS_PRODUCT;

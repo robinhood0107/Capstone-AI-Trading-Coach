@@ -77,6 +77,7 @@ workspaces/decision-platform/research/s1-4x-numeric-parity/**/artifacts/
 node_modules/
 .next/
 dist/
+*.tsbuildinfo
 
 # --- full-app v2 upstream intake는 local-only, 검토된 production source만 추적 ---
 workspaces/return-engine/dev/

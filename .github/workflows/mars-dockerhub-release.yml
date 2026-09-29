@@ -250,8 +250,14 @@ jobs:
             --product full --images release-assets/mars-images.json \
             --output release-assets/mars-public-full.compose.yml
           python3 -m json.tool release-assets/mars-images.json >/dev/null
-          ! grep -E '^[[:space:]]*image:' release-assets/mars-public-full.compose.yml | grep -v '@sha256:'
-          ! grep -E 'mars-demo|demo-state|session-signing-key' release-assets/mars-public-full.compose.yml
+          if grep -E '^[[:space:]]*image:' release-assets/mars-public-full.compose.yml | grep -v '@sha256:'; then
+            echo "FULL manifest contains an unpinned image reference." >&2
+            exit 1
+          fi
+          if grep -E 'mars-demo|demo-state|session-signing-key' release-assets/mars-public-full.compose.yml; then
+            echo "FULL manifest contains a DEMO resource reference." >&2
+            exit 1
+          fi
       - name: Upload FULL-only release assets
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
@@ -308,7 +314,10 @@ jobs:
           for asset in mars-images.json mars-public-full.compose.yml mars-api.spdx.json mars-postgres.spdx.json mars-redis.spdx.json mars-web.spdx.json; do
             [[ -s "release-assets/$asset" ]]
           done
-          ! grep -E 'mars-demo|demo-state|session-signing-key' release-assets/mars-public-full.compose.yml
+          if grep -E 'mars-demo|demo-state|session-signing-key' release-assets/mars-public-full.compose.yml; then
+            echo "FULL manifest contains a DEMO resource reference." >&2
+            exit 1
+          fi
       - name: Publish immutable FULL release and read back its assets
         env:
           GH_TOKEN: ${{ github.token }}

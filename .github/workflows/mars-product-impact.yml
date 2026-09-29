@@ -1,0 +1,54 @@
+name: Product Impact Classification
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+    branches: [develop, main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: mars-product-impact-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  classify:
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    name: Product Impact Classification
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout pull request source
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Classify every changed path before product jobs
+        id: impact
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -Eeuo pipefail
+          [[ $(git rev-parse HEAD) == "$HEAD_SHA" ]]
+          python3 deploy/p1/test_classify_product_changes.py
+          python3 deploy/p1/test_mars_release_failure_isolation.py
+          python3 deploy/p1/classify_product_changes.py --base "$BASE_SHA" --head "$HEAD_SHA" --format github
+          python3 - "$BASE_SHA" "$HEAD_SHA" <<'PY' > product-impact.json
+          import json, subprocess, sys
+          result = json.loads(subprocess.check_output([
+              "python3", "deploy/p1/classify_product_changes.py", "--base", sys.argv[1], "--head", sys.argv[2], "--format", "json"
+          ], text=True))
+          result["sourceSha"] = sys.argv[2]
+          print(json.dumps(result, ensure_ascii=False, sort_keys=True, indent=2))
+          PY
+
+      - name: Upload impact manifest
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: mars-product-impact-${{ github.event.pull_request.number }}-${{ github.event.pull_request.head.sha }}
+          path: product-impact.json
+          if-no-files-found: error
+          retention-days: 30

@@ -1,8 +1,13 @@
 #!/usr/bin/env python3
-"""Assemble isolated public-product secrets from a fresh p1ctl init bundle.
+"""Assemble retained v1 public-product secrets from a fresh p1ctl init bundle.
 
-The script never prints secret values. Run p1ctl init separately for DEMO and
-FULL so their database credentials, actor keys and RAG keys never overlap.
+The legacy v1 public DEMO/FULL products used this helper. The v2 lightweight DEMO
+does not use p1ctl, database, actor, or RAG secrets; its stack mounts only its
+own Vertex service account and visitor-signing key. Never run this assembler on
+the v2 DEMO Compose asset.
+
+The script never prints secret values. Run p1ctl init separately for retained
+v1 DEMO and FULL so their database credentials, actor keys and RAG keys never overlap.
 """
 
 from __future__ import annotations
@@ -238,6 +243,12 @@ def main() -> int:
         raise ValueError("release directory needs mars-images.json")
     if not (release_dir / f"mars-public-{args.product}.compose.yml").is_file():
         raise ValueError("release directory needs the matching Compose asset")
+    if args.product == "demo":
+        demo_compose = (release_dir / "mars-public-demo.compose.yml").read_text(encoding="utf-8")
+        if "session-signing-key" in demo_compose or "vertex-service-account.json" in demo_compose:
+            raise ValueError(
+                "v2 lightweight DEMO uses separate file secrets; p1ctl public-secret assembly is legacy-only"
+            )
     base = args.base_secrets.resolve(strict=True)
     if not base.is_dir():
         raise ValueError("base secrets must be a directory")

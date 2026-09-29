@@ -2,56 +2,82 @@ name: MARS product image build
 
 on:
   pull_request:
-    branches: [main]
+    branches: [develop, main]
 
 permissions:
   contents: read
 
 concurrency:
-  group: mars-image-build-${{ github.event.pull_request.number }}
+  group: mars-full-image-build-${{ github.event.pull_request.number }}
   cancel-in-progress: true
 
 jobs:
-  product-images:
-    if: github.event.pull_request.head.ref == 'develop' && github.event.pull_request.head.repo.full_name == github.repository
-    name: MARS product image build
+  classify:
+    if: github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-24.04
+    outputs:
+      full_image_required: ${{ steps.impact.outputs.full_image_required }}
+      full_publish_noop: ${{ steps.impact.outputs.full_publish_noop }}
+      sha: ${{ steps.identity.outputs.sha }}
+      version: ${{ steps.identity.outputs.version }}
     steps:
       - name: Checkout exact promotion candidate
         uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
         with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
           persist-credentials: false
-
-      - name: Validate image publication gate and release version
+      - name: Classify product scope before any image build
+        id: impact
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -Eeuo pipefail
+          python3 deploy/p1/classify_product_changes.py --base "$BASE_SHA" --head "$HEAD_SHA" --format github
+      - name: Validate FULL candidate release gate
         id: identity
-        shell: bash
+        if: steps.impact.outputs.full_image_required == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
         run: |
           set -Eeuo pipefail
+          [[ $(git rev-parse HEAD) == "${{ github.event.pull_request.head.sha }}" ]]
           [[ $(jq -r '.imagePublicationReady' deploy/p1/mars-release-gate.json) == true ]]
           version=$(jq -r '.version' deploy/p1/mars-release-gate.json)
           [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]
-          # Every main promotion publishes one release. The version must be new and documented.
           if gh release view "v${version}" >/dev/null 2>&1; then
-            echo "::error::v${version} is already released. Bump deploy/p1/mars-release-gate.json and CHANGELOG.md."
+            echo "::error::FULL version v${version} is already released; bump the FULL release gate and changelog."
             exit 1
           fi
           grep -qE "^## \[${version//./\\.}\] - [0-9]{4}-[0-9]{2}-[0-9]{2}$" CHANGELOG.md || {
-            echo "::error::CHANGELOG.md has no '## [${version}] - YYYY-MM-DD' entry."
+            echo "::error::CHANGELOG.md is missing the FULL release entry for ${version}."
             exit 1
           }
+          echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
           echo "version=$version" >> "$GITHUB_OUTPUT"
 
+  full-images:
+    needs: classify
+    if: needs.classify.outputs.full_image_required == 'true'
+    name: MARS product image build
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout exact FULL candidate
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          ref: ${{ needs.classify.outputs.sha }}
+          fetch-depth: 0
+          persist-credentials: false
       - name: Set up Buildx
         uses: docker/setup-buildx-action@e468171a9de216ec08956ac3ada2f0791b6bd435 # v3.11.1
-
-      - name: Build API and shared infrastructure
-        shell: bash
+      - name: Build FULL API and shared infrastructure images
+        env:
+          SHA: ${{ needs.classify.outputs.sha }}
+          VERSION: ${{ needs.classify.outputs.version }}
         run: |
           set -Eeuo pipefail
-          source_sha=$(git rev-parse HEAD)
           for part in api postgres redis; do
             case "$part" in
               api) file=deploy/p1/docker/decision-platform.Dockerfile ;;
@@ -60,110 +86,82 @@ jobs:
             esac
             docker buildx build --platform linux/amd64 --load \
               --file "$file" \
-              --build-arg SOURCE_REVISION="$source_sha" \
-              --build-arg RELEASE_VERSION="${{ steps.identity.outputs.version }}-candidate" \
-              --tag "mars-candidate:$part" .
-            [[ $(docker image inspect "mars-candidate:$part" \
-              --format '{{index .Config.Labels "org.opencontainers.image.revision"}}') == "$source_sha" ]]
+              --build-arg SOURCE_REVISION="$SHA" \
+              --build-arg RELEASE_VERSION="${VERSION}-candidate" \
+              --tag "mars-full-candidate:$part" .
+            [[ $(docker image inspect "mars-full-candidate:$part" --format '{{index .Config.Labels "org.opencontainers.image.revision"}}') == "$SHA" ]]
           done
-
-      - name: Build both product web images
-        shell: bash
+      - name: Build FULL dashboard image
+        env:
+          SHA: ${{ needs.classify.outputs.sha }}
+          VERSION: ${{ needs.classify.outputs.version }}
         run: |
           set -Eeuo pipefail
-          source_sha=$(git rev-parse HEAD)
-          for product in demo full; do
-            docker buildx build --platform linux/amd64 --load \
-              --file workspaces/experience-dashboard/Dockerfile \
-              --build-arg MARS_PRODUCT="$product" \
-              --build-arg SOURCE_REVISION="$source_sha" \
-              --build-arg RELEASE_VERSION="${{ steps.identity.outputs.version }}-candidate" \
-              --tag "mars-candidate:${product}-web" workspaces/experience-dashboard
-            [[ $(docker image inspect "mars-candidate:${product}-web" \
-              --format '{{index .Config.Labels "org.opencontainers.image.revision"}}') == "$source_sha" ]]
-            [[ $(docker image inspect "mars-candidate:${product}-web" \
-              --format '{{index .Config.Env}}') == *"NEXT_PUBLIC_MARS_PRODUCT=$product"* ]]
-          done
-
-      - name: Scan API candidate image
+          docker buildx build --platform linux/amd64 --load \
+            --file workspaces/experience-dashboard/Dockerfile \
+            --build-arg MARS_PRODUCT=full \
+            --build-arg SOURCE_REVISION="$SHA" \
+            --build-arg RELEASE_VERSION="${VERSION}-candidate" \
+            --tag mars-full-candidate:web workspaces/experience-dashboard
+          [[ $(docker image inspect mars-full-candidate:web --format '{{index .Config.Labels "org.opencontainers.image.revision"}}') == "$SHA" ]]
+          [[ $(docker image inspect mars-full-candidate:web --format '{{index .Config.Env}}') == *"NEXT_PUBLIC_MARS_PRODUCT=full"* ]]
+      - name: Scan FULL API candidate image
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
           scan-type: image
-          image-ref: mars-candidate:api
+          image-ref: mars-full-candidate:api
           scanners: vuln,secret
           severity: HIGH,CRITICAL
           ignore-unfixed: true
           exit-code: '1'
-
-      - name: Scan PostgreSQL candidate image
+      - name: Scan FULL PostgreSQL candidate image
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
           scan-type: image
-          image-ref: mars-candidate:postgres
+          image-ref: mars-full-candidate:postgres
           scanners: vuln,secret
           severity: HIGH,CRITICAL
           ignore-unfixed: true
           exit-code: '1'
-
-      - name: Scan Redis candidate image
+      - name: Scan FULL Redis candidate image
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
           scan-type: image
-          image-ref: mars-candidate:redis
+          image-ref: mars-full-candidate:redis
           scanners: vuln,secret
           severity: HIGH,CRITICAL
           ignore-unfixed: true
           exit-code: '1'
-
-      - name: Scan demo web candidate image
+      - name: Scan FULL web candidate image
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
           scan-type: image
-          image-ref: mars-candidate:demo-web
+          image-ref: mars-full-candidate:web
           scanners: vuln,secret
           severity: HIGH,CRITICAL
           ignore-unfixed: true
           exit-code: '1'
-
-      - name: Scan full web candidate image
-        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
-        with:
-          scan-type: image
-          image-ref: mars-candidate:full-web
-          scanners: vuln,secret
-          severity: HIGH,CRITICAL
-          ignore-unfixed: true
-          exit-code: '1'
-
-      - name: Export candidate identities for review
-        shell: bash
+      - name: Export FULL candidate identities
+        env:
+          SHA: ${{ needs.classify.outputs.sha }}
+          VERSION: ${{ needs.classify.outputs.version }}
         run: |
           set -Eeuo pipefail
-          mkdir -p mars-candidate
-          source_sha=$(git rev-parse HEAD)
-          python3 - "$source_sha" <<'PY' > mars-candidate/identities.json
-          import json
-          import subprocess
-          import sys
-
-          source = sys.argv[1]
+          mkdir -p full-candidate
+          python3 - "$SHA" "$VERSION" <<'PY' > full-candidate/manifest.json
+          import json, subprocess, sys
+          source, version = sys.argv[1:]
           images = {}
-          for part in ("api", "postgres", "redis", "demo-web", "full-web"):
-              image = f"mars-candidate:{part}"
-              identity = subprocess.check_output(
-                  ["docker", "image", "inspect", image, "--format", "{{.Id}}"],
-                  text=True,
-              ).strip()
-              assert identity.startswith("sha256:")
-              images[part] = {"localConfigId": identity, "productImage": image}
-          print(json.dumps({"sourceSha": source, "images": images}, sort_keys=True, indent=2))
+          for part in ("api", "web", "postgres", "redis"):
+              image = f"mars-full-candidate:{part}"
+              image_id = subprocess.check_output(["docker", "image", "inspect", image, "--format", "{{.Id}}"], text=True).strip()
+              images[f"full-{part}"] = {"product": "full", "part": part, "localConfigId": image_id}
+          print(json.dumps({"product": "full", "sourceSha": source, "version": version, "images": images}, sort_keys=True, indent=2))
           PY
-          python3 -m json.tool mars-candidate/identities.json >/dev/null
-
-      - name: Upload candidate image identities
+      - name: Upload FULL candidate-only identities
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
-          name: mars-product-candidate-${{ github.sha }}
-          path: mars-candidate/identities.json
+          name: mars-full-candidate-${{ needs.classify.outputs.sha }}
+          path: full-candidate/manifest.json
           if-no-files-found: error
           retention-days: 14

@@ -13,12 +13,11 @@ import org.springframework.core.env.Profiles
 import org.springframework.web.filter.OncePerRequestFilter
 
 /**
- * Public product modes stay closed until their separate authentication and demo routes are ready.
+ * FULL public routes stay closed until their separate authentication gates are ready.
  * LOCAL preserves the existing private deployment while the product transition is in progress.
  */
 internal enum class PublicSurfaceMode {
     LOCAL,
-    DEMO,
     FULL,
 }
 
@@ -31,10 +30,6 @@ internal class PublicSurfaceGate(
         filterChain: FilterChain,
     ) {
         val health = request.method == "GET" && request.requestURI == "/actuator/health"
-        val demoAllowed =
-            mode == PublicSurfaceMode.DEMO &&
-                request.method == "POST" &&
-                request.requestURI == "/api/v1/demo/agent/ask"
         val fullAgentAllowed =
             mode == PublicSurfaceMode.FULL &&
                 when (request.method to request.requestURI) {
@@ -123,8 +118,7 @@ internal class PublicSurfaceGate(
             !fullAllowed &&
             !fullAgentAllowed &&
             !fullAutomationAllowed &&
-            !fullRuntimeBridgeAllowed &&
-            !demoAllowed
+            !fullRuntimeBridgeAllowed
         ) {
             response.sendError(HttpServletResponse.SC_NOT_FOUND)
             return
@@ -177,10 +171,10 @@ internal class PublicSurfaceGateConfiguration {
     ): FilterRegistrationBean<PublicSurfaceGate> {
         val mode = PublicSurfaceMode.valueOf(rawMode)
         val fullProfile = environment.acceptsProfiles(Profiles.of("mars-full"))
-        val demoProfile = environment.acceptsProfiles(Profiles.of("mars-demo"))
-        require(!(fullProfile && demoProfile)) { "Only one MARS product profile can start." }
+        require(!environment.acceptsProfiles(Profiles.of("mars-demo"))) {
+            "DEMO must run in its standalone web application, not the FULL API."
+        }
         require(fullProfile == (mode == PublicSurfaceMode.FULL)) { "FULL mode requires the matching product profile." }
-        require(demoProfile == (mode == PublicSurfaceMode.DEMO)) { "DEMO mode requires the matching product profile." }
         return FilterRegistrationBean(PublicSurfaceGate(mode)).apply {
             order = Ordered.HIGHEST_PRECEDENCE
             addUrlPatterns("/*")

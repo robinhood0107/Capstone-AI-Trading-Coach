@@ -1,0 +1,350 @@
+name: MARS DEMO sync evaluation and release
+
+on:
+  pull_request:
+    types: [closed]
+    branches: [main]
+
+permissions: {}
+
+concurrency:
+  group: mars-demo-sync-${{ github.event.pull_request.merge_commit_sha }}
+  cancel-in-progress: false
+
+jobs:
+  evaluate:
+    if: >-
+      github.event.pull_request.merged == true &&
+      github.event.pull_request.head.ref == 'develop' &&
+      github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      sha: ${{ steps.identity.outputs.sha }}
+      demo_candidate_required: ${{ steps.impact.outputs.demo_candidate_required }}
+      full_image_required: ${{ steps.impact.outputs.full_image_required }}
+      categories: ${{ steps.impact.outputs.categories }}
+    steps:
+      - name: Checkout exact merged source SHA
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          ref: ${{ github.event.pull_request.merge_commit_sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Verify merge identity and classify the same SHA
+        id: impact
+        env:
+          MERGE_SHA: ${{ github.event.pull_request.merge_commit_sha }}
+          SOURCE_SHA: ${{ github.event.pull_request.head.sha }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          set -Eeuo pipefail
+          [[ "$MERGE_SHA" =~ ^[0-9a-f]{40}$ ]]
+          [[ $(git rev-parse HEAD) == "$MERGE_SHA" ]]
+          [[ $(git rev-parse HEAD^2) == "$SOURCE_SHA" ]]
+          git cat-file -e "$MERGE_SHA^{commit}"
+          git diff --name-only HEAD^1 HEAD^2 > changed-paths.txt
+          python3 deploy/p1/classify_product_changes.py --paths-file changed-paths.txt --format github
+      - name: Record exact source identity
+        id: identity
+        run: echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+
+  no-demo-delta:
+    needs: evaluate
+    if: needs.evaluate.outputs.demo_candidate_required != 'true'
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout evaluated source
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          ref: ${{ needs.evaluate.outputs.sha }}
+          persist-credentials: false
+      - name: Write NO_DEMO_DELTA evidence
+        env:
+          SHA: ${{ needs.evaluate.outputs.sha }}
+          CATEGORIES: ${{ needs.evaluate.outputs.categories }}
+        run: |
+          set -Eeuo pipefail
+          mkdir -p mars-demo-sync
+          python3 - "$SHA" "$CATEGORIES" <<'PY' > mars-demo-sync/status.json
+          import json, sys
+          print(json.dumps({
+              "product": "demo",
+              "status": "NO_DEMO_DELTA",
+              "sourceSha": sys.argv[1],
+              "categories": [value for value in sys.argv[2].split(",") if value],
+              "reason": "No DEMO adapter, fixture, Agent, or shared UI/contract path changed; keep prior DEMO digest.",
+              "candidateCreated": False,
+              "registryPublished": False,
+              "nasPromoted": False
+          }, sort_keys=True, indent=2))
+          PY
+      - name: Upload NO_DEMO_DELTA evidence
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: mars-demo-sync-no-delta-${{ needs.evaluate.outputs.sha }}
+          path: mars-demo-sync/status.json
+          if-no-files-found: error
+          retention-days: 90
+
+  build-scan-publish:
+    needs: evaluate
+    if: needs.evaluate.outputs.demo_candidate_required == 'true'
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+      pull-requests: read
+    steps:
+      - name: Checkout exact merged source SHA
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          ref: ${{ needs.evaluate.outputs.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Verify independent DEMO version and release identity
+        id: identity
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SHA: ${{ needs.evaluate.outputs.sha }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          set -Eeuo pipefail
+          [[ $(git rev-parse HEAD) == "$SHA" ]]
+          git cat-file -e "$SHA^{commit}"
+          version=$(jq -r '.version' deploy/p1/mars-demo-release.json)
+          ready=$(jq -r '.imagePublicationReady' deploy/p1/mars-demo-release.json)
+          [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]
+          [[ "$ready" == true ]]
+          tag="v${version}"
+          gh_tag="mars-demo-${tag}"
+          tag_status=$(curl --silent --show-error --retry 2 --output /dev/null --write-out '%{http_code}' \
+            "https://hub.docker.com/v2/repositories/pjjpjj111/mars-demo/tags/${tag}-web" || true)
+          if [[ "$tag_status" == 200 ]]; then
+            echo "image_tag_exists=true" >> "$GITHUB_OUTPUT"
+          elif [[ "$tag_status" == 404 ]]; then
+            echo "image_tag_exists=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "::error::Docker Hub tag preflight returned HTTP $tag_status."
+            exit 1
+          fi
+          already_released=false
+          if gh release view "$gh_tag" >/dev/null 2>&1; then
+            mkdir -p release-preflight
+            gh release download "$gh_tag" --pattern mars-demo-images.json --dir release-preflight
+            [[ $(jq -r '.sourceSha' release-preflight/mars-demo-images.json) == "$SHA" ]]
+            [[ $(jq -r '.tag' release-preflight/mars-demo-images.json) == "$tag" ]]
+            assets=$(gh release view "$gh_tag" --json assets --jq '[.assets[].name] | sort | join(",")')
+            [[ "$assets" == "mars-demo-images.json,mars-demo-web.spdx.json,mars-public-demo.compose.yml" ]]
+            already_released=true
+          fi
+          [[ $(jq -r '.serviceReady' deploy/p1/mars-demo-release.json) == true || $(jq -r '.serviceReady' deploy/p1/mars-demo-release.json) == false ]]
+          {
+            echo "sha=$SHA"
+            echo "version=$version"
+            echo "image_tag=${tag}"
+            echo "release_tag=${gh_tag}"
+            echo "service_ready=$(jq -r '.serviceReady' deploy/p1/mars-demo-release.json)"
+            echo "already_released=$already_released"
+          } >> "$GITHUB_OUTPUT"
+      - name: Set up Buildx
+        uses: docker/setup-buildx-action@e468171a9de216ec08956ac3ada2f0791b6bd435 # v3.11.1
+      - name: Install pinned uv and Python for DEMO contracts
+        if: steps.identity.outputs.already_released != 'true'
+        uses: astral-sh/setup-uv@d31148d669074a8d0a63714ba94f3201e7020bc3 # v8.3.0
+        with:
+          version: "0.11.26"
+          python-version: "3.12"
+      - name: Verify existing DEMO release and registry digest before idempotent exit
+        if: steps.identity.outputs.already_released == 'true'
+        env:
+          SHA: ${{ steps.identity.outputs.sha }}
+          IMAGE_TAG: ${{ steps.identity.outputs.image_tag }}
+        run: |
+          set -Eeuo pipefail
+          manifest=release-preflight/mars-demo-images.json
+          repo=pjjpjj111/mars-demo
+          ref="$repo:$IMAGE_TAG-web"
+          [[ $(jq -r '.product' "$manifest") == "demo" ]]
+          [[ $(jq -r '.sourceSha' "$manifest") == "$SHA" ]]
+          [[ $(jq -r '.tag' "$manifest") == "$IMAGE_TAG" ]]
+          [[ $(jq -r '.images | keys | join(",")' "$manifest") == "demo-web" ]]
+          recorded=$(jq -r '.images["demo-web"].digest' "$manifest")
+          [[ "$recorded" =~ ^sha256:[0-9a-f]{64}$ ]]
+          current="sha256:$(docker buildx imagetools inspect "$ref" --raw | sha256sum | awk '{print $1}')"
+          [[ "$current" == "$recorded" ]]
+          compose=release-preflight/mars-public-demo.compose.yml
+          grep -F "$repo@$recorded" "$compose"
+          if grep -E '^\s*image:' "$compose" | grep -v '@sha256:'; then
+            echo "DEMO manifest contains an unpinned image reference." >&2
+            exit 1
+          fi
+          if grep -E 'mars-full|brokerage-kek|full-secrets|postgres|redis' "$compose"; then
+            echo "DEMO manifest contains a FULL resource reference." >&2
+            exit 1
+          fi
+          docker pull --platform linux/amd64 "$repo@$recorded"
+          [[ $(docker image inspect "$repo@$recorded" --format '{{index .Config.Labels "org.opencontainers.image.revision"}}') == "$SHA" ]]
+          [[ $(docker image inspect "$repo@$recorded" --format '{{index .Config.Labels "org.opencontainers.image.version"}}') == "${IMAGE_TAG#v}" ]]
+      - name: Validate fixture and product boundaries
+        if: steps.identity.outputs.already_released != 'true'
+        run: |
+          set -Eeuo pipefail
+          python3 workspaces/mars-demo/scripts/validate_fixture.py workspaces/mars-demo/data/scenario.v1.json
+          python3 deploy/p1/test_classify_product_changes.py
+          uv run --frozen python -m unittest discover -s contracts/tests -p 'test_mars_demo_api_contract.py' -v
+          uv run --frozen python -m unittest discover -s contracts/tests -p 'test_mars_public_demo_compose.py' -v
+          uv run --frozen python -m unittest discover -s contracts/tests -p 'test_mars_release_compose.py' -v
+      - name: Build standalone DEMO image
+        if: steps.identity.outputs.already_released != 'true'
+        env:
+          SHA: ${{ steps.identity.outputs.sha }}
+          VERSION: ${{ steps.identity.outputs.version }}
+        run: |
+          set -Eeuo pipefail
+          docker buildx build --platform linux/amd64 --load \
+            --file workspaces/mars-demo/Dockerfile \
+            --build-arg SOURCE_REVISION="$SHA" \
+            --build-arg RELEASE_VERSION="$VERSION" \
+            --tag "mars-demo-build:web" .
+          [[ $(docker image inspect mars-demo-build:web --format '{{index .Config.Labels "org.opencontainers.image.revision"}}') == "$SHA" ]]
+          [[ $(docker image inspect mars-demo-build:web --format '{{index .Config.Labels "org.opencontainers.image.version"}}') == "$VERSION" ]]
+      - name: Scan DEMO image before registry credentials
+        if: steps.identity.outputs.already_released != 'true'
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          scan-type: image
+          image-ref: mars-demo-build:web
+          scanners: vuln,secret
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          exit-code: '1'
+      - name: Prepare DEMO release asset directory
+        if: steps.identity.outputs.already_released != 'true'
+        run: mkdir -p release-assets
+      - name: Generate DEMO SBOM
+        if: steps.identity.outputs.already_released != 'true'
+        uses: anchore/sbom-action@f8bdd1d8ac5e901a77a92f111440fdb1b593736b # v0.20.6
+        with:
+          image: mars-demo-build:web
+          format: spdx-json
+          output-file: release-assets/mars-demo-web.spdx.json
+          upload-artifact: false
+      - name: Login to Docker Hub after scoped verification
+        if: steps.identity.outputs.already_released != 'true'
+        uses: docker/login-action@184bdaa0721073962dff0199f1fb9940f07167d1 # v3.5.0
+        with:
+          username: pjjpjj111
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+      - name: Publish the DEMO web image and verify its immutable digest
+        if: steps.identity.outputs.already_released != 'true'
+        env:
+          SHA: ${{ steps.identity.outputs.sha }}
+          IMAGE_TAG: ${{ steps.identity.outputs.image_tag }}
+        run: |
+          set -Eeuo pipefail
+          repo=pjjpjj111/mars-demo
+          ref="$repo:$IMAGE_TAG-web"
+          local_id=$(docker image inspect mars-demo-build:web --format '{{.Id}}')
+          if docker buildx imagetools inspect "$ref" >/dev/null 2>&1; then
+            docker pull --platform linux/amd64 "$ref"
+            [[ $(docker image inspect "$ref" --format '{{.Id}}') == "$local_id" ]] || {
+              echo "MARS_DEMO_TAG_COLLISION" >&2
+              exit 1
+            }
+            [[ $(docker image inspect "$ref" --format '{{index .Config.Labels "org.opencontainers.image.revision"}}') == "$SHA" ]]
+          else
+            docker tag mars-demo-build:web "$ref"
+            docker push "$ref"
+          fi
+          digest="sha256:$(docker buildx imagetools inspect "$ref" --raw | sha256sum | awk '{print $1}')"
+          [[ "$digest" =~ ^sha256:[0-9a-f]{64}$ ]]
+          docker pull --platform linux/amd64 "$repo@$digest"
+          [[ $(docker image inspect "$repo@$digest" --format '{{index .Config.Labels "org.opencontainers.image.revision"}}') == "$SHA" ]]
+          mkdir -p release-assets
+          python3 - "$SHA" "$IMAGE_TAG" "$ref" "$digest" <<'PY' > release-assets/mars-demo-images.json
+          import json, sys
+          sha, tag, reference, digest = sys.argv[1:]
+          print(json.dumps({
+              "product": "demo",
+              "sourceSha": sha,
+              "tag": tag,
+              "status": "REGISTRY_PUBLISHED",
+              "images": {"demo-web": {"reference": reference, "digest": digest}},
+              "nasPromoted": False
+          }, sort_keys=True, indent=2))
+          PY
+          python3 deploy/p1/render_mars_release_compose.py --product demo --images release-assets/mars-demo-images.json --output release-assets/mars-public-demo.compose.yml
+          python3 -m json.tool release-assets/mars-demo-images.json >/dev/null
+          [[ $(jq -r '.images | keys | join(",")' release-assets/mars-demo-images.json) == "demo-web" ]]
+          if grep -E 'mars-full|full-postgres|brokerage-kek|full-secrets' release-assets/mars-public-demo.compose.yml; then
+            echo "Rendered DEMO stack contains a FULL resource reference." >&2
+            exit 1
+          fi
+          if grep -E '^[[:space:]]*image:' release-assets/mars-public-demo.compose.yml | grep -v '@sha256:'; then
+            echo "Rendered DEMO stack contains an unpinned image reference." >&2
+            exit 1
+          fi
+      - name: Recheck merged identity and FULL/Demo artifact isolation
+        if: steps.identity.outputs.already_released != 'true'
+        env:
+          SHA: ${{ steps.identity.outputs.sha }}
+          IMAGE_TAG: ${{ steps.identity.outputs.image_tag }}
+          RELEASE_TAG: ${{ steps.identity.outputs.release_tag }}
+          SERVICE_READY: ${{ steps.identity.outputs.service_ready }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -Eeuo pipefail
+          [[ $(git rev-parse HEAD) == "$SHA" ]]
+          git cat-file -e "$SHA^{commit}"
+          [[ $(jq -r '.sourceSha' release-assets/mars-demo-images.json) == "$SHA" ]]
+          [[ $(jq -r '.tag' release-assets/mars-demo-images.json) == "$IMAGE_TAG" ]]
+          [[ $(jq -r '.images | keys | join(",")' release-assets/mars-demo-images.json) == "demo-web" ]]
+          [[ $(jq -r '.imagePublicationReady' deploy/p1/mars-demo-release.json) == true ]]
+          [[ $(jq -r '.version' deploy/p1/mars-demo-release.json) == "${IMAGE_TAG#v}" ]]
+          checks=$(gh pr view "$PR_NUMBER" --json statusCheckRollup --jq '.statusCheckRollup[] | [.name // .context, .conclusion // .state] | @tsv')
+          for check in 'Product Impact Classification' 'MARS DEMO candidate build'; do
+            printf '%s\n' "$checks" | awk -F '\t' -v name="$check" '$1==name && $2=="SUCCESS" {ok=1} END {exit !ok}'
+          done
+          for image in mars-demo-web.spdx.json mars-demo-images.json mars-public-demo.compose.yml; do
+            [[ -s "release-assets/$image" ]]
+          done
+      - name: Publish independent DEMO release assets
+        if: steps.identity.outputs.already_released != 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SHA: ${{ steps.identity.outputs.sha }}
+          RELEASE_TAG: ${{ steps.identity.outputs.release_tag }}
+          SERVICE_READY: ${{ steps.identity.outputs.service_ready }}
+        run: |
+          set -Eeuo pipefail
+          notes=$(mktemp /tmp/mars-demo-release-notes.XXXXXX)
+          trap 'rm -f -- "$notes"' EXIT
+          cat > "$notes" <<EOF
+          DEMO source SHA: $SHA
+
+          This release contains the independent DEMO image inventory, one-image digest-pinned Compose file, and DEMO web SBOM.
+          Docker Hub repository: pjjpjj111/mars-demo (repository retained).
+          Service readiness: $SERVICE_READY. No NAS deployment, promotion, or live-operation confirmation is included.
+          Existing DEMO tags are retained. This release does not contain FULL images or modify FULL tags.
+          EOF
+          mkdir -p release-readback
+          if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
+            gh release download "$RELEASE_TAG" --dir release-readback
+          else
+            gh release create "$RELEASE_TAG" --target "$SHA" --title "MARS DEMO $RELEASE_TAG" --notes-file "$notes" \
+              release-assets/mars-demo-images.json \
+              release-assets/mars-public-demo.compose.yml \
+              release-assets/mars-demo-web.spdx.json
+            gh release download "$RELEASE_TAG" --dir release-readback
+          fi
+          for asset in mars-demo-images.json mars-public-demo.compose.yml mars-demo-web.spdx.json; do
+            cmp "release-assets/$asset" "release-readback/$asset"
+          done
+      - name: Record idempotent readback
+        if: steps.identity.outputs.already_released == 'true'
+        run: echo "Existing DEMO release assets already match source SHA ${{ needs.evaluate.outputs.sha }}; no registry or stack mutation was made." >> "$GITHUB_STEP_SUMMARY"

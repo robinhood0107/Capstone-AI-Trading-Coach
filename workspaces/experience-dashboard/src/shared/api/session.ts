@@ -15,7 +15,7 @@ interface SessionState {
 const LOCAL_SESSION_KEY = 'capstone.session.v1';
 
 function localStore(): Storage | null {
-  if (process.env.NEXT_PUBLIC_MARS_PRODUCT === 'full' || process.env.NEXT_PUBLIC_MARS_PRODUCT === 'demo') return null;
+  if (process.env.NEXT_PUBLIC_MARS_PRODUCT === 'full') return null;
   try {
     return typeof window === 'undefined' ? null : window.sessionStorage;
   } catch {

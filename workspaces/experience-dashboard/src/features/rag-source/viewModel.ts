@@ -57,6 +57,13 @@ export interface RagAnswerView {
   statusHeadline: string;
   statusDetail: string;
   answer: string | null;
+  usage?: {
+    inputTokens: number;
+    outputTokens: number;
+    estimatedCostUsd: number;
+    modelVersion: string;
+    latencyMs: number;
+  };
   citationCoverage: number | null;
   retrievalFailure: boolean;
   guardrailFlags: string[];
@@ -191,21 +198,55 @@ export async function loadConsentGranted(): Promise<boolean> {
   }
 }
 
+export async function loadConsentProfile(): Promise<{
+  granted: boolean;
+  disclosure: string;
+  policy: string;
+  processors: string;
+  agentUsage?: import('@/shared/api/wire').RagV2CorpusStatus['agentUsage'];
+}> {
+  try {
+    const consent = await api.ragV2Consent();
+    const corpus = await api.ragV2CorpusStatus().catch(() => null);
+    return {
+      granted: consent.effective,
+      disclosure: consent.disclosureText ?? EXTERNAL_DISCLOSURE,
+      policy: consent.policyText ?? EXTERNAL_POLICY,
+      processors: consent.processorNames ?? EXTERNAL_PROCESSORS,
+      agentUsage: corpus?.agentUsage,
+    };
+  } catch {
+    return {
+      granted: false,
+      disclosure: '질문 전송 범위를 확인할 수 없습니다. 처리 방식이 확인될 때까지 질문은 보내지 않습니다.',
+      policy: '연결이 복구되면 처리자와 보관 정책을 다시 확인할 수 있습니다.',
+      processors: '확인 불가',
+    };
+  }
+}
+
 async function digest(text: string): Promise<string> {
   const bytes = new TextEncoder().encode(text);
   const hash = await globalThis.crypto.subtle.digest('SHA-256', bytes);
   return Array.from(new Uint8Array(hash), (b) => b.toString(16).padStart(2, '0')).join('');
 }
 
-export async function recordConsent(action: 'GRANT' | 'REVOKE'): Promise<void> {
+export async function recordConsent(
+  action: 'GRANT' | 'REVOKE',
+  profile: { disclosure: string; policy: string; processors: string } = {
+    disclosure: EXTERNAL_DISCLOSURE,
+    policy: EXTERNAL_POLICY,
+    processors: EXTERNAL_PROCESSORS,
+  },
+): Promise<void> {
   await api.ragV2RecordConsent({
     contractId: 's4-rag-v2-external-consent-v1',
     schemaVersion: 1,
     consentType: 'EXTERNAL_AI_RAG_V2',
     action,
-    disclosureDigest: await digest(EXTERNAL_DISCLOSURE),
-    policyDigest: await digest(EXTERNAL_POLICY),
-    processorSetDigest: await digest(EXTERNAL_PROCESSORS),
+    disclosureDigest: await digest(profile.disclosure),
+    policyDigest: await digest(profile.policy),
+    processorSetDigest: await digest(profile.processors),
   });
 }
 
@@ -264,6 +305,7 @@ export async function askRag(
     statusHeadline: copy.headline,
     statusDetail: copy.detail,
     answer: answer.answer,
+    usage: answer.usage,
     // 생성된 문장이 없으면 연결률은 의미가 없다. 0으로 표시하지 않는다.
     citationCoverage: answered && items.length > 0 ? answer.citationCoverage : null,
     retrievalFailure: answer.retrievalFailure,

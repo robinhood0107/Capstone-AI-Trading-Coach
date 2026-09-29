@@ -1,0 +1,65 @@
+# MARS DEMO Portainer Stack. Keep this stack, env and secrets separate from FULL.
+# Image identity is the digest in MARS_DEMO_IMAGE_DIGEST, not a moving tag.
+# Mutable session overlays and quota counters are only in mars-demo_state.
+
+name: mars-demo
+
+services:
+  web:
+    image: pjjpjj111/mars-demo@${MARS_DEMO_IMAGE_DIGEST:?set digest from DEMO release manifest}
+    platform: linux/amd64
+    user: "1000:1000"
+    environment:
+      NODE_ENV: production
+      NODE_OPTIONS: --max-old-space-size=512
+      MARS_DEMO_STATE_DB_PATH: /data/mars-demo-state.sqlite
+      MARS_DEMO_SESSION_SIGNING_KEY_FILE: /run/secrets/session-signing-key
+      MARS_DEMO_VERTEX_SERVICE_ACCOUNT_FILE: /run/secrets/vertex-service-account.json
+      MARS_DEMO_AGENT_PER_SESSION_DAILY_LIMIT: ${MARS_DEMO_AGENT_PER_SESSION_DAILY_LIMIT:-5}
+      MARS_DEMO_AGENT_GLOBAL_DAILY_LIMIT: ${MARS_DEMO_AGENT_GLOBAL_DAILY_LIMIT:-50}
+      MARS_DEMO_AGENT_MAX_CONCURRENT: ${MARS_DEMO_AGENT_MAX_CONCURRENT:-1}
+      MARS_DEMO_AGENT_MAX_INPUT_CHARS: ${MARS_DEMO_AGENT_MAX_INPUT_CHARS:-1500}
+      MARS_DEMO_AGENT_MAX_INPUT_TOKENS: ${MARS_DEMO_AGENT_MAX_INPUT_TOKENS:-24576}
+      MARS_DEMO_AGENT_MAX_CONTEXT_CHARS: ${MARS_DEMO_AGENT_MAX_CONTEXT_CHARS:-4000}
+      MARS_DEMO_AGENT_MAX_OUTPUT_TOKENS: ${MARS_DEMO_AGENT_MAX_OUTPUT_TOKENS:-512}
+      MARS_DEMO_AGENT_SESSION_REQUESTS_PER_MINUTE: ${MARS_DEMO_AGENT_SESSION_REQUESTS_PER_MINUTE:-3}
+      MARS_DEMO_AGENT_GLOBAL_REQUESTS_PER_MINUTE: ${MARS_DEMO_AGENT_GLOBAL_REQUESTS_PER_MINUTE:-15}
+      MARS_DEMO_AGENT_TIMEOUT_MS: ${MARS_DEMO_AGENT_TIMEOUT_MS:-45000}
+      MARS_DEMO_AGENT_MODEL: ${MARS_DEMO_AGENT_MODEL:-gemini-2.5-flash}
+      MARS_DEMO_VERTEX_LOCATION: ${MARS_DEMO_VERTEX_LOCATION:-us-central1}
+      MARS_DEMO_VERTEX_PROJECT_ID: ${MARS_DEMO_VERTEX_PROJECT_ID:-}
+      MARS_DEMO_AGENT_INPUT_USD_PER_MILLION_TOKENS: ${MARS_DEMO_AGENT_INPUT_USD_PER_MILLION_TOKENS:-0.30}
+      MARS_DEMO_AGENT_OUTPUT_USD_PER_MILLION_TOKENS: ${MARS_DEMO_AGENT_OUTPUT_USD_PER_MILLION_TOKENS:-2.50}
+      MARS_DEMO_AGENT_PRICING_REVIEWED_AT: ${MARS_DEMO_AGENT_PRICING_REVIEWED_AT:-2026-09-30}
+    secrets: [session-signing-key, vertex-service-account]
+    volumes: [demo-state:/data]
+    ports: ["127.0.0.1:${MARS_DEMO_PORT:-3001}:3000"]
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    pids_limit: 128
+    mem_limit: 1g
+    cpus: 1.5
+    tmpfs: ["/tmp:size=64m,mode=1777,uid=1000,gid=1000"]
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/healthz').then(r => {if (!r.ok) process.exit(1)}).catch(() => process.exit(1))"]
+      interval: 10s
+      timeout: 3s
+      retries: 6
+      start_period: 30s
+    restart: unless-stopped
+    networks: [demo-egress]
+
+secrets:
+  session-signing-key:
+    file: "${MARS_DEMO_SECRETS_DIR:?set separate DEMO secret directory}/session-signing-key"
+  vertex-service-account:
+    file: "${MARS_DEMO_SECRETS_DIR}/vertex-service-account.json"
+
+volumes:
+  demo-state:
+    name: mars-demo_state
+
+networks:
+  demo-egress:
+    name: mars-demo_web

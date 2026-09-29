@@ -963,6 +963,22 @@ export interface RagV2CorpusStatus {
   strongLlmDailyGenerateCallCap: number | null;
   strongLlmKeyLast4: string | null;
   strongLlmFallbackKeyLast4: string | null;
+  agentUsage?: {
+    configured?: boolean;
+    sessionCalls: number;
+    sessionLimit: number;
+    globalCalls: number;
+    globalLimit: number;
+    sessionInputTokens: number;
+    sessionOutputTokens: number;
+    globalInputTokens: number;
+    globalOutputTokens: number;
+    estimatedSessionCostUsd: number;
+    estimatedGlobalCostUsd: number;
+    maxDailyCostUsd: number;
+    activeCalls: number;
+    unknownOutcomes: number;
+  };
 }
 
 /** 설정 쓰기 요청. apiKey는 쓰기 전용이며 어떤 응답에도 담기지 않는다. */
@@ -990,6 +1006,9 @@ export interface RagV2EffectiveConsent {
   policyDigest: string;
   processorSetDigest: string;
   state: string;
+  disclosureText?: string;
+  policyText?: string;
+  processorNames?: string;
 }
 
 export interface RagV2ExternalConsentRequest {
@@ -1023,6 +1042,13 @@ export interface RagV2Answer {
   answer: string | null;
   citationCoverage: number;
   citations: RagV2Citation[];
+  usage?: {
+    inputTokens: number;
+    outputTokens: number;
+    estimatedCostUsd: number;
+    modelVersion: string;
+    latencyMs: number;
+  };
   retrievalFailure: boolean;
   guardrailFlags: string[];
 }

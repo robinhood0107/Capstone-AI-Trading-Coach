@@ -67,7 +67,7 @@ import java.util.HexFormat
 import java.util.UUID
 
 @Configuration
-@Profile("!mars-full & !mars-demo")
+@Profile("!mars-full")
 @ConditionalOnProperty(name = ["app.s4-9.mcp-oauth.enabled"], havingValue = "true")
 @EnableConfigurationProperties(McpOAuthProperties::class)
 class McpOAuthSecurityConfig {

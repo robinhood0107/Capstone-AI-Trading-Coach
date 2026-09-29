@@ -1,4 +1,4 @@
-import { apiFetch, apiFetchBare, apiMode, newIdempotencyKey } from './client';
+import { apiFetch, apiFetchBare, apiMode, newIdempotencyKey } from '@/shared/api/client';
 import type { ApiResult } from './envelope';
 import type {
   ArmAutomationV2Request,

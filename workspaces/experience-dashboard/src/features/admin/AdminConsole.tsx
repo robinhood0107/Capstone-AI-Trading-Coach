@@ -50,16 +50,16 @@ function formatDate(value: string | null): string {
   return value ? new Date(value).toLocaleString('ko-KR', { dateStyle: 'short', timeStyle: 'short' }) : '—';
 }
 
-export function AdminConsole() {
+export function AdminConsole({ readOnly = false }: { readOnly?: boolean } = {}) {
   const { user } = useSession();
-  if (user?.role !== 'ADMIN') {
+  if (!readOnly && user?.role !== 'ADMIN') {
     return <p className="text-[14px] text-muted">관리자만 볼 수 있는 화면입니다.</p>;
   }
   return (
     <div className="space-y-8">
-      <LimitsPanel />
-      <AiReviewPanel />
-      <UsersPanel selfUserId={user.userId} />
+      <LimitsPanel readOnly={readOnly} />
+      <AiReviewPanel readOnly={readOnly} />
+      <UsersPanel selfUserId={user?.userId ?? 'visitor-session'} readOnly={readOnly} />
       <AutomationPanel />
     </div>
   );
@@ -91,7 +91,7 @@ type AdminAiReview = {
  * 보지 못한다. "공용 Vertex 사용 허용"을 끄면 자기 키가 없는 사용자는 AI 검토를 켠 채 자동매매를 시작할 수
  * 없다(이미 켜진 실행은 다음 AI 호출부터 멈춘다).
  */
-function AiReviewPanel() {
+function AiReviewPanel({ readOnly = false }: { readOnly?: boolean }) {
   const [review, setReview] = useState<AdminAiReview | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -146,7 +146,7 @@ function AiReviewPanel() {
             <Stat label="프로젝트" value={operator.projectId ?? '—'} />
             <Stat label="모델" value={operator.modelId ?? '—'} />
           </dl>
-          <label className="mt-5 flex items-center gap-2 text-[14px] text-ink">
+          {readOnly ? null : <label className="mt-5 flex items-center gap-2 text-[14px] text-ink">
             <input
               type="checkbox"
               data-testid="admin-shared-vertex-toggle"
@@ -155,7 +155,7 @@ function AiReviewPanel() {
               onChange={(event) => void toggle(event.target.checked)}
             />
             공용 Vertex 사용 허용 (자기 키가 없는 사용자의 AI 검토)
-          </label>
+          </label>}
           <p className="mt-2 text-[12px] leading-5 text-muted">
             {review.deploymentAllowsShared
               ? review.sharedEffective
@@ -198,7 +198,7 @@ function AiReviewPanel() {
   );
 }
 
-function LimitsPanel() {
+function LimitsPanel({ readOnly = false }: { readOnly?: boolean }) {
   const [limits, setLimits] = useState<Limits | null>(null);
   const [signupCap, setSignupCap] = useState('');
   const [automationCap, setAutomationCap] = useState('');
@@ -251,7 +251,7 @@ function LimitsPanel() {
           <Stat label="자동운용 중" value={`${limits.armedCount} / ${limits.automationActiveCap}`} />
         </dl>
       ) : null}
-      <form onSubmit={(event) => void save(event)} className="mt-5 grid gap-3 sm:grid-cols-[1fr_1fr_auto] sm:items-end">
+      {readOnly ? <p className="mt-5 text-[12px] leading-5 text-muted">서비스 상한은 배포 환경에서 관리합니다.</p> : <form onSubmit={(event) => void save(event)} className="mt-5 grid gap-3 sm:grid-cols-[1fr_1fr_auto] sm:items-end">
         <label className="text-[12px] font-medium text-muted">
           가입자 상한 (비우면 제한 없음)
           <input
@@ -282,7 +282,7 @@ function LimitsPanel() {
         >
           {pending ? '저장 중' : '저장'}
         </button>
-      </form>
+      </form>}
       <p className="mt-3 text-[12px] leading-5 text-muted">
         상한에 닿으면 새 가입과 새 자동운용 시작만 막습니다. 이미 가입했거나 자동운용 중인 사용자는 멈추지 않습니다.
       </p>
@@ -294,7 +294,7 @@ function LimitsPanel() {
   );
 }
 
-function UsersPanel({ selfUserId }: { selfUserId: string }) {
+function UsersPanel({ selfUserId, readOnly = false }: { selfUserId: string; readOnly?: boolean }) {
   const [page, setPage] = useState(0);
   const [search, setSearch] = useState('');
   const [query, setQuery] = useState('');
@@ -401,7 +401,9 @@ function UsersPanel({ selfUserId }: { selfUserId: string }) {
                   <td className={cell}>{row.automationState ?? '—'}</td>
                   <td className={cell}>{formatDate(row.createdAt)}</td>
                   <td className={cell}>
-                    {self ? (
+                    {readOnly ? (
+                      <span className="text-[11px] text-faint">읽기 전용</span>
+                    ) : self ? (
                       <span className="text-[11px] text-faint">본인</span>
                     ) : (
                       <div className="flex flex-wrap gap-1.5">

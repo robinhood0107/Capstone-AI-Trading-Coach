@@ -2,6 +2,13 @@
 
 이 문서는 [Keep a Changelog](https://keepachangelog.com/ko/1.1.0/) 형식을 따르고, 버전은 [유의적 버전](https://semver.org/lang/ko/)을 따릅니다. 버전 하나가 GitHub Release `vX.Y.Z` 하나와 Docker Hub 이미지 태그 `vX.Y.Z-<part>` 한 벌에 대응합니다.
 
+## [1.0.12] - 2026-09-30
+
+### 변경
+
+- FULL 웹 앱은 계정 로그인·대시보드 경로만 유지하고, 공개 DEMO 화면은 별도 앱과 방문자 세션으로 분리. 기존 FULL 인증 동작은 공통 로그인 프레임을 통해 유지
+- FULL 웹 미들웨어에서 레거시 공개 DEMO API 경로를 닫고 새 DEMO 웹의 경계와 혼동되지 않도록 분리
+
 ## [1.0.11] - 2026-09-29
 
 ### 수정

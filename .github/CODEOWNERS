@@ -1,3 +1,6 @@
 # Privileged delivery and release boundaries require the repository security owner.
 /.github/workflows/ @robinhood0107
 /deploy/p1/ @robinhood0107
+/workspaces/mars-demo/ @robinhood0107
+/workspaces/experience-dashboard/src/shared/ui/ @robinhood0107
+/workspaces/experience-dashboard/src/features/intro/ @robinhood0107

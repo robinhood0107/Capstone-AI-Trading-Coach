@@ -1,6 +1,7 @@
 # Build context: repository root. This image contains one DEMO web/Agent service.
 FROM node:22-bookworm-slim AS deps
-RUN apt-get update && apt-get install -y --no-install-recommends python3 make g++ \
+RUN apt-get update && apt-get install -y --no-install-recommends \
+      python3=3.11.2-1+b1 make=4.3-4.1 g++=4:12.2.0-3 \
     && rm -rf /var/lib/apt/lists/*
 ENV PYTHON=/usr/bin/python3
 WORKDIR /repo/workspaces/mars-demo
@@ -76,5 +77,5 @@ RUN mkdir -p /data && chown 1000:1000 /data
 USER 1000:1000
 EXPOSE 3000
 HEALTHCHECK --interval=10s --timeout=3s --start-period=30s --retries=6 \
-  CMD node -e "fetch('http://127.0.0.1:3000/healthz').then(r => { if (!r.ok) process.exit(1) }).catch(() => process.exit(1))"
+  CMD ["node", "-e", "fetch('http://127.0.0.1:3000/healthz').then(r => { if (!r.ok) process.exit(1) }).catch(() => process.exit(1))"]
 CMD ["node", "workspaces/mars-demo/server.js"]

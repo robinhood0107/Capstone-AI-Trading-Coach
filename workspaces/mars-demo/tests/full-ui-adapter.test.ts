@@ -176,6 +176,8 @@ test('one-click entry starts an independent armed portfolio with editable trade 
 
 test('all historical runs, report fields, and exact-31 recorded model signals are available', async () => {
   const visitor = issueDemoSession();
+  const catalog = await (await call('/api/v1/instruments/display', visitor.token)).json() as { data: { items: { symbol: string }[] } };
+  assert.deepEqual(catalog.data.items.map((item) => item.symbol).sort(), signalFixture.rows.map((row) => row.symbol.replace(/\.(KS|KQ)$/, '')).sort());
   const runs = await (await call('/api/v3/automation/runs?size=40', visitor.token)).json() as { data: { items: { runId: string }[] } };
   assert.equal(runs.data.items.length, 29);
   for (const run of runs.data.items) {

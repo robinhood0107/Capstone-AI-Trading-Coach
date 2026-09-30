@@ -294,6 +294,7 @@ function instrumentCatalog(state: ReturnType<typeof buildDemoState>) {
   for (const bar of state.bars) {
     if (!/^\d{6}\.K[QS]$/.test(bar.symbol)) continue;
     const symbol = fullSymbol(bar.symbol);
+    if (!signalBySymbol.has(symbol)) continue;
     items.set(symbol, {
       symbol,
       nameKo: bar.displayName,

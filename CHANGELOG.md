@@ -2,6 +2,12 @@
 
 이 문서는 [Keep a Changelog](https://keepachangelog.com/ko/1.1.0/) 형식을 따르고, 버전은 [유의적 버전](https://semver.org/lang/ko/)을 따릅니다. 버전 하나가 GitHub Release `vX.Y.Z` 하나와 Docker Hub 이미지 태그 `vX.Y.Z-<part>` 한 벌에 대응합니다.
 
+## [1.0.16] - 2026-09-30
+
+### 변경
+
+- 자동운용 실행 기록을 현재 상태 바로 아래로 옮기고 최근 3건을 먼저 보여 주어 오늘 주문·체결과 판단 단계를 빠르게 확인하도록 개선
+
 ## [1.0.15] - 2026-09-30
 
 ### 수정

@@ -21,7 +21,7 @@ ARG RELEASE_VERSION=dev
 LABEL org.opencontainers.image.source="https://github.com/robinhood0107/Capstone-AI-Trading-Coach" \
       org.opencontainers.image.revision="$SOURCE_REVISION" \
       org.opencontainers.image.version="$RELEASE_VERSION"
-RUN apk add --no-cache libcrypto3=3.5.8-r0 libssl3=3.5.8-r0 \
+RUN apk add --no-cache libcrypto3=3.5.9-r0 libssl3=3.5.9-r0 \
     && rm -rf /usr/local/lib/node_modules/npm \
     && rm -f /usr/local/bin/npm /usr/local/bin/npx
 ENV NODE_ENV=production

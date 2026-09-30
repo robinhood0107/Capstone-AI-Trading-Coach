@@ -7,7 +7,7 @@ FROM ${POSTGRES_IMAGE} AS pgvector-build
 ARG PGVECTOR_VERSION=0.8.6
 ARG PGVECTOR_SHA256=10bf9938906e5d643bbc4a7eea104b6f57ba4898e5b76b20e60484ea1d5a7f8f
 
-# The build stage is disposable; package versions come from the digest-pinned Alpine repository snapshot.
+# The build stage is disposable; apk resolves against the Alpine 3.24 repository.
 # wget output and the pipe are bounded by an exact source checksum and fail-fast shell.
 # hadolint ignore=DL3018,DL3047,DL4006
 RUN set -eux; \
@@ -33,10 +33,10 @@ FROM ${POSTGRES_IMAGE}
 ARG SOURCE_REVISION=unknown
 ARG RELEASE_VERSION=0.0.0
 
-# Pin the fixed Alpine 3.24 security revisions present at the 2026-09 release gate.
+# Pin the Alpine 3.24 security revisions available for this release build.
 RUN apk add --no-cache --upgrade \
-    libcrypto3=3.5.8-r0 \
-    libssl3=3.5.8-r0 \
+    libcrypto3=3.5.9-r0 \
+    libssl3=3.5.9-r0 \
     libuuid=2.42.3-r1
 
 LABEL org.opencontainers.image.title="Capstone P1 PostgreSQL with pgvector" \

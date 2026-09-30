@@ -107,7 +107,7 @@ class MarsDockerHubReleaseWorkflowTest(unittest.TestCase):
         full = json.loads(FULL_GATE.read_text(encoding="utf-8"))
         demo = json.loads(DEMO_GATE.read_text(encoding="utf-8"))
         self.assertEqual(full["version"], "1.0.16")
-        self.assertEqual(demo["version"], "2.0.0")
+        self.assertEqual(demo["version"], "2.1.0")
         self.assertEqual(demo["imageParts"], ["web"])
         self.assertTrue(full["imagePublicationReady"])
         self.assertFalse(demo["serviceReady"])

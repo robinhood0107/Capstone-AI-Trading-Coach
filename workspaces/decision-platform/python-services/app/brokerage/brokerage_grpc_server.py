@@ -149,7 +149,12 @@ class OwnerBoundGatewayFactory:
         )
         try:
             yield (
-                KISMockOrderGateway(client, mode="mock", reference_store=self._reference_store),
+                KISMockOrderGateway(
+                    client,
+                    mode="mock",
+                    reference_store=self._reference_store,
+                    execution_reader=KISMockExecutionReader(client),
+                ),
                 KISMockOnlineBalanceReader(client),
             )
         finally:

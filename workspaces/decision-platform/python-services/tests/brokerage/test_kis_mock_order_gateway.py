@@ -3,6 +3,7 @@ from __future__ import annotations
 import base64
 import importlib
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 
 import fakeredis
@@ -19,7 +20,9 @@ from app.brokerage.kis_mock_order_gateway import (
     MockOrderIntent,
     MockOrderRejected,
 )
+from app.brokerage.kis_mock_online_runtime import KISMockExecutionReader
 from app.data.kis._credential_transport import _Credentials
+from app.brokerage.mock_order_reference_store import MockProviderOrderReference
 
 
 class FakeTransport:
@@ -293,6 +296,134 @@ def test_provider_error_is_not_retried_by_order_gateway() -> None:
     assert len(transport.calls) == 1
 
 
+def test_lost_submit_response_uses_one_new_kis_order_without_resubmitting() -> None:
+    class Reader:
+        def __init__(self) -> None:
+            self.recovery_calls = 0
+
+        def read_session_orders(self, *, session_date: object) -> tuple[object, ...]:
+            return (SimpleNamespace(order_ref_hash="older-order"),)
+
+        def recover_new_order_reference(self, **kwargs: object) -> MockProviderOrderReference:
+            self.recovery_calls += 1
+            assert kwargs["before_order_ref_hashes"] == frozenset({"older-order"})
+            assert kwargs["symbol"] == "105560"
+            return MockProviderOrderReference("new-kis-order", "branch", "00", 30)
+
+    reader = Reader()
+    transport = FakeTransport(error=TimeoutError("lost response"))
+    references = FakeReferenceStore()
+    gateway = KISMockOrderGateway(
+        transport,
+        reference_store=references,  # type: ignore[arg-type]
+        execution_reader=reader,  # type: ignore[arg-type]
+    )
+    order_id = "ord_mock_" + "a" * 32
+    account_id = "acct_" + "b" * 32
+
+    receipt = gateway.submit_cash_order(
+        MockOrderIntent("105560", "BUY", "LIMIT", quantity=30, estimated_price=172_000),
+        order_id=order_id,
+        account_id=account_id,
+    )
+
+    assert receipt.accepted and receipt.provider_order_no == "new-kis-order"
+    assert reader.recovery_calls == 1
+    assert len(transport.calls) == 1
+    assert references.get(order_id, account_id) is not None
+
+
+def test_lost_submit_response_recovers_from_exact_kis_order_history() -> None:
+    class Transport:
+        def __init__(self) -> None:
+            self.calls: list[str] = []
+
+        def request(self, method: str, path: str, tr_id: str, **kwargs: object) -> dict[str, Any]:
+            self.calls.append(method)
+            if method == "POST":
+                raise TimeoutError("lost response")
+            return {
+                "rt_cd": "0",
+                "output1": []
+                if len(self.calls) in (1, 3)
+                else [
+                    {
+                        "odno": "new-kis-order",
+                        "ord_gno_brno": "branch",
+                        "ord_dt": "20260930",
+                        "ord_tmd": "093106",
+                        "pdno": "105560",
+                        "sll_buy_dvsn_cd": "02",
+                        "ord_dvsn_cd": "00",
+                        "ord_qty": "30",
+                        "ord_unpr": "172000",
+                    }
+                ],
+            }
+
+    transport = Transport()
+    references = FakeReferenceStore()
+    gateway = KISMockOrderGateway(
+        transport,  # type: ignore[arg-type]
+        reference_store=references,  # type: ignore[arg-type]
+        execution_reader=KISMockExecutionReader(transport),  # type: ignore[arg-type]
+    )
+    order_id = "ord_mock_" + "a" * 32
+    account_id = "acct_" + "b" * 32
+
+    # Freeze the gateway's clock at the observed incident window.
+    from unittest.mock import patch
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+
+    with patch("app.brokerage.kis_mock_order_gateway.datetime") as clock:
+        clock.now.return_value = datetime(2026, 9, 30, 9, 30, 55, tzinfo=ZoneInfo("Asia/Seoul"))
+        receipt = gateway.submit_cash_order(
+            MockOrderIntent("105560", "BUY", "LIMIT", quantity=30, estimated_price=172_000),
+            order_id=order_id,
+            account_id=account_id,
+        )
+
+    assert receipt.accepted
+    assert transport.calls == ["GET", "POST", "GET", "GET"]
+    assert references.get(order_id, account_id) is not None
+
+
+def test_unverified_lost_response_never_resubmits() -> None:
+    class Reader:
+        def __init__(self) -> None:
+            self.reads = 0
+
+        def read_session_orders(self, *, session_date: object) -> tuple[object, ...]:
+            return ()
+
+        def recover_new_order_reference(self, **kwargs: object) -> None:
+            self.reads += 1
+            return None
+
+    reader = Reader()
+    transport = FakeTransport(error=TimeoutError("lost response"))
+    references = FakeReferenceStore()
+    gateway = KISMockOrderGateway(
+        transport,
+        reference_store=references,  # type: ignore[arg-type]
+        execution_reader=reader,  # type: ignore[arg-type]
+    )
+    order_id = "ord_mock_" + "a" * 32
+    account_id = "acct_" + "b" * 32
+
+    with pytest.raises(TimeoutError):
+        gateway.submit_cash_order(
+            MockOrderIntent("105560", "BUY", "LIMIT", quantity=30, estimated_price=172_000),
+            order_id=order_id,
+            account_id=account_id,
+        )
+
+    assert len(transport.calls) == 1
+    assert reader.reads == 3
+    assert references.pending == {(order_id, account_id)}
+
+
 def test_rejected_or_malformed_receipt_is_fail_closed() -> None:
     for response in ({"rt_cd": "1", "msg1": "rejected"}, {"rt_cd": "0", "output": {}}):
         gateway = KISMockOrderGateway(FakeTransport(response=response), mode="mock")
@@ -555,6 +686,7 @@ def test_private_online_transport_is_mock_only_bounded_and_scrubs_account_echo(
             },
         )
         assert "CANO" not in repr(response)
+        assert sends[0].extensions["timeout"]["read"] == 25.0
 
         with pytest.raises(ValueError, match="allowlist"):
             client.request(

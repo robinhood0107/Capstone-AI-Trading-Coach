@@ -517,6 +517,8 @@ function AutomationBody({ data, onReload }: { data: AutomationData; onReload: ()
         ) : null}
       </Panel>
 
+      <RunPanel runs={data.runs} instruments={data.instruments} />
+
       <Panel
         contract="PUT /api/v2/automation/policy"
         title="예산과 매도 기준"
@@ -888,10 +890,7 @@ function AutomationBody({ data, onReload }: { data: AutomationData; onReload: ()
         </div>
       </Panel>
 
-      <div className="grid gap-6 xl:grid-cols-2">
-        <PositionPanel positions={data.positions} instruments={data.instruments} />
-        <RunPanel runs={data.runs} instruments={data.instruments} />
-      </div>
+      <PositionPanel positions={data.positions} instruments={data.instruments} />
 
       <Panel title="빠른 선택값의 근거" hint="연구 기반 고정 기본값이며 이 프로젝트 데이터에서 최적화한 값이나 수익 보장이 아닙니다.">
         <ul className="space-y-2 text-[12px] leading-5">
@@ -1055,19 +1054,42 @@ function PositionPanel({ positions, instruments }: { positions: AutomationPositi
 
 function RunPanel({ runs, instruments }: { runs: AutomationRunV3[]; instruments: InstrumentDisplayCatalog }) {
   const bySymbol = instrumentMap(instruments.items);
+  const [showAll, setShowAll] = useState(false);
+  const visibleRuns = showAll ? runs : runs.slice(0, 3);
+  const hiddenCount = Math.max(0, runs.length - visibleRuns.length);
   return (
-    <Panel contract="GET /api/v3/automation/runs" title="최근 자동운용 실행">
+    <Panel
+      contract="GET /api/v3/automation/runs"
+      title="최근 자동운용 실행"
+      hint="현재 상태 바로 아래에서 오늘과 최근 실행, 주문·체결 및 판단 단계를 확인합니다."
+      className="border border-navy/15 border-l-4 border-l-navy/70"
+      actions={
+        <span className="rounded-full bg-navy/10 px-2.5 py-1 text-[11px] font-semibold text-navy">
+          {runs.length}건
+        </span>
+      }
+    >
       {runs.length === 0 ? (
         <p className="rounded-tile border border-dashed border-rule px-4 py-6 text-[13px] text-muted">
           기록된 자동운용 실행이 없습니다.
         </p>
       ) : (
         <ul className="divide-y divide-line/60">
-          {runs.map((run) => (
+          {visibleRuns.map((run) => (
             <RunRow key={run.runId} run={run} bySymbol={bySymbol} />
           ))}
         </ul>
       )}
+      {runs.length > 3 ? (
+        <Button
+          variant="secondary"
+          className="mt-4 min-h-11 border border-line text-[12px]"
+          onClick={() => setShowAll((previous) => !previous)}
+          aria-expanded={showAll}
+        >
+          {showAll ? '최근 3건만 보기' : `이전 기록 ${hiddenCount}건 더 보기`}
+        </Button>
+      ) : null}
     </Panel>
   );
 }

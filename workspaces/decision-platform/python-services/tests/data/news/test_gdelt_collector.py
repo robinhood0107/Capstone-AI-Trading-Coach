@@ -95,6 +95,27 @@ def test_gqg_and_gemg_parse_bounded_metadata_without_raw_body() -> None:
     assert metadata.title == "Supply remains stable" and metadata.publication_status == "VERIFIED"
 
 
+def test_out_of_range_metadata_timezone_does_not_crash_collector() -> None:
+    for published in ("0001-01-01T00:00:00+14:00", "9999-12-31T23:59:59-14:00"):
+        body = json.dumps(
+            {
+                "url": "https://example.com/markets/story",
+                "lang": "English",
+                "metatags": [
+                    {"key": "og:title", "value": "Market update"},
+                    {"key": "article:published_time", "value": published},
+                ],
+            }
+        ).encode()
+
+        result = parse_gdelt_file(
+            GdeltFileTarget("GEMG", NOW.replace(minute=1)), body, received_at=NOW
+        )
+
+        assert len(result.documents) == 1
+        assert result.documents[0].publication_status == "MISSING"
+
+
 def test_cycle_reuses_completed_cursor_and_stops_after_first_failure() -> None:
     target = latest_targets(NOW)[0]
     body = gzip.compress(

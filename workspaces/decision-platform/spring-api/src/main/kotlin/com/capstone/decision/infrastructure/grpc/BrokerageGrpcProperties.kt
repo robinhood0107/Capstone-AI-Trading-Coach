@@ -12,8 +12,8 @@ data class BrokerageGrpcProperties(
     var target: String = "127.0.0.1:50052",
     var sharedSecret: String = "",
     @field:Min(1)
-    @field:Max(60_000)
-    var deadlineMillis: Long = 45_000,
+    @field:Max(90_000)
+    var deadlineMillis: Long = 90_000,
     @field:Min(1_024)
     @field:Max(262_144)
     var requestMaxBytes: Int = 262_144,
@@ -42,7 +42,7 @@ data class BrokerageGrpcProperties(
         require(requestMaxBytes == 262_144)
         require(responseMaxBytes == 1_048_576)
         require(circuitBreakerName == "kisMockBrokerage")
-        require(deadlineMillis in 1..60_000) {
+        require(deadlineMillis in 1..90_000) {
             "Brokerage gRPC deadline must stay inside the bounded online envelope."
         }
     }

@@ -12,12 +12,16 @@ interface PanelProps {
   title: string;
   hint?: string;
   actions?: ReactNode;
+  className?: string;
   children: ReactNode;
 }
 
-export function Panel({ contract, title, hint, actions, children }: PanelProps) {
+export function Panel({ contract, title, hint, actions, className, children }: PanelProps) {
   return (
-    <section data-contract={contract} className="min-w-0 rounded-panel bg-panel shadow-card">
+    <section
+      data-contract={contract}
+      className={`min-w-0 rounded-panel bg-panel shadow-card ${className ?? ''}`.trim()}
+    >
       <header className="flex items-start justify-between gap-4 px-6 pb-4 pt-5">
         <div className="min-w-0">
           <h2 className="text-[16px] font-semibold tracking-tight text-ink">{title}</h2>

@@ -411,9 +411,9 @@ def _metadata_time(value: object) -> datetime | None:
         return None
     try:
         result = datetime.fromisoformat(raw.replace("Z", "+00:00"))
-    except ValueError:
+        return result.astimezone(UTC) if result.tzinfo is not None else None
+    except (ValueError, OverflowError):
         return None
-    return result.astimezone(UTC) if result.tzinfo is not None else None
 
 
 def _language(value: object) -> str:

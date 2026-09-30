@@ -168,7 +168,7 @@ class SpringAutomationBridgeClient:
             base_url="http://127.0.0.1:8080",
             transport=transport or httpx.HTTPTransport(retries=0),
             # Read timeout exceeds the downstream KIS I/O budget; loopback connect remains short.
-            timeout=httpx.Timeout(connect=2.0, read=20.0, write=5.0, pool=2.0),
+            timeout=httpx.Timeout(connect=2.0, read=100.0, write=5.0, pool=2.0),
             follow_redirects=False,
             trust_env=False,
         )

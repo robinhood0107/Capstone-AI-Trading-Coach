@@ -5,6 +5,7 @@ import com.capstone.decision.api.common.ApiResponse
 import com.capstone.decision.api.common.ApiResponseFactory
 import com.capstone.decision.api.common.ErrorCode
 import com.capstone.decision.api.common.RequestIds
+import com.capstone.decision.infrastructure.security.BrowserOriginPolicy
 import com.capstone.decision.infrastructure.security.FullBrowserRefreshCookieService
 import com.capstone.decision.infrastructure.security.JwtService
 import io.swagger.v3.oas.annotations.Operation
@@ -32,7 +33,10 @@ class FullBrowserRefreshController(
         request: HttpServletRequest,
         response: HttpServletResponse,
     ): ApiResponse<LoginResponse> {
-        if (request.getHeader("Origin") != publicOrigin || request.queryString != null || request.contentLengthLong > 0) {
+        if (!BrowserOriginPolicy.allows(publicOrigin, request.getHeader("Origin")) ||
+            request.queryString != null ||
+            request.contentLengthLong > 0
+        ) {
             throw ApiException(ErrorCode.FORBIDDEN)
         }
         val account = cookies.resume(request, response) ?: throw ApiException(ErrorCode.UNAUTHORIZED)

@@ -371,6 +371,107 @@ class KISMockExecutionReader:
             continuation = "N"
         raise ValueError("KIS mock account order history is incomplete")
 
+    def recover_new_order_reference(
+        self,
+        *,
+        session_date: date,
+        submitted_at: datetime,
+        before_order_ref_hashes: frozenset[str],
+        symbol: str,
+        side: Literal["BUY", "SELL"],
+        quantity: int,
+        order_division: str,
+        limit_price_krw: int,
+        exchange_division: Literal["KRX", "NXT"],
+    ) -> MockProviderOrderReference | None:
+        """Bind one new exact KIS order after a lost POST response; never submit again."""
+        if (
+            _SYMBOL.fullmatch(symbol) is None
+            or quantity <= 0
+            or _ORDER_DIVISION.fullmatch(order_division) is None
+            or limit_price_krw < 0
+            or submitted_at.tzinfo is None
+            or submitted_at.astimezone(ZoneInfo("Asia/Seoul")).date() != session_date
+            or exchange_division != "KRX"
+        ):
+            raise ValueError("KIS mock order recovery input is invalid")
+        payload = self._client.request(
+            "GET",
+            EXECUTIONS_PATH,
+            MOCK_EXECUTIONS_RECENT_TR_ID,
+            params={
+                "INQR_STRT_DT": session_date.strftime("%Y%m%d"),
+                "INQR_END_DT": session_date.strftime("%Y%m%d"),
+                "SLL_BUY_DVSN_CD": "02" if side == "BUY" else "01",
+                "INQR_DVSN": "00",
+                "PDNO": symbol,
+                "CCLD_DVSN": "00",
+                "ORD_GNO_BRNO": "",
+                "ODNO": "",
+                "INQR_DVSN_3": "00",
+                "INQR_DVSN_1": "",
+                "CTX_AREA_FK100": "",
+                "CTX_AREA_NK100": "",
+                "EXCG_ID_DVSN_CD": "KRX",
+            },
+        )
+        has_more, _, _ = _pagination_state(payload)
+        if has_more:
+            raise ValueError("KIS mock order recovery page is incomplete")
+        matches: list[MockProviderOrderReference] = []
+        for row in _execution_page_rows(payload):
+            order_no = _execution_order_no(row)
+            branch = row.get("ord_gno_brno")
+            if (
+                not isinstance(order_no, str)
+                or re.fullmatch(r"[0-9A-Za-z._:-]{1,64}", order_no) is None
+                or not isinstance(branch, str)
+                or re.fullmatch(r"[0-9A-Za-z._:-]{1,64}", branch) is None
+            ):
+                continue
+            order_hash = hashlib.sha256(
+                f"kis-mock-order-receipt/v1\0{order_no}".encode()
+            ).hexdigest()
+            if order_hash in before_order_ref_hashes:
+                continue
+            if (
+                row.get("pdno") != symbol
+                or row.get("sll_buy_dvsn_cd") != ("02" if side == "BUY" else "01")
+                or str(row.get("ord_dvsn_cd")) != order_division
+                or _nonnegative(row.get("ord_qty"), "order quantity") != quantity
+                or _nonnegative(row.get("ord_unpr"), "order price") != limit_price_krw
+            ):
+                continue
+            order_date, order_time = row.get("ord_dt"), row.get("ord_tmd")
+            if (
+                not isinstance(order_date, str)
+                or _DATE.fullmatch(order_date) is None
+                or not isinstance(order_time, str)
+                or _TIME.fullmatch(order_time) is None
+            ):
+                continue
+            try:
+                ordered_at = datetime.strptime(order_date + order_time, "%Y%m%d%H%M%S").replace(
+                    tzinfo=ZoneInfo("Asia/Seoul")
+                )
+            except ValueError:
+                continue
+            age_seconds = (ordered_at - submitted_at).total_seconds()
+            if not -2 <= age_seconds <= 90:
+                continue
+            matches.append(
+                MockProviderOrderReference(
+                    provider_order_no=order_no,
+                    provider_org_no=branch,
+                    order_division=order_division,
+                    quantity=quantity,
+                    exchange_division=exchange_division,
+                )
+            )
+        if len(matches) > 1:
+            raise ValueError("KIS mock order recovery match is not unique")
+        return matches[0] if matches else None
+
     def read(
         self,
         *,

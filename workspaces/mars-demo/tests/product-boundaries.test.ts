@@ -27,7 +27,7 @@ test('DEMO mounts the original FULL pages, shell, and common components', () => 
   };
   assert.deepEqual(config.compilerOptions.paths['@/shared/api/client'], ['src/adapters/client.ts']);
   assert.deepEqual(config.compilerOptions.paths['@/shared/api/session'], ['src/adapters/session.tsx']);
-  assert.deepEqual(config.compilerOptions.paths['@/features/*'], ['../experience-dashboard/src/features/*']);
+  assert.deepEqual(config.compilerOptions.paths['@/features/*'], ['src/demo-ui/features/*', '../experience-dashboard/src/features/*']);
   assert.deepEqual(config.compilerOptions.paths['@/shared/ui/*'], ['../experience-dashboard/src/shared/ui/*']);
 
   const shell = readFileSync(path.resolve(demoRoot, '../src/app/layout.tsx'), 'utf8');
@@ -38,9 +38,21 @@ test('DEMO mounts the original FULL pages, shell, and common components', () => 
   assert.ok(!sharedAppShell.includes("import { LoginCard }"));
   assert.ok(readFileSync(path.resolve(fullRoot, 'shared/api/endpoints.ts'), 'utf8').includes("from '@/shared/api/client'"));
 
-  for (const route of ['page', 'principles/page', 'strategy/page', 'model-evaluation/page', 'backtest/page', 'automation/page', 'order-review/page', 'rag/page', 'journal/page', 'report/page']) {
+  for (const route of ['page', 'principles/page', 'rag/page', 'report/page']) {
     const source = readFileSync(path.resolve(demoRoot, `../src/app/(workspace)/${route}.tsx`), 'utf8');
     assert.ok(source.includes('@full/app/'), `${route} should mount an existing FULL route`);
+  }
+  const automation = readFileSync(path.resolve(demoRoot, '../src/app/(workspace)/automation/page.tsx'), 'utf8');
+  assert.ok(automation.includes("from '@/features/automation/AutomationView'"));
+  assert.ok(automation.includes('runPageSize={40}'));
+  for (const route of ['strategy/page', 'model-evaluation/page', 'backtest/page']) {
+    const source = readFileSync(path.resolve(demoRoot, `../src/app/(workspace)/${route}.tsx`), 'utf8');
+    assert.ok(source.includes("from '@/features/strategy/StrategyView'"));
+  }
+  for (const [route, component] of [['order-review/page', 'OrderReviewView'], ['journal/page', 'JournalView']]) {
+    const source = readFileSync(path.resolve(demoRoot, `../src/app/(workspace)/${route}.tsx`), 'utf8');
+    assert.ok(source.includes(`@/features/`));
+    assert.ok(source.includes(`<${component} fillsFromDate="2026-08-18" />`));
   }
   assert.ok(!sourceFiles(demoRoot).some((filePath) => filePath.endsWith('DemoWorkspace.tsx')));
 });

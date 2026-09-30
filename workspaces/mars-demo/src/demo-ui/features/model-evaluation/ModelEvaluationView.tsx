@@ -1,0 +1,352 @@
+'use client';
+
+import { useState } from 'react';
+import type { GlossaryKey } from '@/shared/lib/glossary';
+import { Term } from '@/shared/ui/Term';
+import {
+  Bar,
+  BarChart,
+  CartesianGrid,
+  Cell,
+  ResponsiveContainer,
+  Tooltip,
+  XAxis,
+  YAxis,
+} from 'recharts';
+import { AsyncBoundary } from '@/shared/ui/AsyncBoundary';
+import { Panel } from '@/shared/ui/Panel';
+import { Numeric } from '@/shared/ui/Numeric';
+import { AbstainChip } from '@/shared/ui/Decision';
+import { useResource } from '@/shared/lib/useResource';
+import { api, ID_PATTERN } from '@/shared/api/endpoints';
+import { useLatestRun } from '@/shared/api/latestRun';
+import { LatestRunFallback } from '@/shared/ui/LatestRunFallback';
+import { InstrumentIdentity, instrumentMap } from '@/shared/ui/InstrumentIdentity';
+import { formatDecimal, formatKrw, formatKstDateTime, formatRatio, formatSignedRatio } from '@/shared/lib/format';
+import { loadModelEvaluationView, loadSignalView, type ModelRow, type SignalSlot } from './viewModel';
+
+const SIGNAL_LABEL: Record<string, string> = { BUY: '매수', SELL: '매도', HOLD: '보류' };
+const SIGNAL_TONE: Record<string, string> = {
+  BUY: 'text-allow',
+  SELL: 'text-block',
+  HOLD: 'text-hold',
+};
+
+export function ModelEvaluationView({ evaluationNote }: { evaluationNote?: string } = {}) {
+  const { runId, pending, failed, errorMessage, reload: reloadLatest } = useLatestRun('model-evaluations');
+  const [symbol, setSymbol] = useState('');
+  const symbolValid = ID_PATTERN.symbol.test(symbol);
+  const catalog = useResource(async () => {
+    const { data } = await api.instrumentDisplayCatalog();
+    return { kind: 'ready' as const, data, asOf: null };
+  }, []);
+  const instruments =
+    catalog.state.kind === 'ready' || catalog.state.kind === 'stale' ? catalog.state.data.items : [];
+  const bySymbol = instrumentMap(instruments);
+
+  const evaluation = useResource(
+    () => loadModelEvaluationView(runId ?? ''),
+    [runId],
+    runId !== null,
+  );
+  const signal = useResource(() => loadSignalView(symbol), [symbol], symbolValid);
+
+  return (
+    <div className="space-y-6">
+      {evaluationNote ? <p className="border-l-2 border-line bg-surface px-3 py-2 text-[13px] leading-6 text-muted">{evaluationNote}</p> : null}
+      <label className="block max-w-md">
+        <span className="text-[13px] font-semibold text-ink">현재 신호를 볼 종목</span>
+        <span className="mt-1 block text-[12px] text-muted">31개 운용 종목에서 이름으로 선택합니다.</span>
+        <select
+          value={symbol}
+          onChange={(event) => setSymbol(event.target.value)}
+          className="mt-2 min-h-11 w-full rounded-control border border-line bg-panel px-3 text-[14px] text-ink"
+        >
+          <option value="">종목을 선택하세요</option>
+          {instruments.map((instrument) => (
+            <option key={instrument.symbol} value={instrument.symbol}>
+              {instrument.nameKo} · {instrument.symbol}
+            </option>
+          ))}
+        </select>
+      </label>
+
+      {runId !== null ? (
+        <AsyncBoundary state={evaluation.state} onRetry={evaluation.reload}>
+          {(view) => {
+            const chartRows = view.rows.map((row) => ({
+              name: row.displayName,
+              sharpe: row.status === 'AVAILABLE' ? row.metrics.sharpe : null,
+              mdd: row.status === 'AVAILABLE' ? row.metrics.mdd : null,
+            }));
+            const hasChart = chartRows.some((row) => row.sharpe !== null);
+
+            return (
+              <div className="space-y-6">
+                <Panel
+                  contract="dashboard-model-evaluation.v1"
+                  title="모델별 성과"
+                  hint="같은 실행에서 나온 결과만 나란히 놓습니다. 근거를 내지 못한 모델은 ABSTAIN으로 남습니다."
+                  actions={
+                    <span className="font-mono text-[12px] text-faint">
+                      비교 가능 {view.comparableCount} / {view.rows.length}
+                    </span>
+                  }
+                >
+                  {view.comparableCount === 0 ? (
+                    <p className="rounded-tile border border-dashed border-rule px-4 py-5 text-[13px] leading-6 text-muted">
+                      이 실행의 모든 모델이 ABSTAIN입니다. 성과를 비교할 근거가 없습니다.
+                    </p>
+                  ) : null}
+
+                  <div className="overflow-x-auto">
+                    <ModelTable rows={view.rows} />
+                  </div>
+
+                </Panel>
+
+                <div className="grid gap-6 lg:grid-cols-2">
+                  <Panel
+                    contract="dashboard-model-evaluation.v1 · models"
+                    title="Sharpe 비교"
+                    hint="ABSTAIN인 모델은 막대가 없습니다. 0으로 그리지 않습니다."
+                  >
+                    {hasChart ? (
+                      <div className="h-56">
+                        <ResponsiveContainer width="100%" height="100%">
+                          <BarChart data={chartRows} margin={{ top: 8, right: 8, bottom: 0, left: -16 }}>
+                            <CartesianGrid stroke="rgb(var(--c-line))" vertical={false} />
+                            <XAxis
+                              dataKey="name"
+                              tick={{ fontSize: 12, fill: 'rgb(var(--c-muted))' }}
+                              axisLine={{ stroke: 'rgb(var(--c-rule))' }}
+                              tickLine={false}
+                            />
+                            <YAxis
+                              tick={{ fontSize: 11, fill: 'rgb(var(--c-faint))' }}
+                              axisLine={false}
+                              tickLine={false}
+                            />
+                            <Tooltip
+                              cursor={{ fill: 'rgb(var(--c-navy) / 0.08)' }}
+                              formatter={(value: number | string) =>
+                                typeof value === 'number' ? formatDecimal(value, 2) : '—'
+                              }
+                              contentStyle={{ background: 'rgb(var(--c-panel))', border: '1px solid rgb(var(--c-line))', borderRadius: 8, fontSize: 12, color: 'rgb(var(--c-ink))' }}
+                            />
+                            <Bar dataKey="sharpe" isAnimationActive={false}>
+                              {chartRows.map((row) => (
+                                <Cell key={row.name} fill="rgb(var(--c-navy))" />
+                              ))}
+                            </Bar>
+                          </BarChart>
+                        </ResponsiveContainer>
+                      </div>
+                    ) : (
+                      <p className="text-[13px] text-muted">비교할 Sharpe 값이 없습니다.</p>
+                    )}
+                  </Panel>
+
+                  <Panel
+                    contract="dashboard-model-evaluation.v1 · timeline"
+                    title="Guide 포트폴리오 평가액"
+                    hint={`운영 시작 뒤 ${view.timeline.length}거래일의 종가 기준 값입니다. 단기 표본이므로 성과를 단정하지 않습니다.`}
+                  >
+                    {view.timeline.length === 0 ? (
+                      <div className="rounded-tile border border-dashed border-rule px-4 py-6">
+                        <p className="text-eyebrow font-semibold uppercase text-faint">데이터 없음</p>
+                        <p className="mt-2 text-[13px] leading-5 text-muted">
+                          이 실행에는 타임라인 값이 기록되지 않았습니다.
+                        </p>
+                      </div>
+                    ) : (
+                      <ul className="max-h-56 divide-y divide-line/60 overflow-y-auto">
+                        {view.timeline.map((point) => (
+                          <li key={point.at} className="flex justify-between py-2 text-[13px]">
+                            <span className="font-mono text-muted">{formatKstDateTime(point.at)}</span>
+                            <span className="tnum font-mono text-ink">
+                              {formatKrw(point.value)}
+                            </span>
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                  </Panel>
+                </div>
+              </div>
+            );
+          }}
+        </AsyncBoundary>
+      ) : (
+        <LatestRunFallback
+          pending={pending}
+          failed={failed}
+          errorMessage={errorMessage}
+          onRetry={reloadLatest}
+          emptyText="아직 등록된 모델 평가 결과가 없습니다."
+        />
+      )}
+
+      {symbolValid ? (
+        <AsyncBoundary state={signal.state} onRetry={signal.reload}>
+          {(view) => (
+            <Panel
+              contract="GET /api/v2/signals/{symbol}"
+              title={`${bySymbol.get(view.symbol)?.nameKo ?? view.symbol} ${view.archivedSignal ? '과거 신호' : '현재 신호'}`}
+              hint={view.sourceSession && view.targetSession
+                ? `${view.sourceSession} 종가 기준 · ${view.targetSession} 거래 세션 대상입니다. 상단 수익률은 LSTM의 1일 추정값이며 실제 주문은 현재 가격·비용·위험 한도를 다시 확인합니다.`
+                : '추정 수익률은 기준 종가 대비입니다. 실제 주문은 현재 가격·비용·위험 한도를 다시 확인합니다.'}
+              actions={
+                view.composite.status === 'AVAILABLE' ? (
+                  <span className="inline-flex flex-wrap items-center gap-2 rounded-full border border-line px-3 py-1 text-[13px]">
+                    {view.compositionMethod ?? '1일 결합예측 · 고정 50:50 · 비교 검증 예정'}{' '}
+                    <strong className="text-ink">
+                      <Numeric value={view.composite.predictedReturn} format={(v) => formatSignedRatio(v, 2)} />
+                    </strong>
+                  </span>
+                ) : (
+                  <AbstainChip reason={view.composite.reason} />
+                )
+              }
+            >
+              <div className="mb-4"><InstrumentIdentity symbol={view.symbol} instrument={bySymbol.get(view.symbol)} /></div>
+              <ul className="divide-y divide-line/60">
+                {view.slots.map((slot) => (
+                  <SignalSlotRow key={slot.key} slot={slot} />
+                ))}
+              </ul>
+
+              <div className="mt-5 border-t border-line pt-4">
+                <p className="text-[13px] font-medium text-ink">
+                  {view.distinctSignals.length === 0 ? '비교 가능한 모델 신호가 없습니다' : view.disagrees ? '모델 의견이 갈립니다' : '비교 가능한 모델이 같은 방향입니다'}
+                </p>
+                <p className="mt-1 text-[12px] leading-5 text-muted">
+                  불일치는 표시만 하며 주문 가능 여부를 바꾸지 않습니다. HMM은 예측 모델이 아니므로
+                  비교에서 제외합니다.
+                </p>
+              </div>
+
+              {view.warnings.length > 0 ? (
+                <ul className="mt-4 space-y-1.5">
+                  {view.warnings.map((warning) => (
+                    <li key={warning} className="text-[13px] text-muted">
+                      · {warning}
+                    </li>
+                  ))}
+                </ul>
+              ) : null}
+            </Panel>
+          )}
+        </AsyncBoundary>
+      ) : null}
+    </div>
+  );
+}
+
+const METRIC_COLUMNS: {
+  key: keyof ModelRow['metrics'];
+  label: string;
+  /** 사전에 있는 열만 설명 말풍선이 붙는다. 없으면 예전처럼 글자만 나온다. */
+  term?: GlossaryKey;
+  format: (value: number) => string;
+}[] = [
+  { key: 'cagr', label: 'CAGR', term: 'cagr', format: (v) => formatSignedRatio(v, 1) },
+  { key: 'mdd', label: 'MDD', term: 'mdd', format: (v) => formatRatio(v, 1) },
+  { key: 'sharpe', label: 'Sharpe', term: 'sharpe', format: (v) => formatDecimal(v, 2) },
+  { key: 'sortino', label: 'Sortino', format: (v) => formatDecimal(v, 2) },
+  { key: 'var95', label: 'VaR 95', format: (v) => formatRatio(v, 1) },
+  { key: 'cvar95', label: 'CVaR 95', format: (v) => formatRatio(v, 1) },
+];
+
+function ModelTable({ rows }: { rows: ModelRow[] }) {
+  const columns = METRIC_COLUMNS.filter((column) =>
+    rows.some((row) => {
+      const value = row.metrics[column.key];
+      return value !== null && Number.isFinite(value);
+    }),
+  );
+
+  return (
+    <table className="mt-2 w-full min-w-[520px] text-[13px]">
+      <thead>
+        <tr className="border-b border-line text-left text-eyebrow font-semibold uppercase text-faint">
+          <th className="pb-2 font-normal">모델</th>
+          <th className="pb-2 font-normal">상태</th>
+          {columns.map((column) => (
+            <th key={column.key} className="pb-2 text-right font-normal">
+              {column.term ? <Term name={column.term}>{column.label}</Term> : column.label}
+            </th>
+          ))}
+        </tr>
+      </thead>
+      <tbody>
+        {rows.map((row) => (
+          <ModelTableRow key={row.modelId} row={row} columns={columns} />
+        ))}
+      </tbody>
+    </table>
+  );
+}
+
+function ModelTableRow({
+  row,
+  columns,
+}: {
+  row: ModelRow;
+  columns: typeof METRIC_COLUMNS;
+}) {
+  const abstain = row.status === 'ABSTAIN';
+  return (
+    <tr className="border-b border-line/60 align-top last:border-0">
+      <td className="py-3 pr-3">
+        <p className="font-medium text-ink">{row.displayName}</p>
+      </td>
+      <td className="py-3 pr-3">
+        {abstain ? (
+          <AbstainChip reason="이 실행에서 검증된 결과가 없습니다" />
+        ) : (
+          <span className="text-[12px] text-allow">사용 가능</span>
+        )}
+      </td>
+      {columns.map((column) => (
+        <td key={column.key} className="py-3 text-right">
+          <Numeric value={row.metrics[column.key]} format={column.format} />
+        </td>
+      ))}
+    </tr>
+  );
+}
+
+function SignalSlotRow({ slot }: { slot: SignalSlot }) {
+  return (
+    <li className="flex flex-wrap items-start justify-between gap-3 py-3 sm:items-center">
+      <div className="min-w-0">
+        <p className="text-[13px] font-medium text-ink">{slot.displayName}</p>
+        <p className="text-[11px] text-faint">{slot.status === 'AVAILABLE' && slot.estimator === 'RIDGE' ? 'Ridge 수익률 추정 · 비교 검증 예정' : slot.key === 'ruleBaseline' ? '종가 추세·RSI 규칙' : slot.key === 'hmmRegime' ? '종가 기반 국면 분류' : '일일 모델 신호'}</p>
+      </div>
+      {slot.status === 'ABSTAIN' ? (
+        <div className="flex items-center gap-3">
+          <AbstainChip reason={slot.reason} />
+          <span className="text-[12px] text-muted">{slot.reason}</span>
+        </div>
+      ) : (
+        <div className="flex w-full min-w-0 items-center justify-between gap-3 sm:w-auto sm:justify-end sm:gap-5">
+          {slot.regimeState ? (
+            <span className="shrink-0 text-right text-[13px] text-ink" title={slot.regimeState}>{slot.regimeState}{slot.regimeConfidence !== undefined ? <span className="ml-2 text-[11px] text-muted">국면 확률 {formatRatio(slot.regimeConfidence, 1)}</span> : null}</span>
+          ) : (
+            <span className={`shrink-0 whitespace-nowrap text-[13px] font-medium ${SIGNAL_TONE[slot.signal ?? 'HOLD']}`}>
+              {SIGNAL_LABEL[slot.signal ?? 'HOLD']}
+            </span>
+          )}
+          {slot.returnForecasts?.length ? <div className="flex flex-wrap gap-5">
+            {slot.returnForecasts.map((forecast) => <div key={forecast.horizonSessions}>
+              <p className="text-[11px] text-muted">{forecast.horizonSessions}거래일 · {forecast.targetSession}</p>
+              <Numeric className="forecast-number text-[24px]" value={forecast.expectedReturn} format={(v) => formatSignedRatio(v, 2)} />
+              <p className="text-[10px] text-faint">학습 {forecast.trainSamples}건 · 기준 {forecast.trainedThrough}</p>
+            </div>)}
+          </div> : slot.predictedReturn !== null ? <Numeric value={slot.predictedReturn} format={(v) => formatSignedRatio(v, 2)} /> : slot.featureSummary?.length ? <span className="min-w-0 max-w-[22rem] flex-1 break-words text-right text-[11px] leading-5 text-muted">{slot.featureSummary.join(' · ')}</span> : slot.regimeState ? null : <span className="text-[11px] text-muted">수익률 예측 없음</span>}
+        </div>
+      )}
+    </li>
+  );
+}

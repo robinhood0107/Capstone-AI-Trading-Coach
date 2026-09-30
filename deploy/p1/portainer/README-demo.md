@@ -1,9 +1,15 @@
 # MARS DEMO Portainer stack
 
 `mars-demo.stack.yml` and `mars-demo.env.example` are the DEMO product contract.
+The image embeds a versioned historical scenario plus separately validated
+report and 31-symbol signal fixtures. Page reads do not query a FULL service or a live price provider.
+New visitor controls and journals use only the DEMO state volume; Agent questions
+use the server-side Vertex route and its DEMO quota ledger.
 Keep the environment file and `demo-secrets/` directory outside the repository.
 The service account and session-signing key are host-mounted Docker secrets; do
-not put either value in Portainer's plain environment editor or the image.
+not put either value in Portainer's plain environment editor or the image. The
+service-account identity may be shared with FULL when explicitly authorized,
+but its JSON file and mount path remain in the DEMO secret root.
 
 Set `MARS_DEMO_IMAGE_DIGEST` from the verified `mars-demo-images.json` release
 asset. `MARS_DEMO_VERSION` is a human-readable independent DEMO version; the
@@ -32,8 +38,8 @@ FULL budget variable or FULL secret file into this stack.
 
 Create `demo-secrets/` under the DEMO-only root with restrictive directory
 permissions. Provide `session-signing-key` (at least 32 random bytes) and
-`vertex-service-account.json` (a DEMO-only Google service account with only the
-Vertex permissions required by the selected model). Keep them owned/readable by
+`vertex-service-account.json` (a service account with only the Vertex
+permissions required by the selected model). Keep them owned/readable by
 the container's UID 1000; do not print their contents in shell output.
 
 ## Promote and roll back manually

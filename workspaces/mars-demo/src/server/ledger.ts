@@ -22,8 +22,31 @@ interface ScenarioDocument {
     sourceRange: { start: string; end: string };
     initialCapital: number;
     selectedSymbols: string[];
-    final: { equity: number; cash: number; returnBps: number; realizedPnl: number; dividendCash: number };
+    final: {
+      equity: number;
+      cash: number;
+      netPnlKrw: number;
+      returnBps: number;
+      realizedPnl: number;
+      grossRealizedPnl: number;
+      unrealizedPnl: number;
+      commissionKrw: number;
+      sellTaxKrw: number;
+      slippageKrw: number;
+      dividendCash: number;
+      dividendGross: number;
+      dividendWithholding: number;
+      orderCount: number;
+      fillCount: number;
+      winningSaleCount: number;
+      losingSaleCount: number;
+      noOrderDays: number;
+      closedPositionCount: number;
+      openPositionCount: number;
+      openPositions: Record<string, { close: number; quantity: number }>;
+    };
     events: LedgerEvent[];
+    dailyReceipt: { date: string; equity: number; cash: number; holdings: Record<string, { close: number; quantity: number } | undefined> }[];
     benchmark: { ticker: string; returnBps: number };
   };
   backtest: {
@@ -99,6 +122,7 @@ export function projectShowcase(
   let dividendCash = 0;
   const quantities = new Map<string, number>();
   const costBases = new Map<string, number>();
+  const grossCostBases = new Map<string, number>();
   const marks = new Map<string, number>();
   const orders = new Map<string, Record<string, unknown>>();
   const daily: DemoDailyPoint[] = [];
@@ -120,14 +144,18 @@ export function projectShowcase(
           cash -= gross + fees;
           quantities.set(symbol, (quantities.get(symbol) ?? 0) + quantity);
           costBases.set(symbol, (costBases.get(symbol) ?? 0) + gross + fees);
+          grossCostBases.set(symbol, (grossCostBases.get(symbol) ?? 0) + gross);
         } else if (event.side === 'SELL') {
           const priorQuantity = quantities.get(symbol) ?? 0;
           const basis = costBases.get(symbol) ?? 0;
           const soldBasis = priorQuantity > 0 ? bps((basis * quantity) / priorQuantity) : 0;
+          const grossBasis = grossCostBases.get(symbol) ?? 0;
+          const soldGrossBasis = priorQuantity > 0 ? bps((grossBasis * quantity) / priorQuantity) : 0;
           const net = gross - fees;
           cash += net;
           quantities.set(symbol, priorQuantity - quantity);
           costBases.set(symbol, basis - soldBasis);
+          grossCostBases.set(symbol, grossBasis - soldGrossBasis);
           realizedPnl += net - soldBasis;
         }
         const orderId = typeof event.orderId === 'string' ? event.orderId : undefined;
@@ -166,6 +194,7 @@ export function projectShowcase(
           realizedPnl,
           returnBps: bps((equity / initialCapital - 1) * 10_000),
           drawdownBps: peak > 0 ? bps((equity / peak - 1) * 10_000) : 0,
+          openPositions: [...quantities.values()].filter((quantity) => quantity > 0).length,
         });
         break;
       }
@@ -184,6 +213,7 @@ export function projectShowcase(
       const lastClose = marks.get(symbol) ?? bar?.close ?? 0;
       const marketValue = quantity * lastClose;
       const costBasis = costBases.get(symbol) ?? 0;
+      const grossCostBasis = grossCostBases.get(symbol) ?? 0;
       return {
         symbol,
         displayName: bar?.displayName ?? symbol,
@@ -192,6 +222,8 @@ export function projectShowcase(
         priceDate: bar?.date ?? '',
         marketValue,
         costBasis,
+        grossCostBasis,
+        averageFillPriceKrw: bps(grossCostBasis / quantity),
         unrealizedPnl: marketValue - costBasis,
       };
     });
@@ -221,6 +253,10 @@ export function backtestData() {
 
 export function sourceMetadata() {
   return scenario.source;
+}
+
+export function scenarioSeedVersion(): string {
+  return scenario.seedVersion;
 }
 
 export function scenarioAssumptions() {

@@ -43,6 +43,13 @@ test('Next forwards only the /api namespace to the matching Compose API service'
   }
 });
 
+test('RAG proxy waits through retrieval and Vertex without outliving the browser request', async () => {
+  const client = await readFile(clientUrl, 'utf8');
+  assert.ok(nextConfig.experimental.proxyTimeout > 75_000);
+  assert.ok(nextConfig.experimental.proxyTimeout < 90_000);
+  assert.match(client, /SLOW_PATH_TIMEOUT_MS = 90_000/);
+});
+
 test('same-origin POST keeps a real Origin so the API CORS check accepts login', async () => {
   // no-referrer 는 브라우저가 같은 출처 POST 의 Origin 을 null 로 보내게 해 로그인이 403 이 된다.
   const [{ headers }] = await nextConfig.headers();

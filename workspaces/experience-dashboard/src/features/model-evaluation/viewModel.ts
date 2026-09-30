@@ -99,6 +99,10 @@ export interface SignalView {
   symbol: string;
   timeframe: string;
   asOf: string | null;
+  sourceSession: string | null;
+  targetSession: string | null;
+  archivedSignal: boolean;
+  compositionMethod: string | null;
   composite:
     | { status: 'AVAILABLE'; signal: 'BUY' | 'HOLD' | 'SELL'; predictedReturn: number | null }
     | { status: 'ABSTAIN'; reason: string };
@@ -183,6 +187,10 @@ export function toSignalView(signal: SignalV3Runtime): SignalView {
     symbol: signal.symbol,
     timeframe: signal.timeframe,
     asOf: signal.asOf ?? null,
+    sourceSession: signal.sourceSession ?? null,
+    targetSession: signal.targetSession ?? null,
+    archivedSignal: signal.archivedSignal === true,
+    compositionMethod: signal.compositionMethod ?? null,
     composite:
       signal.composite.status === 'AVAILABLE'
         ? {

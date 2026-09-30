@@ -11,11 +11,16 @@ import { saveOverlay, usageSnapshot } from './store';
 import { requireDemoSession, requireSameOrigin } from './http';
 import type { DemoOverlay } from '../shared/contracts';
 import reports from '../../data/reports.v1.json';
+import signals from '../../data/signals.v1.json';
 import { initialJournalEntries } from './seed-journals';
 
 if (reports.seedVersion !== scenarioSeedVersion() || reports.sourcePriceSha256 !== sourceMetadata().sourceSha256) {
   throw new Error('DEMO report fixture does not match the scenario source');
 }
+if (signals.seedVersion !== scenarioSeedVersion() || signals.sourcePriceSha256 !== sourceMetadata().sourceSha256) {
+  throw new Error('DEMO signal fixture does not match the scenario source');
+}
+const signalBySymbol = new Map(signals.rows.map((row) => [fullSymbol(row.symbol), row]));
 
 type JsonRecord = Record<string, unknown>;
 
@@ -1200,18 +1205,34 @@ async function dispatchFullUiApiCore(context: DispatchContext) {
   }
   if (method === 'GET' && pathname.startsWith('/v3/signals/')) {
     const symbol = decodeURIComponent(pathname.split('/').at(-1) ?? '');
-    const missing = (producer: string) => ({ status: 'ABSTAIN', producer, sourceWorkspace: 'mars-demo', reason: 'MISSING_EVIDENCE' });
+    const row = signalBySymbol.get(symbol);
+    if (!row) return envelopeError('NOT_FOUND', '종목 신호를 찾을 수 없습니다.', id, 404);
+    if (now.getTime() < Date.parse(signals.sourceAsOf)) {
+      return envelopeError('NOT_AVAILABLE', '이 시각에는 아직 종가 기반 신호가 없습니다.', id, 404);
+    }
+    const archivedSignal = state.clock.dateKst > signals.targetSession
+      || (state.clock.dateKst === signals.targetSession && state.clock.timeKst >= '15:30:00');
     return envelope({
       symbol,
       timeframe: '1d',
-      composite: { status: 'ABSTAIN', reason: 'REQUIRED_COMPONENT_UNAVAILABLE' },
+      asOf: signals.sourceAsOf,
+      sourceSession: signals.sourceSession,
+      targetSession: signals.targetSession,
+      archivedSignal,
+      compositionMethod: '규칙·LSTM 합의 · LSTM 추정 수익률',
+      composite: { status: 'AVAILABLE', signal: row.composite.signal, predictedReturn: row.composite.predictedReturn },
       components: {
-        ruleBaseline: missing('RULE_BASELINE'),
-        lstm: { status: 'ABSTAIN', producer: 'LSTM', sourceWorkspace: 'mars-demo', reason: 'STALE_EVIDENCE' },
-        lightgbm: missing('LIGHTGBM'),
-        hmmRegime: missing('HMM'),
+        ruleBaseline: { status: 'AVAILABLE', producer: 'RULE_BASELINE', sourceWorkspace: 'mars-demo', asOf: signals.sourceAsOf, signal: row.rule.signal, predictedReturn: null, sourceSession: signals.sourceSession, estimator: 'trend-200/rsi14' },
+        lstm: { status: 'AVAILABLE', producer: 'LSTM', sourceWorkspace: 'mars-demo', asOf: signals.sourceAsOf, signal: row.lstm.signal, predictedReturn: row.lstm.predictedReturn, sourceSession: signals.sourceSession, estimator: 'w756-quarterly', modelVersion: row.lstm.modelHash },
+        lightgbm: { status: 'ABSTAIN', producer: 'LIGHTGBM', sourceWorkspace: 'mars-demo', reason: 'MISSING_EVIDENCE' },
+        hmmRegime: { status: 'AVAILABLE', producer: 'HMM', sourceWorkspace: 'mars-demo', asOf: signals.sourceAsOf, state: row.hmm.state, modelVersion: row.hmm.artifactHash },
       },
-      warnings: ['LSTM 예측 원장은 2026-09-18 세션까지 확인됐습니다. 다음 거래 세션에 유효한 새 신호가 없어 주문 판단에 사용하지 않습니다.'],
+      warnings: [
+        archivedSignal
+          ? `${signals.sourceSession} 종가로 계산한 ${signals.targetSession} 대상 과거 신호입니다. 현재 주문 판단에 사용하지 않습니다.`
+          : `${signals.sourceSession} 종가까지의 기록으로 계산한 ${signals.targetSession} 대상 신호입니다. 현재가·계좌·주문 상태는 반영되지 않았습니다.`,
+        ...(row.hmm.warnings.length ? ['HMM 국면 확률이 낮아 불확실한 상태를 SIDEWAYS로 표시했습니다.'] : []),
+      ],
     }, id);
   }
 

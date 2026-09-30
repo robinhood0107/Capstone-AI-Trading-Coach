@@ -1,8 +1,8 @@
 # MARS DEMO Portainer stack
 
 `mars-demo.stack.yml` and `mars-demo.env.example` are the DEMO product contract.
-The image embeds a versioned historical scenario and a separately validated
-report fixture. Page reads do not query a FULL service or a live price provider.
+The image embeds a versioned historical scenario plus separately validated
+report and 31-symbol signal fixtures. Page reads do not query a FULL service or a live price provider.
 New visitor controls and journals use only the DEMO state volume; Agent questions
 use the server-side Vertex route and its DEMO quota ledger.
 Keep the environment file and `demo-secrets/` directory outside the repository.

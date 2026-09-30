@@ -37,6 +37,53 @@ python workspaces/mars-demo/scripts/validate_reports.py \
   workspaces/mars-demo/data/scenario.v1.json
 ```
 
+For the 31 per-symbol rule, LSTM, and HMM signals, use the pinned research
+environments. Keep both intermediate receipts under `/tmp`, outside the image:
+
+```sh
+cd workspaces/return-engine && uv sync --frozen && cd ../..
+PYTHONPATH=workspaces/decision-platform/python-services \
+  workspaces/decision-platform/python-services/.venv/bin/python \
+  workspaces/mars-demo/scripts/build_signal_hmm.py \
+  --prices private-reference/research/active-trading-20260930/long_history.parquet \
+  --scenario workspaces/mars-demo/data/scenario.v1.json \
+  --output /tmp/mars-demo-hmm-20260930.json
+workspaces/return-engine/.venv/bin/python \
+  workspaces/mars-demo/scripts/build_signal_lstm.py \
+  --prices private-reference/research/active-trading-20260930/long_history.parquet \
+  --scenario workspaces/mars-demo/data/scenario.v1.json \
+  --features private-reference/research/active-trading-20260921/v2/features.parquet \
+  --reference-predictions-root private-reference/research/active-trading-20260921/v2/lstm-w756-quarterly-calendar \
+  --calendar workspaces/mars-demo/data/krx-calendar.v1.json \
+  --config deploy/p1/seed/team-b/config.json \
+  --output /tmp/mars-demo-lstm-20260930.json
+workspaces/decision-platform/python-services/.venv/bin/python \
+  workspaces/mars-demo/scripts/merge_signal_fixture.py \
+  --prices private-reference/research/active-trading-20260930/long_history.parquet \
+  --scenario workspaces/mars-demo/data/scenario.v1.json \
+  --calendar workspaces/mars-demo/data/krx-calendar.v1.json \
+  --lstm /tmp/mars-demo-lstm-20260930.json \
+  --hmm /tmp/mars-demo-hmm-20260930.json \
+  --output workspaces/mars-demo/data/signals.v1.json
+python3 workspaces/mars-demo/scripts/validate_signals.py \
+  workspaces/mars-demo/data/signals.v1.json \
+  workspaces/mars-demo/data/scenario.v1.json \
+  workspaces/mars-demo/data/krx-calendar.v1.json
+```
+
+The fixed signal source is the 2026-09-29 completed close and the target is
+the next pinned KRX session, 2026-09-30. All 31 rule signals use the current
+FULL trend/RSI thresholds. The fixed Q3 LSTM uses target labels available by
+2026-06-30, reproduces all 31 recorded 2026-09-18 forecasts with zero error,
+and then predicts from features through 2026-09-29. The HMM uses its existing
+five-seed, train-only-scaled causal filter and produced 31/31 regimes; one
+low-confidence result is labeled SIDEWAYS. The rule/LSTM combination is an
+educational signal projection, not an order authorization. After the target
+session has passed, the UI labels the values as historical. The image contains
+only `signals.v1.json` (SHA-256
+`dc3b7f01587c59b3c76410a4410952b8b3174b06ffb14860c611bb9b83346d5c`);
+raw prices, prediction parquets, trained weights, and `/tmp` receipts stay out.
+
 The showcase portfolio deliberately selects the six strongest close-to-close
 returns observed through 2026-09-18 after that selection period ended. Its
 one-order-per-session dates include staged purchases, partial sales and two

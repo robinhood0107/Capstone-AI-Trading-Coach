@@ -13,6 +13,7 @@ import { showcaseMetadata } from '../src/server/ledger';
 import { initialJournalEntries } from '../src/server/seed-journals';
 import { POST as createVisitorSession } from '../src/app/api/demo/session/route';
 import { POST as askDemoAgent } from '../src/app/api/demo/agent/route';
+import signalFixture from '../data/signals.v1.json';
 
 const tempRoot = mkdtempSync(path.join(tmpdir(), 'mars-full-ui-adapter-'));
 const signingKeyFile = path.join(tempRoot, 'session.key');
@@ -173,7 +174,7 @@ test('one-click entry starts an independent armed portfolio with editable trade 
   assert.ok(journals.data.items.every((item) => item.tags.includes('자동 생성') && item.links.automationRunId));
 });
 
-test('all historical runs and report fields are available without inventing current model signals', async () => {
+test('all historical runs, report fields, and exact-31 recorded model signals are available', async () => {
   const visitor = issueDemoSession();
   const runs = await (await call('/api/v3/automation/runs?size=40', visitor.token)).json() as { data: { items: { runId: string }[] } };
   assert.equal(runs.data.items.length, 29);
@@ -191,9 +192,16 @@ test('all historical runs and report fields are available without inventing curr
   assert.equal(models.data.view.models.length, 2);
   assert.ok(models.data.view.models.every((row) => row.status === 'AVAILABLE' && Object.values(row.metrics).every(Number.isFinite)));
   assert.ok(models.data.view.timeline.every((point) => point.value > 1_000_000));
-  const signal = await (await call('/api/v3/signals/000660', visitor.token)).json() as { data: { components: { ruleBaseline: { status: string }; lstm: { status: string }; hmmRegime: { status: string } } } };
-  assert.equal(signal.data.components.lstm.status, 'ABSTAIN');
-  assert.equal(signal.data.components.hmmRegime.status, 'ABSTAIN');
+  for (const row of signalFixture.rows) {
+    const symbol = row.symbol.replace(/\.(KS|KQ)$/, '');
+    const signal = await (await call(`/api/v3/signals/${symbol}`, visitor.token)).json() as { data: { sourceSession: string; targetSession: string; composite: { status: string }; components: { ruleBaseline: { status: string }; lstm: { status: string }; hmmRegime: { status: string } } } };
+    assert.equal(signal.data.sourceSession, '2026-09-29');
+    assert.equal(signal.data.targetSession, '2026-09-30');
+    assert.equal(signal.data.composite.status, 'AVAILABLE');
+    assert.equal(signal.data.components.ruleBaseline.status, 'AVAILABLE');
+    assert.equal(signal.data.components.lstm.status, 'AVAILABLE');
+    assert.equal(signal.data.components.hmmRegime.status, 'AVAILABLE');
+  }
 });
 
 test('the direct Agent route requires the same external-processing consent as the FULL UI route', async () => {

@@ -192,12 +192,14 @@ export function ModelEvaluationView({ evaluationNote }: { evaluationNote?: strin
           {(view) => (
             <Panel
               contract="GET /api/v2/signals/{symbol}"
-              title={`${bySymbol.get(view.symbol)?.nameKo ?? view.symbol} 현재 신호`}
-              hint="추정 수익률은 기준 종가 대비입니다. 실제 주문은 현재 가격·비용·위험 한도를 다시 확인합니다."
+              title={`${bySymbol.get(view.symbol)?.nameKo ?? view.symbol} ${view.archivedSignal ? '과거 신호' : '현재 신호'}`}
+              hint={view.sourceSession && view.targetSession
+                ? `${view.sourceSession} 종가 기준 · ${view.targetSession} 거래 세션 대상입니다. 추정 수익률은 기준 종가 대비이며 실제 주문은 현재 가격·비용·위험 한도를 다시 확인합니다.`
+                : '추정 수익률은 기준 종가 대비입니다. 실제 주문은 현재 가격·비용·위험 한도를 다시 확인합니다.'}
               actions={
                 view.composite.status === 'AVAILABLE' ? (
                   <span className="inline-flex flex-wrap items-center gap-2 rounded-full border border-line px-3 py-1 text-[13px]">
-                    1일 결합예측 · 고정 50:50 · 비교 검증 예정{' '}
+                    1일 결합예측 · {view.compositionMethod ?? '고정 50:50 · 비교 검증 예정'}{' '}
                     <strong className="text-ink">
                       <Numeric value={view.composite.predictedReturn} format={(v) => formatSignedRatio(v, 2)} />
                     </strong>

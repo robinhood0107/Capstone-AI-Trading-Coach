@@ -268,24 +268,14 @@ export function RagGuideView() {
                 ) : null}
               </article>
 
+              {view.topSources.length > 0 || view.expandableSources.length > 0 ? (
               <details open className="mt-5 border-t border-line pt-4">
                 <summary className="cursor-pointer text-[13px] text-navy">근거와 출처 보기</summary>
-                <div className="mt-4 flex items-center gap-2">
-                  <span className="text-eyebrow font-semibold uppercase text-faint">출처 연결률</span>
-                  <Numeric
-                    value={view.citationCoverage}
-                    format={(v) => formatRatio(v, 0)}
-                    missingReason={
-                      view.generationStatus === 'ANSWERED'
-                        ? '외부 출처 인용이 없어 연결률을 계산하지 않았습니다.'
-                        : view.sourcesUnavailableReason ?? '생성된 문장이 없어 출처 연결률을 계산하지 않았습니다.'
-                    }
-                  />
-                </div>
-                {view.sourcesUnavailableReason ? (
-                  <p className="mt-4 rounded-tile border border-dashed border-rule px-4 py-4 text-[13px] leading-5 text-muted">
-                    {view.sourcesUnavailableReason}
-                  </p>
+                {view.citationCoverage !== null ? (
+                  <div className="mt-4 flex items-center gap-2">
+                    <span className="text-eyebrow font-semibold uppercase text-faint">출처 연결률</span>
+                    <Numeric value={view.citationCoverage} format={(v) => formatRatio(v, 0)} />
+                  </div>
                 ) : null}
                 {view.topSources.length > 0 ? (
                   <div className="mt-5">
@@ -310,6 +300,9 @@ export function RagGuideView() {
                   </details>
                 ) : null}
               </details>
+              ) : view.sourcesUnavailableReason ? (
+                <p className="mt-4 text-[12px] leading-5 text-muted">{view.sourcesUnavailableReason}</p>
+              ) : null}
             </Panel>
           )}
         </AsyncBoundary>

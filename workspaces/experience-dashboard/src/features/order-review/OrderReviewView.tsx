@@ -37,7 +37,7 @@ const SEVERITY_TONE: Record<string, string> = {
   BLOCK: 'text-block',
 };
 
-export function OrderReviewView() {
+export function OrderReviewView({ fillsFromDate }: { fillsFromDate?: string } = {}) {
   const catalog = useResource(async () => {
     const { data } = await api.instrumentDisplayCatalog();
     return { kind: 'ready' as const, data, asOf: null };
@@ -63,7 +63,7 @@ export function OrderReviewView() {
   return (
     <div className="space-y-6">
       <OrderTicket />
-      <FillsPanel />
+      <FillsPanel fromDate={fillsFromDate} />
 
       <AsyncBoundary state={recent.state} onRetry={recent.reload}>
         {(items) =>

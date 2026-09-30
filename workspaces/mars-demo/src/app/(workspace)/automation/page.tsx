@@ -1,1 +1,15 @@
-export { default } from '@full/app/automation/page';
+import { PageHeader } from '@/shared/ui/Panel';
+import { AutomationView } from '@/features/automation/AutomationView';
+
+export default function DemoAutomationPage() {
+  return (
+    <div className="space-y-8">
+      <PageHeader
+        eyebrow="Automation"
+        title="자동운용 설정"
+        description="KIS 계좌 자동매매에서 사용할 최대 금액과 손절·익절 기준을 저장하고, 실제 시작 가능 상태를 확인합니다."
+      />
+      <AutomationView runPageSize={40} />
+    </div>
+  );
+}

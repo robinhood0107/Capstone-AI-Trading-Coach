@@ -32,7 +32,7 @@ const SIGNAL_TONE: Record<string, string> = {
   HOLD: 'text-hold',
 };
 
-export function ModelEvaluationView() {
+export function ModelEvaluationView({ evaluationNote }: { evaluationNote?: string } = {}) {
   const { runId, pending, failed, errorMessage, reload: reloadLatest } = useLatestRun('model-evaluations');
   const [symbol, setSymbol] = useState('');
   const symbolValid = ID_PATTERN.symbol.test(symbol);
@@ -53,6 +53,7 @@ export function ModelEvaluationView() {
 
   return (
     <div className="space-y-6">
+      {evaluationNote ? <p className="border-l-2 border-line bg-surface px-3 py-2 text-[13px] leading-6 text-muted">{evaluationNote}</p> : null}
       <label className="block max-w-md">
         <span className="text-[13px] font-semibold text-ink">현재 신호를 볼 종목</span>
         <span className="mt-1 block text-[12px] text-muted">31개 운용 종목에서 이름으로 선택합니다.</span>
@@ -215,7 +216,7 @@ export function ModelEvaluationView() {
 
               <div className="mt-5 border-t border-line pt-4">
                 <p className="text-[13px] font-medium text-ink">
-                  {view.disagrees ? '모델 의견이 갈립니다' : '비교 가능한 모델이 같은 방향입니다'}
+                  {view.distinctSignals.length === 0 ? '비교 가능한 모델 신호가 없습니다' : view.disagrees ? '모델 의견이 갈립니다' : '비교 가능한 모델이 같은 방향입니다'}
                 </p>
                 <p className="mt-1 text-[12px] leading-5 text-muted">
                   불일치는 표시만 하며 주문 가능 여부를 바꾸지 않습니다. HMM은 예측 모델이 아니므로

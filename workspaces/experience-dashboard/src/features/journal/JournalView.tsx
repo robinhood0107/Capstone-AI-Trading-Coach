@@ -20,7 +20,7 @@ interface Draft {
 
 const EMPTY: Draft = { title: '', content: '', tags: '' };
 
-export function JournalView() {
+export function JournalView({ fillsFromDate }: { fillsFromDate?: string } = {}) {
   const resource = useResource(async () => {
     const { data } = await api.journals();
     return ready(data.items, data.items[0]?.updatedAt ?? null);
@@ -123,12 +123,12 @@ export function JournalView() {
   return (
     <div className="grid gap-6 xl:grid-cols-[minmax(0,0.8fr)_minmax(0,1.2fr)]">
       <div className="xl:col-span-2">
-        <FillsPanel />
+        <FillsPanel fromDate={fillsFromDate} />
         <p className="mt-2 text-[12px] text-muted">체결 내역은 원장 기록이며, 아래 학습일지는 직접 작성하는 기록입니다.</p>
       </div>
       <AsyncBoundary state={resource.state} onRetry={resource.reload}>
         {(items) => (
-          <Panel title="최근 기록" hint="최신 20개 기록입니다.">
+          <Panel title="학습일지 기록" hint={`현재 ${items.length}개 기록입니다.`}>
             {items.length === 0 ? (
               <p className="text-[13px] text-muted">첫 학습일지를 작성해 보세요.</p>
             ) : (

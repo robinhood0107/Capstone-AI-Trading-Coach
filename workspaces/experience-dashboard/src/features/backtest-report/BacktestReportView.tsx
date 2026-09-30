@@ -27,7 +27,7 @@ const COLOR: Record<string, string> = {
   Strict: 'rgb(var(--c-navy))',
 };
 
-export function BacktestReportView() {
+export function BacktestReportView({ artifactNote }: { artifactNote?: string } = {}) {
   const { runId, pending, failed, errorMessage, reload: reloadLatest } = useLatestRun('backtests');
   const { state, reload } = useResource(
     () => loadBacktestReportView(runId ?? ''),
@@ -57,8 +57,7 @@ export function BacktestReportView() {
                 /* REAL_ARTIFACT 는 "외부 팀이 준 실물 산출물"이 아니라 "이 스택이 DB 일봉으로
                    직접 다시 계산한 값"을 뜻한다. 경고 없이 두면 화면이 전자로 읽힌다. */
                 <p className="border-l-2 border-line bg-surface px-3 py-2 text-[13px] leading-6 text-muted">
-                  이 결과는 저장된 일봉으로 이 스택이 매번 다시 계산한 값입니다. 외부에서 받은
-                  산출물이 아니며, 거래일이 늘어나면 평가 구간도 함께 늘어납니다.
+                  {artifactNote ?? '이 결과는 저장된 일봉으로 이 스택이 매번 다시 계산한 값입니다. 외부에서 받은 산출물이 아니며, 거래일이 늘어나면 평가 구간도 함께 늘어납니다.'}
                 </p>
               )}
 
@@ -73,7 +72,7 @@ export function BacktestReportView() {
                   <ScenarioTable rows={view.strategies} />
                 </div>
                 <p className="mt-4 text-[12px] leading-5 text-muted">
-                  Sharpe 차이는 신뢰구간과 함께 읽어야 합니다. 구간이 겹치면 우열을 단정하지 않습니다.
+                  짧은 기간의 Sharpe 차이만으로 전략의 우열을 단정하지 않습니다.
                 </p>
               </Panel>
 

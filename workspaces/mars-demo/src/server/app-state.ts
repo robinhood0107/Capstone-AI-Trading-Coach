@@ -7,6 +7,7 @@ import {
   projectBacktest,
   projectShowcase,
   scenarioAssumptions,
+  scenarioSeedVersion,
   showcaseMetadata,
   sourceMetadata,
   visibleBars,
@@ -35,7 +36,7 @@ export function buildDemoState(sessionHash: string, overlay: DemoOverlay, config
   const benchmark = retrospectiveAvailable ? benchmarkReturn(clock.dateKst, bars) : null;
   return {
     source: {
-      seedVersion: 'mars-demo-2026-09-29.1',
+      seedVersion: scenarioSeedVersion(),
       provider: source.provider,
       sourceSha256: source.sourceSha256,
       sourceRange: source.scenarioRange,

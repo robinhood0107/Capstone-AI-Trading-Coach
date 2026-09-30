@@ -12,6 +12,7 @@ FROM deps AS build
 ENV NEXT_TELEMETRY_DISABLED=1
 WORKDIR /repo
 COPY workspaces/mars-demo ./workspaces/mars-demo
+COPY workspaces/experience-dashboard/tailwind.config.ts ./workspaces/experience-dashboard/tailwind.config.ts
 COPY workspaces/experience-dashboard/src/app/globals.css ./workspaces/experience-dashboard/src/app/globals.css
 COPY workspaces/experience-dashboard/src/app/page.tsx ./workspaces/experience-dashboard/src/app/page.tsx
 COPY workspaces/experience-dashboard/src/app/principles ./workspaces/experience-dashboard/src/app/principles
@@ -52,7 +53,7 @@ ARG RELEASE_VERSION=dev
 ENV SOURCE_REVISION=${SOURCE_REVISION}
 ENV RELEASE_VERSION=${RELEASE_VERSION}
 WORKDIR /repo/workspaces/mars-demo
-RUN npm run typecheck && npm test && python3 scripts/validate_fixture.py data/scenario.v1.json && npm run build
+RUN npm run typecheck && npm test && python3 scripts/validate_fixture.py data/scenario.v1.json && python3 scripts/validate_reports.py data/reports.v1.json data/scenario.v1.json && npm run build
 
 FROM node:22-bookworm-slim AS runner
 RUN rm -rf /usr/local/lib/node_modules/npm /usr/local/bin/npm /usr/local/bin/npx

@@ -1,15 +1,21 @@
 import { createHash, randomUUID } from 'node:crypto';
-import { existsSync } from 'node:fs';
 import { NextRequest, NextResponse } from 'next/server';
-import { askVertex, AgentConfigurationError } from './vertex';
+import { askVertex, AgentConfigurationError, vertexAccountConfigured } from './vertex';
 import { readAgentConfig, type DemoAgentConfig } from './config';
 import { buildDemoState } from './app-state';
+import { visibleCalendarSessions } from './clock';
 import { evidenceIndexVersion, retrieveEvidence } from './evidence';
-import { availableBarFor, sourceMetadata } from './ledger';
+import { availableBarFor, scenarioSeedVersion, sourceMetadata } from './ledger';
 import { applyOverlayAction, readSessionOverlay } from './overlay';
 import { saveOverlay, usageSnapshot } from './store';
 import { requireDemoSession, requireSameOrigin } from './http';
 import type { DemoOverlay } from '../shared/contracts';
+import reports from '../../data/reports.v1.json';
+import { initialJournalEntries } from './seed-journals';
+
+if (reports.seedVersion !== scenarioSeedVersion() || reports.sourcePriceSha256 !== sourceMetadata().sourceSha256) {
+  throw new Error('DEMO report fixture does not match the scenario source');
+}
 
 type JsonRecord = Record<string, unknown>;
 
@@ -76,7 +82,7 @@ function policyFor(overlay: DemoOverlay, sessionHash: string, now: Date) {
     policyId: identity,
     version: Number(saved.version ?? 1),
     presetId: String(saved.presetId ?? presetId),
-    capitalLimitKrw: Number(saved.capitalLimitKrw ?? 3_000_000),
+    capitalLimitKrw: Number(saved.capitalLimitKrw ?? 9_000_000),
     stopLossBps: Number(saved.stopLossBps ?? 500),
     takeProfitBps: Number(saved.takeProfitBps ?? 1_000),
     riskPerTradeBps: Number(saved.riskPerTradeBps ?? 100),
@@ -115,13 +121,60 @@ function capitalPolicyFor(overlay: DemoOverlay) {
   };
 }
 
+function capitalStatusFor(state: ReturnType<typeof buildDemoState>, overlay: DemoOverlay, sessionHash: string, now: Date) {
+  const capitalPolicy = capitalPolicyFor(overlay);
+  if (!capitalPolicy) return null;
+  const policy = policyFor(overlay, sessionHash, now);
+  const positions = state.showcase?.positions ?? [];
+  const cash = state.showcase?.cash ?? state.backtest.initialCapital;
+  const equity = state.showcase?.equity ?? state.backtest.initialCapital;
+  const realizedSinceTransition = (state.showcase?.events ?? [])
+    .filter((event) => event.type === 'FILL' && event.side === 'SELL' && String(event.atKst).slice(0, 10) >= capitalPolicy.effectiveFromSession)
+    .reduce((sum, event) => sum + Number(event.realizedPnl ?? 0), 0);
+  const configuredCapital = policy.capitalLimitKrw;
+  const allocationCap = Math.max(0, configuredCapital + (capitalPolicy.reinvestRealizedPnl ? realizedSinceTransition : 0));
+  const investableCap = Math.max(0, allocationCap - Math.ceil(allocationCap * capitalPolicy.cashBufferBps / 10_000));
+  const botMarketValue = positions.reduce((sum, position) => sum + position.marketValue, 0);
+  const availableBuyCash = Math.max(0, Math.min(cash, investableCap - botMarketValue));
+  const targetPerPosition = Math.floor(investableCap / Math.max(1, policy.maxOpenPositions));
+  const lastDate = state.showcase?.daily.at(-1)?.date;
+  return {
+    contractId: 'automation-capital-status.v1',
+    policyVersion: capitalPolicy.version,
+    reinvestRealizedPnl: capitalPolicy.reinvestRealizedPnl,
+    configuredCapitalKrw: configuredCapital,
+    realizedPnlSinceTransitionKrw: realizedSinceTransition,
+    brokerBuyableCashKrw: cash,
+    botPositionMarketValueKrw: botMarketValue,
+    reservedBuyCashKrw: 0,
+    allocationCapKrw: allocationCap,
+    investableCapKrw: investableCap,
+    availableBuyCashKrw: availableBuyCash,
+    targetPerPositionKrw: targetPerPosition,
+    existingBotPositionsAdopted: positions.length,
+    valuationMissingCount: 0,
+    unusedCashReason: availableBuyCash === 0 && cash > 0 ? 'CAPITAL_LIMIT' : null,
+    positions: positions.map((position) => ({
+      symbol: fullSymbol(position.symbol),
+      currentQuantity: position.quantity,
+      targetQuantity: position.lastClose > 0 ? Math.floor(targetPerPosition / position.lastClose) : null,
+      currentMarketValueKrw: position.marketValue,
+      targetMarketValueKrw: targetPerPosition,
+      currentWeightBps: equity > 0 ? Math.floor(position.marketValue / equity * 10_000 + 0.5) : null,
+      targetWeightBps: Math.floor(10_000 / Math.max(1, policy.maxOpenPositions) + 0.5),
+      valuationStatus: 'COMPLETE',
+    })),
+    asOf: lastDate ? new Date(`${lastDate}T15:30:00+09:00`).toISOString() : now.toISOString(),
+  };
+}
+
 function positionRows(state: ReturnType<typeof buildDemoState>, overlay: DemoOverlay, sessionHash: string, now: Date) {
   const policy = policyFor(overlay, sessionHash, now);
   const bars = state.bars;
   return (state.showcase?.positions ?? []).map((position, index) => {
     const bar = bars.find((candidate) => candidate.symbol === position.symbol && candidate.date === position.priceDate);
     const entry = (state.showcase?.events ?? []).find((event) => event.type === 'FILL' && event.symbol === position.symbol && event.side === 'BUY') as JsonRecord | undefined;
-    const entryPrice = Number(entry?.price ?? bar?.close ?? position.lastClose);
+    const entryPrice = position.averageFillPriceKrw || Number(entry?.price ?? bar?.close ?? position.lastClose);
     return {
       v2: {
         contractId: 'automation-position.v2',
@@ -180,6 +233,7 @@ function statusV2(overlay: DemoOverlay, state: ReturnType<typeof buildDemoState>
   const policy = policyFor(overlay, sessionHash, now);
   const positions = positionRows(state, overlay, sessionHash, now);
   const armed = overlay.autoArmed;
+  const killSwitchActive = Boolean(overlay.personalKillSwitchActive || overlay.globalKillSwitchActive);
   return {
     contractId: 'automation-status.v2',
     controlState: armed ? 'ARMED' : 'DISARMED',
@@ -188,12 +242,12 @@ function statusV2(overlay: DemoOverlay, state: ReturnType<typeof buildDemoState>
     brokerageMode: 'KIS_MOCK',
     accountId: accountIdFor(sessionHash),
     policy: policyV2(policy),
-    killSwitchActive: false,
+    killSwitchActive,
     certificationStatus: 'VALID',
     openPositionCount: positions.length,
     unresolvedReconciliation: false,
-    canArm: true,
-    blockers: [],
+    canArm: !killSwitchActive,
+    blockers: killSwitchActive ? ['KILL_SWITCH_ACTIVE'] : [],
   };
 }
 
@@ -202,12 +256,15 @@ function statusV3(overlay: DemoOverlay, state: ReturnType<typeof buildDemoState>
   const policy = policyFor(overlay, sessionHash, now);
   const dateKst = state.clock.dateKst;
   const armed = overlay.autoArmed;
+  const nextSession = visibleCalendarSessions().find(
+    (session) => session.date > dateKst || (session.date === dateKst && state.clock.timeKst < '09:30:00'),
+  );
   return {
     ...status,
     contractId: 'automation-status.v3',
     projectionState: armed ? (state.clock.isTradingSession ? 'RUNNING' : 'ARMED') : 'DISARMED',
     policy: { ...policy, contractId: 'automation-policy.v2' },
-    blockers: [],
+    blockers: status.blockers,
     aiJudgementEnabled: true,
     thinkingLevel: 'low',
     marketHistoryStatus: 'READY',
@@ -223,7 +280,7 @@ function statusV3(overlay: DemoOverlay, state: ReturnType<typeof buildDemoState>
     historicalPaperClosedPositionCount: 0,
     historicalPaperRunCount: 0,
     appliedPolicyVersion: policy.version,
-    nextRunAt: armed ? `${dateKst}T09:30:00+09:00` : null,
+    nextRunAt: armed && nextSession ? `${nextSession.date}T09:30:00+09:00` : null,
   };
 }
 
@@ -264,50 +321,113 @@ function accountBalance(state: ReturnType<typeof buildDemoState>, overlay: DemoO
       isGoldEtfEtn: position.displayName.toLocaleLowerCase('ko-KR').includes('gold'),
     })),
     observedAt,
-    sourceVersion: 'mars-demo-2026-09-29.1',
+    sourceVersion: state.source.seedVersion,
   };
 }
 
-function riskPortfolio(state: ReturnType<typeof buildDemoState>, now: Date) {
+function riskPortfolio(state: ReturnType<typeof buildDemoState>, overlay: DemoOverlay, now: Date) {
+  const daily = state.showcase?.daily ?? [];
+  const last = daily.at(-1);
+  const previous = daily.at(-2);
   return {
-    asOf: now.toISOString(),
+    asOf: last ? new Date(`${last.date}T15:30:00+09:00`).toISOString() : now.toISOString(),
     portfolioValue: state.showcase?.equity ?? state.backtest.finalEquity,
-    dailyPnlRate: null,
-    mdd: state.backtest.maxDrawdownBps / 10_000,
+    dailyPnlRate: last && previous ? last.equity / previous.equity - 1 : null,
+    mdd: daily.length ? Math.min(...daily.map((point) => point.drawdownBps)) / 10_000 : state.backtest.maxDrawdownBps / 10_000,
     var95: null,
     cvar95: null,
     realizedVolatility20d: null,
     annualizedVolatility20d: null,
     hmmRegime: null,
     hmmRegimeProbability: null,
-    killSwitchActive: false,
+    killSwitchActive: Boolean(overlay.personalKillSwitchActive || overlay.globalKillSwitchActive),
     dataFreshness: { priceFresh: true, signalFresh: null, ragFresh: null },
   };
 }
 
+function saleSummary(state: ReturnType<typeof buildDemoState>) {
+  const saleFills = (state.showcase?.events ?? []).filter(
+    (event) => event.type === 'FILL' && event.side === 'SELL',
+  ) as JsonRecord[];
+  const openSymbols = new Set((state.showcase?.positions ?? []).map((position) => position.symbol));
+  const pnlBySymbol = new Map<string, number>();
+  for (const fill of saleFills) {
+    const symbol = String(fill.symbol);
+    pnlBySymbol.set(symbol, (pnlBySymbol.get(symbol) ?? 0) + Number(fill.realizedPnl ?? 0));
+  }
+  const closed = [...pnlBySymbol].filter(([symbol]) => !openSymbols.has(symbol));
+  return {
+    closedPositionCount: closed.length,
+    realizedPnlKrw: state.showcase?.realizedPnl ?? 0,
+    realizedGrossKrw: saleFills.reduce(
+      (sum, fill) => sum + Number(fill.realizedGrossPnl ?? fill.realizedPnl ?? 0), 0,
+    ),
+    winningPositionCount: closed.filter(([, pnl]) => pnl > 0).length,
+    losingPositionCount: closed.filter(([, pnl]) => pnl < 0).length,
+    evidenceMode: 'KIS_MOCK',
+    performanceClaimAllowed: false,
+  };
+}
+
+function runIdForEvent(sessionHash: string, eventId: string): string {
+  return `demo_run_${hashHex(`${sessionHash}:${eventId}`).slice(0, 24)}`;
+}
+
+function runStageOutcomes(state: ReturnType<typeof buildDemoState>, sessionHash: string, runId: string) {
+  const events = (state.showcase?.events ?? []) as JsonRecord[];
+  const event = events.find((candidate) =>
+    (candidate.type === 'ORDER_CREATED' || candidate.type === 'NO_ACTION')
+    && runIdForEvent(sessionHash, String(candidate.id)) === runId);
+  if (!event) return [];
+  const sourceDate = String(event.sourceDate);
+  const daily = state.showcase?.daily.find((point) => point.date === sourceDate);
+  const observation = daily
+    ? `${sourceDate} 장마감 평가액 ${daily.equity.toLocaleString('ko-KR')}원, 현금 ${daily.cash.toLocaleString('ko-KR')}원, 보유 ${daily.openPositions ?? 0}종목. 고정된 과거 시세 원장 기준.`
+    : `${sourceDate} 원장 평가 기록 없음`;
+  if (event.type === 'NO_ACTION') {
+    return [
+      { stage: 'OBSERVATION', symbol: '000000', outcome: 'PASS', reasonCode: null, reasonDetail: observation },
+      { stage: 'RULE_BUY', symbol: '000000', outcome: 'DROPPED', reasonCode: 'RULE_NOT_BUY', reasonDetail: `${String(event.reason)}. 이 사례의 고정된 거래 일정에서 후보 주문이 0건이어서 모델·AI·위험 심사와 체결은 실행하지 않았습니다.` },
+    ];
+  }
+  const symbol = fullSymbol(String(event.symbol));
+  const decision = events.find((candidate) => candidate.type === 'DECISION_RECORDED' && candidate.orderId === event.id);
+  const fill = events.find((candidate) => candidate.type === 'FILL' && candidate.orderId === event.id);
+  const orderDetail = fill
+    ? `${Number(fill.quantity).toLocaleString('ko-KR')}주 × ${Number(fill.price).toLocaleString('ko-KR')}원 = ${Number(fill.grossAmount).toLocaleString('ko-KR')}원; 수수료 ${Number(fill.commission).toLocaleString('ko-KR')}원, 거래세 ${Number(fill.transactionTax).toLocaleString('ko-KR')}원${fill.side === 'SELL' ? `, 비용 반영 실현손익 ${Number(fill.realizedPnl).toLocaleString('ko-KR')}원` : ''}. ${String(fill.atKst)} 체결 기록.`
+    : '체결 확인 대기 중';
+  return [
+    { stage: 'OBSERVATION', symbol: '000000', outcome: 'PASS', reasonCode: null, reasonDetail: observation },
+    { stage: 'RISK_ENGINE', symbol, outcome: decision?.action === 'ALLOW' ? 'PASS' : 'DROPPED', reasonCode: decision?.action === 'ALLOW' ? null : 'RISK_DECISION_UNAVAILABLE', reasonDetail: decision ? `${String(decision.reason)}; 판단 원장 ${String(decision.id)}` : '판단 원장 없음' },
+    { stage: 'ORDER', symbol, outcome: fill ? 'PASS' : 'DROPPED', reasonCode: fill ? null : 'ORDER_RESULT_PENDING', reasonDetail: orderDetail },
+  ];
+}
+
 function runRows(state: ReturnType<typeof buildDemoState>, sessionHash: string, overlay: DemoOverlay) {
   const policy = policyFor(overlay, sessionHash, new Date());
-  const events = [...(state.showcase?.events ?? []), ...overlay.virtualEvents] as JsonRecord[];
-  const orderEvents = events.filter((event) => event.type === 'ORDER_CREATED');
-  return orderEvents.map((order, index) => {
-    const fill = events.find((event) => event.type === 'FILL' && (event.orderId === order.id || event.id === `${String(order.id).replace('order', 'fill')}`));
-    const eventAt = String(order.atKst ?? new Date().toISOString());
-    const sessionDate = String(order.sourceDate ?? eventAt.slice(0, 10));
-    const symbol = String(order.symbol ?? '000660.KS');
-    const quantity = Number(order.quantity ?? 0);
-    const runId = `demo_run_${hashHex(`${sessionHash}:${String(order.id)}`).slice(0, 24)}`;
+  const events = (state.showcase?.events ?? []) as JsonRecord[];
+  const runEvents = events
+    .filter((event) => event.type === 'ORDER_CREATED' || event.type === 'NO_ACTION')
+    .sort((left, right) => String(right.atKst).localeCompare(String(left.atKst)));
+  return runEvents.map((event, index) => {
+    const noOrder = event.type === 'NO_ACTION';
+    const fill = noOrder ? undefined : events.find((candidate) => candidate.type === 'FILL' && candidate.orderId === event.id);
+    const eventAt = String(event.atKst);
+    const sessionDate = String(event.sourceDate ?? eventAt.slice(0, 10));
+    const quantity = Number(event.quantity ?? 0);
+    const runId = runIdForEvent(sessionHash, String(event.id));
     const base = {
       runId,
       sessionDate,
-      state: fill ? 'COMPLETED' : 'SKIPPED_NO_ACTION',
+      state: noOrder ? 'SKIPPED_NO_ACTION' : fill ? 'COMPLETED' : 'PENDING_RECONCILIATION',
       brokerageMode: 'KIS_MOCK',
       policyId: policy.policyId,
       policyVersion: policy.version,
-      selectedSymbol: fullSymbol(symbol),
-      selectedSide: order.side === 'SELL' ? 'SELL' : 'BUY',
-      orderQuantity: quantity,
-      filledQuantity: fill ? Number(fill.quantity ?? quantity) : 0,
-      leavesQuantity: 0,
+      selectedSymbol: noOrder ? null : fullSymbol(String(event.symbol)),
+      selectedSide: noOrder ? null : event.side === 'SELL' ? 'SELL' : 'BUY',
+      orderQuantity: noOrder ? null : quantity,
+      filledQuantity: noOrder ? null : fill ? Number(fill.quantity ?? quantity) : 0,
+      leavesQuantity: noOrder ? null : fill ? 0 : quantity,
       limitPriceKrw: fill ? Number(fill.price ?? 0) : null,
       estimatedAmountKrw: fill ? Number(fill.grossAmount ?? Number(fill.price ?? 0) * quantity) : null,
       exitReason: null,
@@ -339,10 +459,10 @@ const RULE_SHAPES = [
 
 function defaultRules(preset: 'conservative' | 'balanced' | 'aggressive') {
   const thresholds = preset === 'conservative'
-    ? [0.15, 0.2, 300_000, -0.02, -0.1, 2, 0.5, 0.5]
+    ? [0.15, 0.2, 1_500_000, -0.02, -0.1, 2, 0.5, 0.5]
     : preset === 'aggressive'
-      ? [0.3, 0.4, 1_000_000, -0.05, -0.25, 5, 0.85, 0.85]
-      : [0.2, 0.3, 500_000, -0.03, -0.15, 3, 0.7, 0.7];
+      ? [0.3, 0.4, 3_000_000, -0.05, -0.25, 5, 0.85, 0.85]
+      : [0.2, 0.3, 2_000_000, -0.03, -0.15, 3, 0.7, 0.7];
   return RULE_SHAPES.map(([ruleId, ruleType, metric, operator], index) => {
     const enabled = index < 6;
     return {
@@ -388,7 +508,7 @@ function ensurePrinciple(overlay: DemoOverlay, sessionHash: string, now: Date) {
 }
 
 function timestamps(data: ReturnType<typeof buildDemoState>) {
-  return data.showcase?.daily.map((point) => ({ at: point.date, value: point.equity / data.showcase!.initialCapital })) ?? [];
+  return data.backtest.daily.map((point) => ({ at: point.date, value: point.equity }));
 }
 
 function dashboardEnvelope<T>(view: T, now: Date) {
@@ -416,13 +536,79 @@ function defaultPresets() {
   };
 }
 
-function recentRiskResults(overlay: DemoOverlay) {
-  return [...(overlay.decisions ?? [])]
-    .map((item) => item as JsonRecord)
+function scenarioDecisions(state: ReturnType<typeof buildDemoState>, sessionHash: string): JsonRecord[] {
+  const events = (state.showcase?.events ?? []) as JsonRecord[];
+  const orders = new Map(events.filter((event) => event.type === 'ORDER_CREATED').map((event) => [String(event.id), event]));
+  const fills = new Map(events.filter((event) => event.type === 'FILL').map((event) => [String(event.orderId), event]));
+  const principleId = `prc_${sessionHash.slice(0, 32)}`;
+  return events.filter((event) => event.type === 'DECISION_RECORDED').flatMap((event) => {
+    const order = orders.get(String(event.orderId));
+    const fill = fills.get(String(event.orderId));
+    if (!order || !fill) return [];
+    const decisionId = String(event.id);
+    const createdAt = String(event.atKst);
+    const validUntil = new Date(Date.parse(createdAt) + 30 * 60_000).toISOString();
+    const orderIntent = {
+      symbol: fullSymbol(String(event.symbol)),
+      side: event.side,
+      orderType: 'LIMIT',
+      quantity: Number(event.quantity),
+      estimatedPrice: Number(fill.price),
+      estimatedAmount: Number(event.estimatedAmountKrw),
+      timeframe: '1d',
+      strategyId: 'strategy_demo_fixed_sma',
+    };
+    const riskDecision = {
+      decisionId,
+      evaluationId: `eval_${hashHex(decisionId).slice(0, 32)}`,
+      decision: 'ALLOW',
+      canSubmitOrder: true,
+      mode: 'GUIDE',
+      portfolioSource: 'KIS_MOCK',
+      principleVersion: 1,
+      principleVersionId: `prv_${principleId.slice(4)}_1`,
+      catalogVersion: 1,
+      readinessPolicyVersion: 'mars-demo-v2',
+      schemaVersion: 'decision-projection.v1',
+      semanticInputHash: hashHex(JSON.stringify(orderIntent)),
+      snapshotArtifactHash: hashHex(`${state.dataSource.sourceSha256}:${String(event.sourceDate)}`),
+      validUntil,
+      violations: [],
+      issues: [],
+      warnings: [],
+      abstentions: [],
+      riskItems: [
+        { metric: 'order_amount_krw', value: Number(event.estimatedAmountKrw), severity: 'ALLOW', source: 'historical_ledger' },
+        { metric: 'available_cash_krw', value: Number(event.cashBeforeKrw), severity: 'ALLOW', source: 'historical_ledger' },
+        { metric: 'held_quantity', value: Number(event.positionBefore), severity: 'ALLOW', source: 'historical_ledger' },
+      ],
+    };
+    return [{
+      decisionId,
+      createdAt,
+      enforcementAction: 'ALLOW',
+      mode: 'GUIDE',
+      portfolioSource: 'KIS_MOCK',
+      principleId,
+      principleVersion: 1,
+      principleVersionId: riskDecision.principleVersionId,
+      validUntil,
+      riskDecision,
+      orderIntent,
+    }];
+  });
+}
+
+function allDecisions(state: ReturnType<typeof buildDemoState>, overlay: DemoOverlay, sessionHash: string): JsonRecord[] {
+  return [...scenarioDecisions(state, sessionHash), ...((overlay.decisions ?? []) as JsonRecord[])];
+}
+
+function recentRiskResults(decisions: JsonRecord[]) {
+  return [...decisions]
     .sort((left, right) => String(right.createdAt ?? '').localeCompare(String(left.createdAt ?? '')))
     .map((decision) => ({
       decisionId: String(decision.decisionId),
-      action: String(decision.action),
+      action: String(decision.enforcementAction ?? (decision.riskDecision as JsonRecord | undefined)?.decision ?? 'HOLD'),
       symbol: String((decision.orderIntent as JsonRecord | undefined)?.symbol ?? '000660'),
       asOf: String(decision.createdAt),
       validUntil: String(decision.validUntil),
@@ -430,53 +616,37 @@ function recentRiskResults(overlay: DemoOverlay) {
 }
 
 function dashboardBacktest(data: ReturnType<typeof buildDemoState>, now: Date) {
-  const runId = `demo_${hashHex(data.dataSource.sourceSha256).slice(0, 20)}`;
-  const daily = data.backtest.daily.map((point) => ({ at: point.date, value: point.equity / data.backtest.initialCapital }));
-  const guideReturn = data.backtest.returnBps / 10_000;
-  const metric = {
-    cagr: null,
-    mdd: data.backtest.maxDrawdownBps / 10_000,
-    sharpe: null,
-    sortino: null,
-    var95: null,
-    cvar95: null,
-  };
+  if (data.backtest.evaluatedThrough !== reports.backtestReport.period.end) {
+    return { ...dashboardEnvelope(null, now), viewState: 'EMPTY' };
+  }
   return dashboardEnvelope({
-    runId,
+    runId: `demo_${hashHex(data.dataSource.sourceSha256).slice(0, 20)}`,
     fixtureClass: 'REAL_ARTIFACT',
-    strategies: [
-      { strategy: 'Baseline', metrics: metric, curve: daily },
-      { strategy: 'Guide', metrics: { ...metric, cagr: guideReturn }, curve: daily },
-      { strategy: 'Strict', metrics: metric, curve: [] },
-    ],
-    heatmap: [...new Set(data.backtest.daily.map((point) => point.date.slice(0, 7)))].map((month) => ({ month, return: 0 })),
-    metricCards: [
-      { metric: 'Guide.netReturn', value: guideReturn },
-      { metric: 'Baseline.netReturn', value: null },
-      { metric: 'Strict.netReturn', value: null },
-    ],
-    projectionHash: hashHex(JSON.stringify(data.backtest.daily)),
+    strategies: reports.backtestReport.strategies,
+    heatmap: reports.backtestReport.heatmap,
+    metricCards: reports.backtestReport.metricCards,
+    projectionHash: hashHex(JSON.stringify(reports.backtestReport)),
   }, now);
 }
 
 function dashboardModelEvaluation(data: ReturnType<typeof buildDemoState>, now: Date) {
-  const runId = `demo_model_${hashHex(data.dataSource.sourceSha256).slice(0, 18)}`;
-  const unavailable = { cagr: null, mdd: null, sharpe: null, sortino: null, var95: null, cvar95: null };
+  if (data.clock.dateKst < reports.modelEvaluation.period.end) {
+    return { ...dashboardEnvelope(null, now), viewState: 'EMPTY' };
+  }
   return dashboardEnvelope({
-    runId,
+    runId: `demo_model_${hashHex(data.dataSource.sourceSha256).slice(0, 18)}`,
     models: [
-      { modelId: 'BASELINE', status: 'ABSTAIN', metrics: unavailable },
-      { modelId: 'LSTM', status: 'ABSTAIN', metrics: unavailable },
-      { modelId: 'LIGHTGBM', status: 'ABSTAIN', metrics: unavailable },
+      ...reports.modelEvaluation.models.map((row) => ({ modelId: row.modelId, status: row.status, metrics: row.metrics })),
     ],
     timeline: timestamps(data),
-    sourceRunIds: [],
+    sourceRunIds: reports.modelEvaluation.sourceRunIds,
   }, now);
 }
 
 function performanceReport(data: ReturnType<typeof buildDemoState>, overlay: DemoOverlay, sessionHash: string, now: Date) {
   const source = sourceMetadata();
   const principle = ensurePrinciple(overlay, sessionHash, now);
+  const realized = saleSummary(data);
   return {
     report: {
       contractId: 'owner-performance-report.v1',
@@ -510,10 +680,10 @@ function performanceReport(data: ReturnType<typeof buildDemoState>, overlay: Dem
         },
         fixedDailyForecast: { status: 'NOT_AVAILABLE', totalCount: 0, realizedCount: 0, pendingCount: 0, mae: null, rmse: null, bias: null },
         actualTrading: {
-          status: data.showcase?.realizedPnl ? 'REALIZED' : 'NO_REALIZED_TRADES',
-          closedPositionCount: data.showcase?.realizedPnl ? 1 : 0,
+          status: realized.closedPositionCount > 0 ? 'REALIZED' : 'NO_REALIZED_TRADES',
+          closedPositionCount: realized.closedPositionCount,
           openPositionCount: data.showcase?.positions.length ?? 0,
-          realizedPnlKrw: data.showcase?.realizedPnl ?? 0,
+          realizedPnlKrw: realized.realizedPnlKrw,
           unrealizedStatus: data.showcase?.positions.length ? 'OPEN' : 'NONE',
         },
       },
@@ -587,29 +757,30 @@ function cashAndPrice(state: ReturnType<typeof buildDemoState>, symbol: string) 
   return bar ? bar.close : 0;
 }
 
-function ordersFromEvents(state: ReturnType<typeof buildDemoState>, overlay: DemoOverlay) {
-  return [...(state.showcase?.events ?? []), ...overlay.virtualEvents].filter((event) => event.type === 'ORDER_CREATED') as JsonRecord[];
+function ordersFromEvents(state: ReturnType<typeof buildDemoState>) {
+  return (state.showcase?.events ?? []).filter((event) => event.type === 'ORDER_CREATED') as JsonRecord[];
 }
 
-function fillsFromEvents(state: ReturnType<typeof buildDemoState>, overlay: DemoOverlay) {
-  return [...(state.showcase?.events ?? []), ...overlay.virtualEvents].filter((event) => event.type === 'FILL') as JsonRecord[];
+function fillsFromEvents(state: ReturnType<typeof buildDemoState>) {
+  return (state.showcase?.events ?? []).filter((event) => event.type === 'FILL') as JsonRecord[];
 }
 
-function orderDetail(orderId: string, state: ReturnType<typeof buildDemoState>, overlay: DemoOverlay, sessionHash: string) {
-  const order = ordersFromEvents(state, overlay).find((event) => String(event.id) === orderId);
+function orderDetail(orderId: string, state: ReturnType<typeof buildDemoState>, sessionHash: string) {
+  const order = ordersFromEvents(state).find((event) => String(event.id) === orderId);
   if (!order) return null;
+  const filled = fillsFromEvents(state).some((event) => event.orderId === orderId);
   return {
     orderId,
     accountId: accountIdFor(sessionHash),
     decisionId: String(order.decisionId ?? order.id),
     brokerageMode: 'KIS_MOCK',
-    status: 'ACCEPTED',
+    status: filled ? 'FILLED' : 'ACCEPTED',
     submittedAt: String(order.atKst ?? new Date().toISOString()),
   };
 }
 
-function fullPositionFills(state: ReturnType<typeof buildDemoState>, overlay: DemoOverlay) {
-  return fillsFromEvents(state, overlay).map((event) => {
+function fullPositionFills(state: ReturnType<typeof buildDemoState>) {
+  return fillsFromEvents(state).map((event) => {
     const amount = Number(event.grossAmount ?? Number(event.price ?? 0) * Number(event.quantity ?? 0));
     return {
       orderId: String(event.orderId ?? event.id),
@@ -718,7 +889,20 @@ function decisionInputs(decision: JsonRecord) {
 }
 
 function fullJournalPage(overlay: DemoOverlay, sessionHash: string, now: Date) {
-  return { items: journalRows(overlay).map((entry) => asJournal(entry, sessionHash, now)), nextCursor: null };
+  const existing = new Set(journalRows(overlay).map((entry) => String(entry.journalId)));
+  const deleted = new Set(overlay.deletedSeedJournalIds ?? []);
+  const missing = initialJournalEntries(sessionHash, now).filter((entry) => !existing.has(String(entry.journalId)) && !deleted.has(String(entry.journalId)));
+  if (missing.length) {
+    overlay.journalEntries = [...journalRows(overlay), ...missing];
+    overlay.journalSeedVersion = 'v2';
+    saveOverlay(sessionHash, overlay, now);
+  }
+  return {
+    items: journalRows(overlay)
+      .map((entry) => asJournal(entry, sessionHash, now))
+      .sort((left, right) => right.createdAt.localeCompare(left.createdAt)),
+    nextCursor: null,
+  };
 }
 
 function ragCorpusStatus(sessionHash: string, config: DemoAgentConfig, now: Date, vertexServiceConfigured: boolean) {
@@ -807,8 +991,7 @@ export async function dispatchFullUiApi(request: NextRequest, routeParts: string
   } catch {
     agentConfigAvailable = false;
   }
-  const serviceAccountPath = process.env.MARS_DEMO_VERTEX_SERVICE_ACCOUNT_FILE;
-  const vertexServiceConfigured = Boolean(agentConfigAvailable && serviceAccountPath && existsSync(serviceAccountPath));
+  const vertexServiceConfigured = agentConfigAvailable && vertexAccountConfigured();
   const overlay = readSessionOverlay(sessionHash);
   const state = buildDemoState(sessionHash, overlay, config, now);
   const pathname = `/${routeParts.join('/')}`;
@@ -816,28 +999,36 @@ export async function dispatchFullUiApi(request: NextRequest, routeParts: string
   const accountId = accountIdFor(sessionHash);
 
   if (method === 'GET' && pathname === '/v1/system/health') {
-    return envelope({ asOf: now.toISOString(), pythonService: 'UP', brokerage: 'UP', killSwitchActive: overlay.globalKillSwitchActive ?? false, dataFreshness: { priceFresh: true, signalFresh: null, ragFresh: true }, degradedFeatures: [] }, id);
+    return envelope({ asOf: now.toISOString(), pythonService: 'UP', brokerage: 'UP', killSwitchActive: Boolean(overlay.globalKillSwitchActive || overlay.personalKillSwitchActive), dataFreshness: { priceFresh: true, signalFresh: null, ragFresh: true }, degradedFeatures: [] }, id);
   }
-  if (method === 'GET' && pathname === '/v1/risk/portfolio') return envelope(riskPortfolio(state, now), id);
+  if (method === 'GET' && pathname === '/v1/risk/portfolio') return envelope(riskPortfolio(state, overlay, now), id);
   if (method === 'GET' && pathname === '/v1/instruments/display') return envelope(instrumentCatalog(state), id);
-  if (method === 'GET' && pathname === '/v1/risk/kill-switch') return envelope({ globalActive: overlay.globalKillSwitchActive ?? false, effectiveActive: overlay.globalKillSwitchActive ?? false, active: overlay.globalKillSwitchActive ?? false, changedAt: now.toISOString(), reasonClass: 'INITIAL_STATE' }, id);
-  if (method === 'GET' && pathname === '/v2/risk/kill-switch') return envelope({ effectiveActive: false, active: false, changedAt: now.toISOString(), reasonClass: 'INITIAL_STATE' }, id);
-  if (method === 'POST' && (pathname === '/v1/risk/kill-switch' || pathname === '/v2/risk/kill-switch')) {
+  if (method === 'GET' && pathname === '/v1/risk/kill-switch') return envelope({ globalActive: overlay.globalKillSwitchActive ?? false, effectiveActive: Boolean(overlay.globalKillSwitchActive || overlay.personalKillSwitchActive), active: overlay.globalKillSwitchActive ?? false, changedAt: overlay.globalKillSwitchChangedAt ?? now.toISOString(), reasonClass: overlay.globalKillSwitchActive ? 'OPERATOR_MANUAL_STOP' : 'INITIAL_STATE' }, id);
+  if (method === 'GET' && pathname === '/v2/risk/kill-switch') return envelope({ globalActive: overlay.globalKillSwitchActive ?? false, effectiveActive: Boolean(overlay.globalKillSwitchActive || overlay.personalKillSwitchActive), active: overlay.personalKillSwitchActive ?? false, changedAt: overlay.personalKillSwitchChangedAt ?? now.toISOString(), reasonClass: String(overlay.personalKillSwitchReasonClass ?? 'INITIAL_STATE') }, id);
+  if (method === 'POST' && pathname === '/v1/risk/kill-switch') {
     overlay.globalKillSwitchActive = Boolean(body.active);
+    overlay.globalKillSwitchChangedAt = now.toISOString();
     saveOverlay(sessionHash, overlay, now);
-    return envelope({ globalActive: overlay.globalKillSwitchActive, effectiveActive: overlay.globalKillSwitchActive, active: overlay.globalKillSwitchActive, changedAt: now.toISOString(), reasonClass: 'USER_MANUAL_STOP' }, id);
+    return envelope({ globalActive: overlay.globalKillSwitchActive, effectiveActive: Boolean(overlay.globalKillSwitchActive || overlay.personalKillSwitchActive), active: overlay.globalKillSwitchActive, changedAt: now.toISOString(), reasonClass: overlay.globalKillSwitchActive ? 'OPERATOR_MANUAL_STOP' : 'ADMIN_RESUME' }, id);
+  }
+  if (method === 'POST' && pathname === '/v2/risk/kill-switch') {
+    overlay.personalKillSwitchActive = Boolean(body.active);
+    overlay.personalKillSwitchChangedAt = now.toISOString();
+    overlay.personalKillSwitchReasonClass = overlay.personalKillSwitchActive ? 'USER_MANUAL_STOP' : 'USER_RESUME';
+    saveOverlay(sessionHash, overlay, now);
+    return envelope({ globalActive: overlay.globalKillSwitchActive ?? false, effectiveActive: Boolean(overlay.globalKillSwitchActive || overlay.personalKillSwitchActive), active: overlay.personalKillSwitchActive, changedAt: now.toISOString(), reasonClass: overlay.personalKillSwitchReasonClass }, id);
   }
   if (method === 'GET' && pathname === '/v1/principle-presets') return envelope(defaultPresets(), id);
   if (method === 'GET' && pathname === '/v1/principles') return envelope(principalList(overlay, sessionHash, now).list, id);
   if (method === 'GET' && pathname === '/v1/automation/status') {
-    return envelope({ contractId: 'automation-control.v1', controlState: overlay.autoArmed ? 'ARMED' : 'DISARMED', projectionState: overlay.autoArmed ? 'ARMED' : 'DISARMED', version: 1, brokerageMode: 'KIS_MOCK', principleId: ensurePrinciple(overlay, sessionHash, now).principleId, strategyId: 'strategy_demo_fixed_sma', killSwitchActive: false, certificationStatus: 'VALID' }, id);
+    return envelope({ contractId: 'automation-control.v1', controlState: overlay.autoArmed ? 'ARMED' : 'DISARMED', projectionState: overlay.autoArmed ? 'ARMED' : 'DISARMED', version: 1, brokerageMode: 'KIS_MOCK', principleId: ensurePrinciple(overlay, sessionHash, now).principleId, strategyId: 'strategy_demo_fixed_sma', killSwitchActive: Boolean(overlay.globalKillSwitchActive || overlay.personalKillSwitchActive), certificationStatus: 'VALID' }, id);
   }
   if (method === 'GET' && pathname === '/v2/automation/status') return envelope(statusV2(overlay, state, sessionHash, now), id);
   if (method === 'GET' && pathname === '/v3/automation/status') return envelope(statusV3(overlay, state, sessionHash, now), id);
   if (method === 'GET' && pathname === '/v3/automation/policy') return envelope(policyFor(overlay, sessionHash, now), id);
   if (method === 'GET' && pathname === '/v3/automation/runs') return envelope({ items: runRows(state, sessionHash, overlay).slice(0, Number(request.nextUrl.searchParams.get('size') ?? 20)), nextCursor: null }, id);
   if (method === 'GET' && pathname === '/v3/automation/positions') return envelope({ items: positionRows(state, overlay, sessionHash, now).map((row) => row.v3) }, id);
-  if (method === 'GET' && pathname === '/v2/automation/positions') return envelope({ realizedSummary: { closedPositionCount: 1, realizedPnlKrw: state.showcase?.realizedPnl ?? 0, realizedGrossKrw: state.showcase?.realizedPnl ?? 0, winningPositionCount: 1, losingPositionCount: 0, evidenceMode: 'KIS_MOCK', performanceClaimAllowed: false }, items: positionRows(state, overlay, sessionHash, now).map((row) => row.v2), nextCursor: null }, id);
+  if (method === 'GET' && pathname === '/v2/automation/positions') return envelope({ realizedSummary: saleSummary(state), items: positionRows(state, overlay, sessionHash, now).map((row) => row.v2), nextCursor: null }, id);
 
   return await dispatchFullUiApiCore({ request, routeParts, method, pathname, body, id, identity, sessionHash, accountId, now, overlay, state, config, agentConfigAvailable, vertexServiceConfigured });
 }
@@ -863,17 +1054,19 @@ interface DispatchContext {
 async function dispatchFullUiApiCore(context: DispatchContext) {
   const { request, method, pathname, body, id, identity, sessionHash, accountId, now, overlay, state, config, agentConfigAvailable, vertexServiceConfigured } = context;
   const principle = ensurePrinciple(overlay, sessionHash, now);
-  const latest = recentRiskResults(overlay);
+  const decisions = allDecisions(state, overlay, sessionHash);
+  const latest = recentRiskResults(decisions);
 
   if (method === 'POST' && pathname === '/v1/automation/disarm') {
     overlay.autoArmed = false;
     saveOverlay(sessionHash, overlay, now);
-    return envelope({ contractId: 'automation-control.v1', controlState: 'DISARMED', projectionState: 'DISARMED', version: policyFor(overlay, sessionHash, now).version, brokerageMode: 'KIS_MOCK', principleId: principle.principleId, strategyId: 'strategy_demo_fixed_sma', killSwitchActive: false, certificationStatus: 'VALID' }, id);
+    return envelope({ contractId: 'automation-control.v1', controlState: 'DISARMED', projectionState: 'DISARMED', version: policyFor(overlay, sessionHash, now).version, brokerageMode: 'KIS_MOCK', principleId: principle.principleId, strategyId: 'strategy_demo_fixed_sma', killSwitchActive: Boolean(overlay.globalKillSwitchActive || overlay.personalKillSwitchActive), certificationStatus: 'VALID' }, id);
   }
   if (method === 'PUT' && pathname === '/v3/automation/policy') {
     const current = policyFor(overlay, sessionHash, now);
     if (Number(body.expectedVersion) !== current.version) return envelopeError('CONFLICT', '운용 정책이 먼저 변경되었습니다.', id, 409);
     overlay.automationPolicy = {
+      ...(overlay.automationPolicy ?? {}),
       ...current,
       ...body,
       contractId: 'automation-policy.v2',
@@ -885,7 +1078,7 @@ async function dispatchFullUiApiCore(context: DispatchContext) {
     return envelope(policyFor(overlay, sessionHash, now), id);
   }
   if (method === 'POST' && pathname === '/v3/automation/arm') {
-    if (overlay.globalKillSwitchActive) return envelopeError('CONFLICT', '안전 중지 상태에서는 운용을 시작할 수 없습니다.', id, 409);
+    if (overlay.globalKillSwitchActive || overlay.personalKillSwitchActive) return envelopeError('CONFLICT', '안전 중지 상태에서는 운용을 시작할 수 없습니다.', id, 409);
     overlay.autoArmed = true;
     saveOverlay(sessionHash, overlay, now);
     return envelope(statusV3(overlay, state, sessionHash, now), id);
@@ -919,28 +1112,30 @@ async function dispatchFullUiApiCore(context: DispatchContext) {
   if (method === 'GET' && pathname === '/v4/automation/capital-policy') {
     return envelope(capitalPolicyFor(overlay), id);
   }
-  if (method === 'GET' && pathname === '/v4/automation/capital-status') return envelope(null, id);
+  if (method === 'GET' && pathname === '/v4/automation/capital-status') return envelope(capitalStatusFor(state, overlay, sessionHash, now), id);
   if (method === 'GET' && pathname.startsWith('/v3/automation/runs/')) {
     const runId = decodeURIComponent(pathname.split('/').at(-1) ?? '');
     const run = runRows(state, sessionHash, overlay).find((item) => item.runId === runId);
-    return run ? envelope({ contractId: 'automation-run-detail.v3', run, candidateScreenings: [] }, id) : envelopeError('NOT_FOUND', '실행 내역을 찾을 수 없습니다.', id, 404);
+    return run ? envelope({ contractId: 'automation-run-detail.v3', run, candidateScreenings: [], stageOutcomes: runStageOutcomes(state, sessionHash, runId) }, id) : envelopeError('NOT_FOUND', '실행 내역을 찾을 수 없습니다.', id, 404);
   }
 
   if (method === 'GET' && pathname === '/v1/dashboard/risk-results/recent') return envelope({ items: latest }, id);
   if (method === 'GET' && pathname === '/v1/dashboard/risk-results/latest') return envelope(latest[0] ?? null, id);
   if (method === 'GET' && pathname.startsWith('/v1/dashboard/risk-results/')) {
     const decisionId = decodeURIComponent(pathname.split('/').at(-1) ?? '');
-    const decision = (overlay.decisions ?? []).find((entry) => String(entry.decisionId) === decisionId) as JsonRecord | undefined;
-    return decision ? envelope(decision, id) : envelopeError('NOT_FOUND', '판정을 찾을 수 없습니다.', id, 404);
+    const decision = decisions.find((entry) => String(entry.decisionId) === decisionId);
+    return decision
+      ? envelope(dashboardEnvelope(dashboardRiskResult(decision), now), id)
+      : envelopeError('NOT_FOUND', '판정을 찾을 수 없습니다.', id, 404);
   }
   if (method === 'GET' && pathname.endsWith('/inputs') && pathname.startsWith('/v1/decisions/')) {
     const decisionId = decodeURIComponent(pathname.split('/').filter(Boolean).at(-2) ?? '');
-    const decision = (overlay.decisions ?? []).find((entry) => String(entry.decisionId) === decisionId) as JsonRecord | undefined;
+    const decision = decisions.find((entry) => String(entry.decisionId) === decisionId);
     return decision ? envelope(decisionInputs(decision), id) : envelopeError('NOT_FOUND', '판정 입력을 찾을 수 없습니다.', id, 404);
   }
   if (method === 'GET' && pathname.startsWith('/v1/decisions/')) {
     const decisionId = decodeURIComponent(pathname.split('/').at(-1) ?? '');
-    const decision = (overlay.decisions ?? []).find((entry) => String(entry.decisionId) === decisionId) as JsonRecord | undefined;
+    const decision = decisions.find((entry) => String(entry.decisionId) === decisionId);
     return decision ? envelope(decision, id) : envelopeError('NOT_FOUND', '판정을 찾을 수 없습니다.', id, 404);
   }
   if (method === 'POST' && pathname === '/v1/decisions/evaluate-order') {
@@ -978,13 +1173,13 @@ async function dispatchFullUiApiCore(context: DispatchContext) {
   if (pathname.startsWith('/v1/brokerage/orders/')) {
     const orderId = decodeURIComponent(pathname.split('/')[4] ?? '');
     if (method === 'GET') {
-      const detail = orderDetail(orderId, state, overlay, sessionHash);
+      const detail = orderDetail(orderId, state, sessionHash);
       return detail ? envelope(detail, id) : envelopeError('NOT_FOUND', '주문을 찾을 수 없습니다.', id, 404);
     }
     if (method === 'POST' && pathname.endsWith('/cancel')) {
-      const detail = orderDetail(orderId, state, overlay, sessionHash);
+      const detail = orderDetail(orderId, state, sessionHash);
       if (!detail) return envelopeError('NOT_FOUND', '주문을 찾을 수 없습니다.', id, 404);
-      const filled = fullPositionFills(state, overlay).some((fill) => fill.orderId === orderId);
+      const filled = fullPositionFills(state).some((fill) => fill.orderId === orderId);
       return filled
         ? envelopeError('CONFLICT', '이미 체결된 주문은 취소할 수 없습니다.', id, 409)
         : envelope({ ...detail, status: 'CANCELLED' }, id);
@@ -995,17 +1190,29 @@ async function dispatchFullUiApiCore(context: DispatchContext) {
     const symbol = request.nextUrl.searchParams.get('symbol') ?? '';
     const price = Number(request.nextUrl.searchParams.get('price') ?? 0);
     const balance = accountBalance(state, overlay, sessionHash, now);
-    return envelope({ accountId, brokerageMode: 'KIS_MOCK', symbol, cashKrw: balance.cashKrw, estimatedPrice: price, buyableAmountKrw: balance.cashKrw, buyableQuantity: price > 0 ? Math.floor(balance.cashKrw / price) : 0, observedAt: now.toISOString(), sourceVersion: 'mars-demo-2026-09-29.1' }, id);
+    return envelope({ accountId, brokerageMode: 'KIS_MOCK', symbol, cashKrw: balance.cashKrw, estimatedPrice: price, buyableAmountKrw: balance.cashKrw, buyableQuantity: price > 0 ? Math.floor(balance.cashKrw / price) : 0, observedAt: now.toISOString(), sourceVersion: state.source.seedVersion }, id);
   }
   if (method === 'GET' && pathname.startsWith('/v1/brokerage/mock/accounts/') && pathname.endsWith('/fills')) {
     const from = request.nextUrl.searchParams.get('from') ?? '0000-01-01';
     const to = request.nextUrl.searchParams.get('to') ?? '9999-12-31';
-    const items = fullPositionFills(state, overlay).filter((fill) => String(fill.filledAt).slice(0, 10) >= from && String(fill.filledAt).slice(0, 10) <= to);
+    const items = fullPositionFills(state).filter((fill) => String(fill.filledAt).slice(0, 10) >= from && String(fill.filledAt).slice(0, 10) <= to);
     return envelope({ items, nextCursor: null }, id);
   }
   if (method === 'GET' && pathname.startsWith('/v3/signals/')) {
     const symbol = decodeURIComponent(pathname.split('/').at(-1) ?? '');
-    return envelope({ symbol, timeframe: '1d', asOf: state.clock.kst, composite: { status: 'ABSTAIN', reason: '해당 종목의 검증된 모델 신호가 없습니다.' }, slots: [], disagrees: false, distinctSignals: [], warnings: [] }, id);
+    const missing = (producer: string) => ({ status: 'ABSTAIN', producer, sourceWorkspace: 'mars-demo', reason: 'MISSING_EVIDENCE' });
+    return envelope({
+      symbol,
+      timeframe: '1d',
+      composite: { status: 'ABSTAIN', reason: 'REQUIRED_COMPONENT_UNAVAILABLE' },
+      components: {
+        ruleBaseline: missing('RULE_BASELINE'),
+        lstm: { status: 'ABSTAIN', producer: 'LSTM', sourceWorkspace: 'mars-demo', reason: 'STALE_EVIDENCE' },
+        lightgbm: missing('LIGHTGBM'),
+        hmmRegime: missing('HMM'),
+      },
+      warnings: ['LSTM 예측 원장은 2026-09-18 세션까지 확인됐습니다. 다음 거래 세션에 유효한 새 신호가 없어 주문 판단에 사용하지 않습니다.'],
+    }, id);
   }
 
   if (method === 'GET' && pathname === '/v2/rag/corpus-status') return NextResponse.json(ragCorpusStatus(sessionHash, config, now, vertexServiceConfigured), { headers: { 'Cache-Control': 'no-store' } });
@@ -1093,7 +1300,8 @@ async function dispatchFullUiApiCore(context: DispatchContext) {
 async function dispatchFullUiApiRemainder(context: DispatchContext) {
   const { request, method, pathname, body, id, sessionHash, accountId, now, overlay, state } = context;
   const principle = ensurePrinciple(overlay, sessionHash, now);
-  const latest = recentRiskResults(overlay);
+  const decisions = allDecisions(state, overlay, sessionHash);
+  const latest = recentRiskResults(decisions);
 
   if (method === 'GET' && pathname === '/v1/dashboard/risk-results/recent') return envelope({ items: latest }, id);
   if (method === 'GET' && pathname === '/v1/dashboard/risk-results/latest') {
@@ -1101,7 +1309,7 @@ async function dispatchFullUiApiRemainder(context: DispatchContext) {
   }
   if (method === 'GET' && pathname.startsWith('/v1/dashboard/risk-results/')) {
     const decisionId = decodeURIComponent(pathname.split('/').at(-1) ?? '');
-    const decision = (overlay.decisions ?? []).find((entry) => String(entry.decisionId) === decisionId) as JsonRecord | undefined;
+    const decision = decisions.find((entry) => String(entry.decisionId) === decisionId);
     return decision
       ? envelope(dashboardEnvelope(dashboardRiskResult(decision), now), id)
       : envelopeError('NOT_FOUND', '저장된 판정이 없습니다.', id, 404);
@@ -1160,9 +1368,9 @@ async function dispatchFullUiApiRemainder(context: DispatchContext) {
     return envelope({ registered: false, credential: null }, id);
   }
   if (method === 'GET' && pathname === '/v1/system/health') {
-    return envelope({ asOf: now.toISOString(), pythonService: 'UP', brokerage: 'UP', killSwitchActive: overlay.globalKillSwitchActive ?? false, dataFreshness: { priceFresh: true, signalFresh: null, ragFresh: true }, degradedFeatures: [] }, id);
+    return envelope({ asOf: now.toISOString(), pythonService: 'UP', brokerage: 'UP', killSwitchActive: Boolean(overlay.globalKillSwitchActive || overlay.personalKillSwitchActive), dataFreshness: { priceFresh: true, signalFresh: null, ragFresh: true }, degradedFeatures: [] }, id);
   }
-  if (method === 'GET' && pathname === '/v1/risk/portfolio') return envelope(riskPortfolio(state, now), id);
+  if (method === 'GET' && pathname === '/v1/risk/portfolio') return envelope(riskPortfolio(state, overlay, now), id);
   if (method === 'GET' && pathname === '/v1/instruments/display') return envelope(instrumentCatalog(state), id);
 
   if (method === 'GET' && pathname.startsWith('/v1/brokerage/mock/accounts/') && pathname.endsWith('/balances')) {
@@ -1172,12 +1380,12 @@ async function dispatchFullUiApiRemainder(context: DispatchContext) {
     const symbol = request.nextUrl.searchParams.get('symbol') ?? '';
     const price = Number(request.nextUrl.searchParams.get('price') ?? 0);
     const balance = accountBalance(state, overlay, sessionHash, now);
-    return envelope({ accountId, brokerageMode: 'KIS_MOCK', symbol, cashKrw: balance.cashKrw, estimatedPrice: price, buyableAmountKrw: balance.cashKrw, buyableQuantity: price > 0 ? Math.floor(balance.cashKrw / price) : 0, observedAt: now.toISOString(), sourceVersion: 'mars-demo-2026-09-29.1' }, id);
+    return envelope({ accountId, brokerageMode: 'KIS_MOCK', symbol, cashKrw: balance.cashKrw, estimatedPrice: price, buyableAmountKrw: balance.cashKrw, buyableQuantity: price > 0 ? Math.floor(balance.cashKrw / price) : 0, observedAt: now.toISOString(), sourceVersion: state.source.seedVersion }, id);
   }
   if (method === 'GET' && pathname.startsWith('/v1/brokerage/mock/accounts/') && pathname.endsWith('/fills')) {
     const from = request.nextUrl.searchParams.get('from') ?? '0000-01-01';
     const to = request.nextUrl.searchParams.get('to') ?? '9999-12-31';
-    const items = fullPositionFills(state, overlay).filter((fill) => String(fill.filledAt).slice(0, 10) >= from && String(fill.filledAt).slice(0, 10) <= to);
+    const items = fullPositionFills(state).filter((fill) => String(fill.filledAt).slice(0, 10) >= from && String(fill.filledAt).slice(0, 10) <= to);
     return envelope({ items, nextCursor: null }, id);
   }
   if (method === 'GET' && pathname === '/v1/rag/sources') return envelope({ items: publicEvidence() }, id);
@@ -1185,7 +1393,7 @@ async function dispatchFullUiApiRemainder(context: DispatchContext) {
   if (method === 'GET' && pathname === '/v1/journals') return envelope(fullJournalPage(overlay, sessionHash, now), id);
   if (method === 'POST' && pathname === '/v1/journals') {
     const entry = asJournal({ ...body, journalId: `jrn_${randomUUID().replaceAll('-', '')}`, createdAt: now.toISOString(), updatedAt: now.toISOString(), version: 1 }, sessionHash, now);
-    overlay.journalEntries = [...journalRows(overlay), entry as unknown as JsonRecord].slice(0, 25);
+    overlay.journalEntries = [...journalRows(overlay), entry as unknown as JsonRecord].slice(0, 75);
     saveOverlay(sessionHash, overlay, now);
     return envelope(entry, id);
   }
@@ -1198,6 +1406,9 @@ async function dispatchFullUiApiRemainder(context: DispatchContext) {
     if (method === 'DELETE' || method === 'PATCH') {
       if (Number(body.expectedVersion) !== current.version) return envelopeError('CONFLICT', '학습일지가 먼저 변경되었습니다.', id, 409);
       if (method === 'DELETE') {
+        if (Array.isArray(current.tags) && current.tags.includes('자동 생성')) {
+          overlay.deletedSeedJournalIds = [...new Set([...(overlay.deletedSeedJournalIds ?? []), journalId])];
+        }
         rows.splice(index, 1);
         overlay.journalEntries = rows;
         saveOverlay(sessionHash, overlay, now);

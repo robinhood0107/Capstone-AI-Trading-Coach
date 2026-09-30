@@ -2,7 +2,7 @@ import { NextRequest } from 'next/server';
 import { readAgentConfig } from '@demo/server/config';
 import { AgentConfigurationError, AgentUsageError, askVertex } from '@demo/server/vertex';
 import { json, readBoundedJson, requireDemoSession, requireSameOrigin } from '@demo/server/http';
-import { usageSnapshot } from '@demo/server/store';
+import { getOverlay, usageSnapshot } from '@demo/server/store';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -20,6 +20,9 @@ export async function POST(request: NextRequest) {
   if (originError) return originError;
   const identity = requireDemoSession(request);
   if (!identity) return json({ error: { code: 'DEMO_SESSION_REQUIRED', message: '세션이 만료되었습니다. 다시 시작해 주세요.' } }, 401);
+  if (!getOverlay(identity.hash).ragConsent) {
+    return json({ error: { code: 'EXTERNAL_AI_CONSENT_REQUIRED', message: '외부 처리 동의가 필요합니다.' } }, 403);
+  }
   const body = await readBoundedJson(request, 16_384);
   if (!body.ok) return json({ error: { code: body.reason, message: '질문 입력을 확인해 주세요.' } }, body.reason === 'TOO_LARGE' ? 413 : 400);
   if (!body.value || typeof body.value !== 'object' || Array.isArray(body.value)) {

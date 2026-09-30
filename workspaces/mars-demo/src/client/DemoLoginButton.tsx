@@ -1,7 +1,6 @@
 'use client';
 
 import { useState } from 'react';
-import { Button } from '@/shared/ui/Button';
 
 export function DemoLoginButton() {
   const [pending, setPending] = useState(false);
@@ -36,14 +35,14 @@ export function DemoLoginButton() {
   return (
     <div className="mt-7">
       {error ? <p role="alert" className="mb-3 rounded-control bg-block/[0.08] px-3 py-2 text-[13px] text-block">{error}</p> : null}
-      <Button
+      <button
+        type="button"
         onClick={() => void enter()}
         disabled={pending}
-        variant="primary"
-        className="w-full py-3 text-[15px]"
+        className="tap w-full rounded-control bg-brand px-4 py-3 text-[15px] font-semibold text-on-brand hover:opacity-90 disabled:bg-line disabled:text-faint"
       >
         {pending ? '로그인 중…' : '로그인'}
-      </Button>
+      </button>
     </div>
   );
 }

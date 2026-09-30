@@ -31,6 +31,8 @@ export function defaultOverlay(): DemoOverlay {
     dailyLossLimitPct: 2,
     virtualEvents: [],
     notes: [],
+    personalKillSwitchActive: false,
+    personalKillSwitchReasonClass: 'INITIAL_STATE',
     globalKillSwitchActive: false,
     ragConsent: false,
     decisions: [],

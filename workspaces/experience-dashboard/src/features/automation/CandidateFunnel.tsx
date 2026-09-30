@@ -66,7 +66,7 @@ export interface CandidateFunnelProps {
 
 interface StageRow {
   stage: AutomationStageName;
-  passed: string[];
+  passed: { symbol: string; reasonDetail: string | null }[];
   dropped: { symbol: string; reasonCode: string; reasonDetail: string | null }[];
 }
 
@@ -84,7 +84,7 @@ export function CandidateFunnel({ outcomes, nameOf }: CandidateFunnelProps) {
         byStage.set(item.stage, row);
       }
       if (item.outcome === 'PASS') {
-        row.passed.push(item.symbol);
+        row.passed.push({ symbol: item.symbol, reasonDetail: item.reasonDetail });
       } else {
         row.dropped.push({
           symbol: item.symbol,
@@ -120,6 +120,15 @@ export function CandidateFunnel({ outcomes, nameOf }: CandidateFunnelProps) {
                 </span>
               )}
             </p>
+            {row.passed.some((item) => item.reasonDetail) ? (
+              <ul className="mt-0.5 space-y-0.5">
+                {row.passed.filter((item) => item.reasonDetail).map((item) => (
+                  <li key={`${row.stage}:${item.symbol}`} className="break-words text-[11px] text-muted">
+                    {label(item.symbol)} · {item.reasonDetail}
+                  </li>
+                ))}
+              </ul>
+            ) : null}
             {row.dropped.length > 0 ? (
               <ul className="mt-0.5 space-y-0.5">
                 {row.dropped.map((item) => (

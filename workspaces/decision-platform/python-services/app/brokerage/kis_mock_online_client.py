@@ -409,6 +409,7 @@ class KISMockBrokerageHttpClient:
             self._clear_account()
             raise
         self._origin = settings.base_url
+        self._request_timeout_seconds = settings.kis_timeout_seconds
 
     def request(
         self,
@@ -483,6 +484,11 @@ class KISMockBrokerageHttpClient:
                 headers=request_headers,
                 params=query,
                 json=body,
+                # A cash order can be accepted even when its response is slow. Keep
+                # this single POST open longer; every other KIS read retains 10 s.
+                timeout=25.0
+                if normalized_method == "POST" and path == ORDER_CASH_PATH
+                else self._request_timeout_seconds,
             )
         except KISBrokerageCallBudgetExceeded:
             raise

@@ -9,7 +9,7 @@ class BrokerageGrpcPropertiesTest {
     fun `default deadline covers bounded mock limiter and transport waits`() {
         val properties = BrokerageGrpcProperties()
 
-        assertEquals(45_000, properties.deadlineMillis)
+        assertEquals(90_000, properties.deadlineMillis)
     }
 
     @Test
@@ -18,7 +18,7 @@ class BrokerageGrpcPropertiesTest {
             BrokerageGrpcProperties(
                 target = "127.0.0.1:50052",
                 sharedSecret = "s".repeat(32),
-                deadlineMillis = 60_001,
+                deadlineMillis = 90_001,
             )
 
         assertThrows(IllegalArgumentException::class.java) {

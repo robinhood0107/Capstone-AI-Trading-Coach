@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+import hashlib
 from dataclasses import replace
-from datetime import date
+from datetime import date, datetime
 from typing import Any
+from zoneinfo import ZoneInfo
 
 import pytest
 
@@ -691,6 +693,48 @@ def test_account_order_scan_paginates_and_detects_pending_external_order() -> No
     assert sum(order.unresolved for order in orders) == 1
     assert all("raw-order" not in repr(order) for order in orders)
     assert client.continuations == [None, "N"]
+
+
+def test_lost_submit_response_matches_only_a_new_exact_kis_order() -> None:
+    row = {
+        "odno": "new-kis-order",
+        "ord_gno_brno": "branch",
+        "ord_dt": "20260930",
+        "ord_tmd": "093055",
+        "pdno": "105560",
+        "sll_buy_dvsn_cd": "02",
+        "ord_dvsn_cd": "00",
+        "ord_qty": "30",
+        "ord_unpr": "172000",
+    }
+    reader = KISMockExecutionReader(FakeClient({"rt_cd": "0", "output1": [row]}))  # type: ignore[arg-type]
+    request = dict(
+        session_date=date(2026, 9, 30),
+        submitted_at=datetime(2026, 9, 30, 9, 30, 54, tzinfo=ZoneInfo("Asia/Seoul")),
+        symbol="105560",
+        side="BUY",
+        quantity=30,
+        order_division="00",
+        limit_price_krw=172_000,
+        exchange_division="KRX",
+    )
+
+    recovered = reader.recover_new_order_reference(
+        before_order_ref_hashes=frozenset(),
+        **request,  # type: ignore[arg-type]
+    )
+    assert recovered is not None
+    assert recovered.provider_order_no == "new-kis-order"
+    assert recovered.provider_org_no == "branch"
+    assert (
+        reader.recover_new_order_reference(  # type: ignore[arg-type]
+            before_order_ref_hashes=frozenset(
+                {hashlib.sha256(b"kis-mock-order-receipt/v1\0new-kis-order").hexdigest()}
+            ),
+            **request,
+        )
+        is None
+    )
 
 
 def test_account_order_scan_rejects_unaccounted_quantity_and_duplicate_pages() -> None:

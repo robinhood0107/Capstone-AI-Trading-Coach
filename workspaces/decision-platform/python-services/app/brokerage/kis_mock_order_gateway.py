@@ -1,7 +1,12 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import datetime
 from typing import Any, Literal, Protocol
+from zoneinfo import ZoneInfo
+
+from app.brokerage.kis_mock_online_client import KISMockBrokerageError, KISMockFailureReason
+from app.brokerage.kis_mock_online_runtime import KISMockExecutionReader
 
 from app.brokerage.mock_order_reference_store import (
     MockOrderReferenceIntent,
@@ -89,10 +94,12 @@ class KISMockOrderGateway:
         *,
         mode: Literal["mock", "live"] = "mock",
         reference_store: MockOrderReferenceStore | None = None,
+        execution_reader: KISMockExecutionReader | None = None,
     ) -> None:
         self._transport = transport
         self._mode = mode
         self._reference_store = reference_store
+        self._execution_reader = execution_reader
 
     def submit_cash_order(
         self,
@@ -114,6 +121,19 @@ class KISMockOrderGateway:
         order_division = _order_division(intent)
         exchange_division = _exchange_division(intent)
         reference_store = self._reference_store
+        before_hashes: frozenset[str] | None = None
+        if reference_store is not None and self._execution_reader is not None:
+            try:
+                before_hashes = frozenset(
+                    row.order_ref_hash
+                    for row in self._execution_reader.read_session_orders(
+                        session_date=datetime.now(ZoneInfo("Asia/Seoul")).date()
+                    )
+                )
+            except Exception:
+                # The normal no-retry submit remains available. Recovery will fail closed
+                # if a complete pre-submit order snapshot could not be obtained.
+                before_hashes = None
         if reference_store is not None:
             if order_id is None or account_id is None:
                 raise MockOrderRejected("KIS mock order identity is missing.")
@@ -128,19 +148,67 @@ class KISMockOrderGateway:
                     approval_anchor=approval_anchor,
                 ),
             )
-        response = self._transport.request(
-            "POST",
-            ORDER_CASH_PATH,
-            tr_id,
-            json_body={
-                "PDNO": intent.symbol,
-                "ORD_DVSN": order_division,
-                "ORD_QTY": str(intent.quantity),
-                # KIS 시장가 현금주문은 가격을 0으로 보낸다. Spring은 추정가를 별도 Decision 근거로 보존한다.
-                "ORD_UNPR": "0" if intent.order_type == "MARKET" else str(intent.estimated_price),
-                "EXCG_ID_DVSN_CD": exchange_division,
-            },
-        )
+        submitted_at = datetime.now(ZoneInfo("Asia/Seoul"))
+        try:
+            response = self._transport.request(
+                "POST",
+                ORDER_CASH_PATH,
+                tr_id,
+                json_body={
+                    "PDNO": intent.symbol,
+                    "ORD_DVSN": order_division,
+                    "ORD_QTY": str(intent.quantity),
+                    # KIS 시장가 현금주문은 가격을 0으로 보낸다. Spring은 추정가를 별도 Decision 근거로 보존한다.
+                    "ORD_UNPR": "0"
+                    if intent.order_type == "MARKET"
+                    else str(intent.estimated_price),
+                    "EXCG_ID_DVSN_CD": exchange_division,
+                },
+            )
+        except (KISMockBrokerageError, TimeoutError) as error:
+            uncertain = isinstance(error, TimeoutError) or error.reason_code in {
+                KISMockFailureReason.TRANSPORT_UNAVAILABLE.value,
+                KISMockFailureReason.RESPONSE_INVALID.value,
+                KISMockFailureReason.RESPONSE_SANITIZATION_FAILED.value,
+            }
+            if (
+                uncertain
+                and before_hashes is not None
+                and reference_store is not None
+                and self._execution_reader is not None
+            ):
+                # KIS order history can lag the accepted POST. Bounded GET-only
+                # polling never repeats the cash-order POST.
+                for _ in range(3):
+                    try:
+                        recovered = self._execution_reader.recover_new_order_reference(
+                            session_date=submitted_at.date(),
+                            submitted_at=submitted_at,
+                            before_order_ref_hashes=before_hashes,
+                            symbol=intent.symbol,
+                            side=intent.side,
+                            quantity=intent.quantity,
+                            order_division=order_division,
+                            limit_price_krw=0
+                            if intent.order_type == "MARKET"
+                            else intent.estimated_price,
+                            exchange_division=exchange_division,
+                        )
+                    except ValueError:
+                        break  # incomplete or ambiguous provider history
+                    except Exception:
+                        continue
+                    if recovered is None:
+                        continue
+                    assert order_id is not None and account_id is not None
+                    try:
+                        reference_store.commit(order_id, account_id, recovered)
+                    except Exception:
+                        break
+                    return MockOrderReceipt(
+                        provider_order_no=recovered.provider_order_no, accepted=True, tr_id=tr_id
+                    )
+            raise
         if response.get("rt_cd") != "0":
             raise MockOrderRejected("KIS mock order response was not accepted.")
         output = response.get("output")

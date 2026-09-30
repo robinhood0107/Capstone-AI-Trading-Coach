@@ -2,6 +2,12 @@
 
 이 문서는 [Keep a Changelog](https://keepachangelog.com/ko/1.1.0/) 형식을 따르고, 버전은 [유의적 버전](https://semver.org/lang/ko/)을 따릅니다. 버전 하나가 GitHub Release `vX.Y.Z` 하나와 Docker Hub 이미지 태그 `vX.Y.Z-<part>` 한 벌에 대응합니다.
 
+## [1.0.13] - 2026-09-30
+
+### 수정
+
+- 로컬 FULL을 `127.0.0.1:3002`로 열었을 때 `localhost:3002`와 동일하게 로그인 새로고침, 소셜 로그인 교환, 계정 연결 시작의 출처를 검증. 다른 포트와 외부 출처는 허용하지 않음
+
 ## [1.0.12] - 2026-09-30
 
 ### 변경

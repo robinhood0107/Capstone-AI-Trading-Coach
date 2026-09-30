@@ -92,7 +92,7 @@ test('live RAG preserves server blocks and retrieved citations instead of substi
   }
 });
 
-test('preset RAG buttons use their fixed cited answer only as a final fallback', async () => {
+test('preset RAG buttons use previously successful cited or uncited answers only as a final fallback', async () => {
   const previousApiMode = process.env.NEXT_PUBLIC_API_MODE;
   const previousProduct = process.env.NEXT_PUBLIC_MARS_PRODUCT;
   const previousFetch = globalThis.fetch;
@@ -107,12 +107,15 @@ test('preset RAG buttons use their fixed cited answer only as a final fallback',
   assert.deepEqual(
     RAG_EXAMPLES.map((item) => item.question),
     [
-      '분산투자는 위험을 어떻게 줄이나요?',
-      '자산 배분은 무엇을 고려하나요?',
+      '132030 금선물 ETF의 환헤지와 롤오버 위험을 설명해 주세요.',
+      'Sharpe 비율과 최대낙폭(MDD)은 각각 무엇을 측정하나요?',
+      '복리와 단리는 어떻게 다른가요?',
+      '인덱스 펀드의 추적오차란 무엇인가요?',
       '과거 성과는 어떻게 읽어야 하나요?',
     ],
   );
-  assert.ok(RAG_EXAMPLES.every((item) => item.source.href?.startsWith('https://www.investor.gov/')));
+  assert.equal(RAG_EXAMPLES.filter((item) => item.source !== null).length, 2);
+  assert.ok(RAG_EXAMPLES.every((item) => item.source === null || item.source.href?.startsWith('https://')));
 
   process.env.NEXT_PUBLIC_API_MODE = 'live';
   process.env.NEXT_PUBLIC_MARS_PRODUCT = 'full';
@@ -174,10 +177,10 @@ test('preset RAG buttons use their fixed cited answer only as a final fallback',
     assert.equal(noEvidenceButton.kind, 'ready');
     if (noEvidenceButton.kind !== 'ready') return;
     assert.equal(noEvidenceButton.data.fallbackUsed, true);
-    assert.equal(noEvidenceButton.data.statusHeadline, '출처를 확인한 설명');
+    assert.equal(noEvidenceButton.data.statusHeadline, '저장된 예시 답변');
     assert.equal(noEvidenceButton.data.citationCoverage, 1);
-    assert.equal(noEvidenceButton.data.topSources[0]?.institution, 'Investor.gov');
-    assert.equal(noEvidenceButton.data.topSources[0]?.href, example.source.href);
+    assert.equal(noEvidenceButton.data.topSources[0]?.institution, '삼성자산운용');
+    assert.equal(noEvidenceButton.data.topSources[0]?.href, example.source?.href);
 
     responseMode = 'MODEL_KNOWLEDGE';
     const vertexAnswer = await askRag(example.question, 'CONCISE', true);
@@ -196,6 +199,16 @@ test('preset RAG buttons use their fixed cited answer only as a final fallback',
     assert.equal(offlineButton.kind, 'ready');
     if (offlineButton.kind === 'ready') assert.equal(offlineButton.data.fallbackUsed, true);
 
+    const offlineUncitedButton = await askRag(RAG_EXAMPLES[2]!.question, 'CONCISE', true);
+    assert.equal(offlineUncitedButton.kind, 'ready');
+    if (offlineUncitedButton.kind === 'ready') {
+      assert.equal(offlineUncitedButton.data.fallbackUsed, true);
+      assert.ok(offlineUncitedButton.data.answer);
+      assert.equal(offlineUncitedButton.data.citationCoverage, null);
+      assert.deepEqual(offlineUncitedButton.data.topSources, []);
+      assert.match(offlineUncitedButton.data.sourcesUnavailableReason ?? '', /인용이 연결되지/);
+    }
+
     const offlineFreeText = await askRag('자유 질문은 Vertex 장애 때 고정 안내를 받습니다.', 'CONCISE');
     assert.equal(offlineFreeText.kind, 'ready');
     if (offlineFreeText.kind === 'ready') {
@@ -209,7 +222,7 @@ test('preset RAG buttons use their fixed cited answer only as a final fallback',
     assert.equal(unavailableVertexButton.kind, 'ready');
     if (unavailableVertexButton.kind === 'ready') {
       assert.equal(unavailableVertexButton.data.fallbackUsed, true);
-      assert.equal(unavailableVertexButton.data.topSources[0]?.institution, 'Investor.gov');
+      assert.equal(unavailableVertexButton.data.topSources[0]?.institution, '삼성자산운용');
     }
 
     responseMode = 'BLOCKED';

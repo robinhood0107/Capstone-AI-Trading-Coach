@@ -154,7 +154,7 @@ internal class GrpcStrongLlmGenerationAdapter(
                             override fun onCompleted() = Unit
                         },
                     )
-            val startFrame = startEvent(runId, command, googlePermit.googleEnabled, credential)
+            val startFrame = startEvent(runId, command, googlePermit.googleEnabled, researchTools != null, credential)
             requestObserver.onNext(startFrame)
             val deadline = System.nanoTime() + Duration.ofMillis(grpcProperties.deadlineMillis).toNanos()
             while (completed == null) {
@@ -459,6 +459,7 @@ internal class GrpcStrongLlmGenerationAdapter(
         runId: String,
         command: RagV2VertexGenerationCommand,
         googleEnabled: Boolean,
+        researchToolsAvailable: Boolean,
         credential: AutomationAiCredential?,
     ): HostEvent {
         val publicEvidence = command.evidence.filterNot { it.ownerPrivate }.map(::evidenceItem)
@@ -474,7 +475,7 @@ internal class GrpcStrongLlmGenerationAdapter(
                 .addAllPublicEvidence(publicEvidence)
                 .addAllOwnerEvidence(ownerEvidence)
                 .setGoogleSearchEnabled(googleEnabled)
-                .setMaxToolRounds(3)
+                .setMaxToolRounds(strongLlmAvailableToolRounds(researchToolsAvailable))
                 .setCurrentTime(DateTimeFormatter.ISO_INSTANT.format(clock.instant()))
                 .setTimezone(ZoneId.systemDefault().id)
                 .setLanguage("ko")
@@ -626,6 +627,9 @@ internal class GrpcStrongLlmGenerationAdapter(
         val LOGGER: org.slf4j.Logger = LoggerFactory.getLogger(GrpcStrongLlmGenerationAdapter::class.java)
     }
 }
+
+/** 검색 host가 없으면 모델에도 검색 함수를 선언하지 않는다. */
+internal fun strongLlmAvailableToolRounds(researchToolsAvailable: Boolean): Int = if (researchToolsAvailable) 3 else 0
 
 /** Python process가 오동작해도 Kotlin host가 provider와 web 물리 호출 상한을 permit 전에 강제한다. */
 internal class StrongLlmHostBudget {

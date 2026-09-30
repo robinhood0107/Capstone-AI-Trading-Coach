@@ -210,6 +210,24 @@ def test_searxng_fallback_is_bounded_and_returns_tool_result_to_same_message() -
     assert result.search_backend == "SEARXNG"
 
 
+def test_disabled_web_tools_still_produce_a_tool_free_answer() -> None:
+    provider = FakeProvider()
+    permits: list[tuple[str, str, bool]] = []
+    request = replace(_request(google=False), max_tool_rounds=0)
+
+    result = BoundedStrongLlmGraph().run(
+        request,
+        provider,
+        lambda call_id, phase, attached: permits.append((call_id, phase, attached)),
+        lambda *_: pytest.fail("Disabled web tools must not be called"),
+    )
+
+    assert permits == [("fallback_1", "FINAL", False)]
+    assert provider.invocations == [("fallback", False)]
+    assert result.search_backend == "SEARXNG"
+    assert json.loads(result.answer_json)["answer"]
+
+
 def test_owner_private_evidence_forces_tool_free_fallback_and_zero_public_queries() -> None:
     provider = FakeProvider()
     permits: list[tuple[str, str, bool]] = []

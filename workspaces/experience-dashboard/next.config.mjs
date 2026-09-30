@@ -3,6 +3,9 @@ const nextConfig = {
   output: 'standalone',
   reactStrictMode: true,
   poweredByHeader: false,
+  // RAG ask can spend up to 15s retrieving and 60s generating. The default
+  // 30s rewrite proxy timeout would return 500 before the API completes.
+  experimental: { proxyTimeout: 85_000 },
   async rewrites() {
     // Next serializes rewrites during image build. Compose runtime environment
     // cannot change the destination later: both public products name the API

@@ -278,9 +278,9 @@ export async function askRag(
   let answer: RagV2Answer;
   try {
     answer = await api.ragV2Ask(request);
-    // Retry once only when the server explicitly confirms that no answer was produced.
-    // Ambiguous HTTP failures and successful answers are never resubmitted.
-    if (answer.generationStatus === 'GENERATION_UNAVAILABLE' && answer.answer === null) {
+    // 예시 버튼은 이전 성공 답변이 있으므로 생성 불가를 확인한 뒤 두 번째 비용을 쓰지 않는다.
+    // 자유 질문만 무응답이 명시된 경우 한 번 재시도하며, 애매한 HTTP 실패는 재전송하지 않는다.
+    if (!fallback && answer.generationStatus === 'GENERATION_UNAVAILABLE' && answer.answer === null) {
       answer = await api.ragV2Ask(request);
     }
   } catch (cause) {

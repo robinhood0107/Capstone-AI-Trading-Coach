@@ -57,6 +57,9 @@ test('newly connected screens render against the live Spring API', async ({ page
   });
 
   await page.goto('/');
+  const retryLogin = page.getByRole('button', { name: '다시 로그인' });
+  if (await retryLogin.isVisible()) await retryLogin.click();
+  await expect(page.getByLabel('아이디')).toBeVisible();
   await page.getByLabel('아이디').fill('demo-user');
   await page.getByLabel('비밀번호').fill(password);
   await Promise.all([
@@ -95,6 +98,25 @@ test('newly connected screens render against the live Spring API', async ({ page
   ).toHaveCount(1);
   // v3 실행 목록의 판단 근거 토글
   await expect(page.getByRole('button', { name: '판단 근거 보기' }).first()).toBeVisible();
+  const automationStatus = page.locator('section[data-contract="GET /api/v3/automation/status"]');
+  const automationRuns = page.locator('section[data-contract="GET /api/v3/automation/runs"]');
+  await expect(automationRuns).toBeVisible();
+  await expect(automationStatus.locator('xpath=following-sibling::section[1]')).toHaveAttribute(
+    'data-contract',
+    'GET /api/v3/automation/runs',
+  );
+  const initialRunRows = await automationRuns.locator('li').count();
+  expect(initialRunRows).toBeLessThanOrEqual(3);
+  const expandHistory = page.getByRole('button', { name: /이전 기록 \d+건 더 보기/ });
+  if (await expandHistory.count()) {
+    await expandHistory.click();
+    const collapseHistory = page.getByRole('button', { name: '최근 3건만 보기' });
+    await expect(collapseHistory).toHaveAttribute('aria-expanded', 'true');
+    const expandedRunRows = await automationRuns.locator('li').count();
+    expect(expandedRunRows).toBeGreaterThan(initialRunRows);
+    await collapseHistory.click();
+    await expect(automationRuns.locator('li')).toHaveCount(Math.min(3, expandedRunRows));
+  }
 
   // ── 주문 검토: 관문 여섯과 최근 체결 ────────────────────────────────────────
   await page.getByRole('link', { name: /최근 주문 판정 보기/ }).click();

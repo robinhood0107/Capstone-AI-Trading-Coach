@@ -11,7 +11,6 @@ import { withFreshness } from '@/shared/lib/viewState';
 import { formatKrw, formatKstDateTime, formatRatio, formatSignedRatio } from '@/shared/lib/format';
 import type {
   AutomationPositionPageV3,
-  AutomationPositionPageV2,
   AutomationStatusV3,
   InstrumentDisplayCatalog,
   MockBalance,
@@ -32,13 +31,12 @@ const STEPS = [
 
 export function OverviewView() {
   const { state, reload, refreshError } = useResource(async () => {
-    // 이 화면은 5초마다 일곱 endpoint 를 함께 본다. 예전에는 Promise.all 이라
+    // 이 화면은 5초마다 여러 endpoint 를 함께 본다. 예전에는 Promise.all 이라
     // 종목명 카탈로그 하나가 실패해도 평가금액과 자동주문 상태까지 통째로 사라졌다.
     // 화면이 성립하는 최소 조건은 위험 요약과 자동운용 상태 둘이고, 나머지는 없으면
     // 그 조각만 "확인하지 못했습니다"로 남긴다.
     const [risk, status] = await Promise.all([api.riskPortfolio(), api.automationStatusV3()]);
-    const [positions, managedPositions, latestRisk, instruments, runs] = await Promise.all([
-      api.automationPositionsV2().catch(() => null),
+    const [managedPositions, latestRisk, instruments, runs] = await Promise.all([
       api.automationPositionsV3().catch(() => null),
       api.dashboardLatestRiskResult().catch(() => null),
       api.instrumentDisplayCatalog().catch(() => null),
@@ -53,7 +51,6 @@ export function OverviewView() {
       {
         risk: risk.data,
         status: status.data,
-        positions: positions?.data ?? null,
         // 종목명이 없으면 코드로 표시된다. 빈 목록이 화면을 죽이지는 않는다.
         managedPositions: managedPositions?.data ?? { items: [] },
         latestRisk: latestRisk?.data ?? null,
@@ -284,8 +281,6 @@ function AutomationHeroTile({ status }: { status: AutomationStatusV3 }) {
 interface OverviewData {
   risk: PortfolioRisk;
   status: AutomationStatusV3;
-  /** null 이면 실현손익 요약을 확인하지 못한 것이다. 0원으로 꾸미지 않는다. */
-  positions: AutomationPositionPageV2 | null;
   managedPositions: AutomationPositionPageV3;
   latestRisk: RecentRiskResult | null;
   balance: MockBalance | null;
@@ -476,36 +471,17 @@ function LiveSummary({ data }: { data: OverviewData }) {
         )}
       </Panel>
 
-      <Panel title="저장된 운용 결과" hint="체결된 자동매매 결과와 최근 주문 판정입니다. 손익에는 시스템의 추정 거래비용이 반영됩니다.">
-        <div className="grid gap-3 sm:grid-cols-3">
-          <Tile label="종료된 포지션">
-            {data.positions ? (
-              <span className="hero-number tnum text-[22px] font-semibold text-ink">
-                {data.positions.realizedSummary.closedPositionCount}개
-              </span>
-            ) : (
-              <span className="text-[14px] text-muted">확인하지 못했습니다</span>
-            )}
-          </Tile>
-          <Tile label="실현 손익 · 비용 추정 반영">
-            {data.positions ? (
-              <span className="hero-number tnum text-[22px] font-semibold text-ink">
-                {formatKrw(data.positions.realizedSummary.realizedPnlKrw)}
-              </span>
-            ) : (
-              <span className="text-[14px] text-muted">확인하지 못했습니다</span>
-            )}
-          </Tile>
-          <Tile label="최근 판정">
-            {latest ? (
-              <Link href="/order-review" className="text-[18px] font-semibold text-navy hover:underline">
-                {instruments.get(latest.symbol)?.nameKo ?? latest.symbol} · {latest.action}
-              </Link>
-            ) : (
-              <span className="text-[14px] text-muted">아직 없음</span>
-            )}
-          </Tile>
-        </div>
+      <Panel title="최근 주문 판정" hint="자동운용의 최근 주문 판단을 확인합니다.">
+        {latest ? (
+          <Link href="/order-review" className="text-[18px] font-semibold text-navy hover:underline">
+            {instruments.get(latest.symbol)?.nameKo ?? latest.symbol} · {latest.action}
+          </Link>
+        ) : (
+          <span className="text-[14px] text-muted">아직 없음</span>
+        )}
+        <p className="mt-3 text-[12px] text-muted">
+          지난 운용 결과는 <Link href="/automation#operation-results" className="text-navy hover:underline">자동운용 기록</Link>에서 볼 수 있습니다.
+        </p>
       </Panel>
     </div>
   );

@@ -40,6 +40,7 @@ import {
 import { AutomationPersistenceNote } from './AutomationPersistenceNote';
 import { CandidateFunnel } from './CandidateFunnel';
 import { OrderProgress } from './OrderProgress';
+import { AutomationResults } from './AutomationResults';
 import { LIVE_REFRESH_MS } from '@/shared/lib/liveRefresh';
 
 /** 개인 중지와 관리자 전역 중지는 서로 다른 API와 상태를 사용한다. */
@@ -891,6 +892,8 @@ function AutomationBody({ data, onReload }: { data: AutomationData; onReload: ()
       </Panel>
 
       <PositionPanel positions={data.positions} instruments={data.instruments} />
+
+      <AutomationResults />
 
       <Panel title="빠른 선택값의 근거" hint="연구 기반 고정 기본값이며 이 프로젝트 데이터에서 최적화한 값이나 수익 보장이 아닙니다.">
         <ul className="space-y-2 text-[12px] leading-5">

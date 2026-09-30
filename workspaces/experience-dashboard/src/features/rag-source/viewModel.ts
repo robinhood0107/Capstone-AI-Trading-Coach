@@ -76,49 +76,61 @@ export interface RagAnswerView {
 
 const TOP_SOURCE_COUNT = 3;
 
+/** 2026-09-30 FULL 3002의 demo-user가 실제로 답을 받은 질문만 예시로 둔다. */
 export const RAG_EXAMPLES: readonly {
   question: string;
   answer: string;
-  source: SourceItem;
+  citationCoverage: number | null;
+  source: SourceItem | null;
 }[] = [
   {
-    question: '분산투자는 위험을 어떻게 줄이나요?',
+    question: '132030 금선물 ETF의 환헤지와 롤오버 위험을 설명해 주세요.',
     answer:
-      '분산투자는 여러 투자에 자금을 나누어 한 곳에 집중되는 위험을 줄이는 방법입니다. 시장 전체가 하락할 때의 손실까지 막아 주지는 않습니다.',
+      '132030 KODEX 골드선물(H)은 S&P GSCI Gold Index Total Return을 추종하는 COMEX 금선물 기반 환헤지 상품이므로 현물 금과 동일한 성과로 간주하지 않습니다.\n이 상품은 선물 롤오버(rollover)와 환헤지 효과로 인해 현물 금과 성과가 달라질 수 있습니다.',
+    citationCoverage: 1,
     source: {
-      sourceId: 'investor-gov-diversify',
-      title: 'Investor.gov — Diversify Your Investments',
+      sourceId: 'recorded-132030-gold-futures',
+      title: '132030 금선물 ETF의 선물·환헤지·롤오버 경계',
       citationKind: 'PUBLIC_WEB',
       summary: '',
-      href: 'https://www.investor.gov/introduction-investing/investing-basics/save-and-invest/diversify-your-investments',
-      institution: 'Investor.gov',
+      href: 'https://www.samsungfund.com/etf/product/view.do?id=2ETF24',
+      institution: '삼성자산운용',
     },
   },
   {
-    question: '자산 배분은 무엇을 고려하나요?',
+    question: 'Sharpe 비율과 최대낙폭(MDD)은 각각 무엇을 측정하나요?',
     answer:
-      '자산 배분은 주식, 채권, 현금 같은 자산군에 투자금을 나누는 것입니다. 적절한 비율은 투자 기간과 위험 감수 성향에 따라 달라집니다.',
+      'Sharpe 비율과 최대낙폭(maximum drawdown)은 서로 다른 위험의 단면을 나타내는 지표입니다.\n구체적으로 Sharpe 비율은 수익의 분산 대비 수익률(return-dispersion ratio)을 측정하며, 최대낙폭은 경로 의존적인 낙폭 측정치(path-dependent drawdown measure)를 나타냅니다.\n따라서 이 두 지표 중 어느 하나가 전체 위험을 완벽히 대변하는 충분통계량으로 쓰일 수 없으며, 단일 지표 조합만으로는 미래의 손실을 완전히 설명하는 데 한계가 있습니다.',
+    citationCoverage: 2 / 3,
     source: {
-      sourceId: 'investor-gov-asset-allocation',
-      title: 'Investor.gov — Asset Allocation and Diversification',
+      sourceId: 'recorded-sharpe-drawdown-risk',
+      title: 'Sharpe와 maximum drawdown의 부분 위험 관점',
       citationKind: 'PUBLIC_WEB',
       summary: '',
-      href: 'https://www.investor.gov/introduction-investing/getting-started/asset-allocation',
-      institution: 'Investor.gov',
+      href: 'https://doi.org/10.1111/joes.12520',
+      institution: '학술 논문',
     },
+  },
+  {
+    question: '복리와 단리는 어떻게 다른가요?',
+    answer:
+      '단리와 복리는 이자가 계산되는 방식에서 가장 큰 차이가 있습니다.\n단리는 원금에 대해서만 이자가 발생하는 방식인 반면, 복리는 원금뿐만 아니라 발생한 이자에도 다시 이자가 붙는 방식입니다.\n따라서 투자 기간이 길어질수록 복리 효과에 의해 자산의 증식 속도가 단리보다 훨씬 빨라집니다.',
+    citationCoverage: null,
+    source: null,
+  },
+  {
+    question: '인덱스 펀드의 추적오차란 무엇인가요?',
+    answer:
+      '인덱스 펀드의 추적오차(Tracking Error)는 펀드의 수익률이 추종하고자 하는 기초지수(벤치마크)의 수익률을 얼마나 잘 따라가는지를 나타내는 지표입니다.\n이는 일정 기간 동안 발생한 펀드 수익률과 기초지수 수익률 간 차이(추적편차)의 표준편차로 계산됩니다.\n추적오차가 낮을수록 펀드가 기초지수를 밀접하게 복제하고 있음을 의미하며, 운용 보수나 거래 비용, 구성 종목의 편입 비율 차이 등이 추적오차를 발생시키는 주요 요인이 됩니다.',
+    citationCoverage: null,
+    source: null,
   },
   {
     question: '과거 성과는 어떻게 읽어야 하나요?',
     answer:
-      '과거 성과는 미래 결과를 보장하지 않습니다. 백테스트는 과거 조건을 가정해 계산한 결과이며 실제 운용 성과가 아닙니다.',
-    source: {
-      sourceId: 'investor-gov-performance-claims',
-      title: 'Investor.gov — Performance Claims',
-      citationKind: 'PUBLIC_WEB',
-      summary: '',
-      href: 'https://www.investor.gov/introduction-investing/general-resources/news-alerts/alerts-bulletins/investor-bulletins-47',
-      institution: 'Investor.gov',
-    },
+      '금융 상품의 과거 성과(수익률)를 읽을 때는 과거의 실적이 미래의 결과를 보장하지 않는다는 점을 명확히 인지해야 합니다.\n성과를 평가할 때는 단순 수익률뿐만 아니라 당시의 시장 상황, 비교 대상이 되는 벤치마크(BM) 대비 성과, 그리고 변동성이나 최대 낙폭(MDD) 같은 위험 요소를 함께 분석하는 것이 중요합니다.\n또한 일시적인 고수익인지 혹은 장기적으로 꾸준한 성과를 내었는지 기간별 추이를 다각도로 살펴보아야 합니다.',
+    citationCoverage: null,
+    source: null,
   },
 ];
 
@@ -278,8 +290,8 @@ export async function askRag(
     throw cause;
   }
 
-  // Only preset questions have a source-backed stored answer. Free text and guardrail
-  // blocks always keep the live API outcome.
+  // 예시 버튼의 질문에만 이전에 성공한 답변을 보관한다. 자유 질문과 민감정보 차단은
+  // 언제나 live API 결과를 유지하며, 저장 답변에 없던 출처를 붙이지 않는다.
   if (fallback && canUseExampleFallbackForAnswer(answer)) return ready(fallback);
   if (canUseVertexUnavailableFallbackForAnswer(answer)) return ready(vertexUnavailableView(answer.citations));
 
@@ -345,15 +357,15 @@ function exampleFallbackView(example: (typeof RAG_EXAMPLES)[number]): RagAnswerV
   return {
     answerId: null,
     generationStatus: 'ANSWERED',
-    statusHeadline: STATUS_COPY.ANSWERED.headline,
-    statusDetail: STATUS_COPY.ANSWERED.detail,
+    statusHeadline: '저장된 예시 답변',
+    statusDetail: '실시간 생성에 실패해 이전에 성공한 같은 질문의 답변을 표시합니다.',
     answer: example.answer,
-    citationCoverage: 1,
+    citationCoverage: example.citationCoverage,
     retrievalFailure: false,
     guardrailFlags: [],
-    topSources: [example.source],
+    topSources: example.source ? [example.source] : [],
     expandableSources: [],
-    sourcesUnavailableReason: null,
+    sourcesUnavailableReason: example.source ? null : '이 저장된 답변에는 외부 문헌 인용이 연결되지 않았습니다.',
     fallbackUsed: true,
   };
 }

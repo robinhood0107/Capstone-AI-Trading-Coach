@@ -7,7 +7,7 @@ import org.springframework.boot.context.properties.ConfigurationProperties
 data class StrongLlmAgentGrpcProperties(
     var target: String = "127.0.0.1:50055",
     var sharedSecret: String = "",
-    var deadlineMillis: Long = 45_000,
+    var deadlineMillis: Long = 60_000,
     var requestMaxBytes: Int = 262_144,
     var responseMaxBytes: Int = 262_144,
 ) {

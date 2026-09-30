@@ -6,6 +6,11 @@ import org.junit.jupiter.api.Test
 
 class StrongLlmHostBudgetTest {
     @Test
+    fun `host deadline allows the Python provider its full fifty seconds`() {
+        assertThat(StrongLlmAgentGrpcProperties().deadlineMillis).isGreaterThan(50_000)
+    }
+
+    @Test
     fun `disabled research host advertises no web tool rounds to Python`() {
         assertThat(strongLlmAvailableToolRounds(false)).isZero()
         assertThat(strongLlmAvailableToolRounds(true)).isEqualTo(3)

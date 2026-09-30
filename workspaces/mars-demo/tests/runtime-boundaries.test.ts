@@ -98,7 +98,7 @@ test('fixture projections hide future events and future daily bars', () => {
   const afterEnd = new Date('2026-09-29T00:00:00.000Z');
   const completedEvents = visibleShowcaseEvents(afterEnd, true);
   assert.ok(completedEvents.every((event) => Date.parse(event.atKst) <= afterEnd.getTime()));
-  assert.equal(projectBacktest('2026-09-29').observedDays, 24);
+  assert.equal(projectBacktest('2026-09-29').observedDays, 29);
 });
 
 test('the single scenario event log reconciles to the generated portfolio receipt', () => {
@@ -108,11 +108,12 @@ test('the single scenario event log reconciles to the generated portfolio receip
   const bars = visibleBars('2026-10-01');
   const projection = projectShowcase(metadata.events, defaultOverlay(), asOf, bars);
   const showcase = showcaseMetadata();
-  const receipt = projectBacktest('2026-09-18');
+  const receipt = projectBacktest('2026-09-29');
   assert.equal(projection.equity, showcase.final.equity);
   assert.equal(projection.cash, showcase.final.cash);
-  assert.equal(projection.latestVisibleDate, '2026-09-18');
-  assert.equal(receipt.observedDays, 24);
+  assert.equal(projection.latestVisibleDate, '2026-09-29');
+  assert.deepEqual(projection.daily.map((point) => point.openPositions), showcase.dailyReceipt.map((day) => Object.keys(day.holdings).length));
+  assert.equal(receipt.observedDays, 29);
   assert.equal(receipt.usesFutureData, false);
 });
 

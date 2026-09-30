@@ -32,10 +32,16 @@ export interface DemoOverlay {
   principleRules?: Record<string, unknown>[];
   principleHistory?: Record<string, unknown>[];
   automationPolicy?: Record<string, unknown>;
+  personalKillSwitchActive?: boolean;
+  personalKillSwitchChangedAt?: string;
+  personalKillSwitchReasonClass?: string;
   globalKillSwitchActive?: boolean;
+  globalKillSwitchChangedAt?: string;
   ragConsent?: boolean;
   decisions?: Record<string, unknown>[];
   journalEntries?: Record<string, unknown>[];
+  journalSeedVersion?: string;
+  deletedSeedJournalIds?: string[];
 }
 
 export interface DemoBar {
@@ -60,6 +66,8 @@ export interface DemoPosition {
   priceDate: string;
   marketValue: number;
   costBasis: number;
+  grossCostBasis: number;
+  averageFillPriceKrw: number;
   unrealizedPnl: number;
 }
 

@@ -18,16 +18,46 @@ import pandas as pd
 
 
 START_DATE = "2026-08-18"
-END_DATE = "2026-09-18"
+SELECTION_END_DATE = "2026-09-18"
+END_DATE = "2026-09-29"
+SEED_VERSION = "mars-demo-2026-09-30.2"
 INITIAL_CASH_KRW = 10_000_000
 COMMISSION_BPS = 1.5
 SELL_TAX_BPS = 20.0
 DIVIDEND_WITHHOLDING_TAX_BPS = 1_400.0
 SLIPPAGE_BPS = 10.0
 SHORT_NAMES = {
-    "000660.KS": "SK하이닉스",
-    "006400.KS": "삼성SDI",
     "005930.KS": "삼성전자",
+    "000660.KS": "SK하이닉스",
+    "005935.KS": "삼성전자우",
+    "402340.KS": "SK스퀘어",
+    "009150.KS": "삼성전기",
+    "373220.KS": "LG에너지솔루션",
+    "005380.KS": "현대차",
+    "207940.KS": "삼성바이오로직스",
+    "032830.KS": "삼성생명",
+    "105560.KS": "KB금융",
+    "028260.KS": "삼성물산",
+    "012450.KS": "한화에어로스페이스",
+    "034020.KS": "두산에너빌리티",
+    "055550.KS": "신한지주",
+    "000270.KS": "기아",
+    "329180.KS": "HD현대중공업",
+    "006400.KS": "삼성SDI",
+    "068270.KS": "셀트리온",
+    "012330.KS": "현대모비스",
+    "034730.KS": "SK",
+    "086790.KS": "하나금융지주",
+    "035420.KS": "NAVER",
+    "066570.KS": "LG전자",
+    "010120.KS": "LS ELECTRIC",
+    "000810.KS": "삼성화재",
+    "298040.KS": "효성첨단소재",
+    "267260.KS": "HD현대일렉트릭",
+    "010130.KS": "고려아연",
+    "042660.KS": "한화오션",
+    "005490.KS": "POSCO홀딩스",
+    "132030.KS": "KODEX 골드선물(H)",
     "069500.KS": "KODEX 200",
     "^KS11": "KOSPI 종합지수",
     "^KQ11": "KOSDAQ 종합지수",
@@ -113,206 +143,228 @@ def hindsight_portfolio(
     symbols: list[str],
     calendar: dict[str, Any],
 ) -> dict[str, Any]:
-    close_return: list[tuple[str, float]] = []
+    close_returns: list[tuple[str, float]] = []
     for ticker in symbols:
         rows = bars.get(ticker, [])
         if len(rows) < 2 or rows[0]["date"] != START_DATE or rows[-1]["date"] != END_DATE:
             raise ValueError(f"incomplete historical rows for {ticker}")
-        close_return.append((ticker, rows[-1]["close"] / rows[0]["close"] - 1))
-    # This is intentionally a post-hoc showcase, never the strategy backtest.
-    selected = [ticker for ticker, _ in sorted(close_return, key=lambda value: (-value[1], value[0]))[:2]]
+        selection_close = next((row["close"] for row in rows if row["date"] == SELECTION_END_DATE), None)
+        if selection_close is None:
+            raise ValueError(f"selection-date close missing for {ticker}")
+        close_returns.append((ticker, selection_close / rows[0]["close"] - 1))
+    # The selection uses the completed period. It must never be described as a forecast.
+    selected = [ticker for ticker, _ in sorted(close_returns, key=lambda value: (-value[1], value[0]))[:6]]
     daily_dates = [
         day["date"] for day in calendar["sessions"] if START_DATE <= day["date"] <= END_DATE
     ]
-    if any([row["date"] for row in bars[ticker]] != daily_dates for ticker in selected):
+    if len(daily_dates) != 29 or daily_dates[23] != SELECTION_END_DATE or any([row["date"] for row in bars[ticker]] != daily_dates for ticker in selected):
         raise ValueError("selected price bars do not match the pinned XKRX calendar")
+    per_day = {ticker: {row["date"]: row for row in rows} for ticker, rows in bars.items()}
 
+    # One order per chosen session. The completed-period selection is post hoc;
+    # the fixed schedule keeps both profitable and losing sales rather than
+    # optimizing every exit after the fact.
+    buy_sessions = {0: selected[0], 1: selected[1], 2: selected[2], 3: selected[3], 4: selected[4], 13: selected[5]}
+    sell_sessions = {
+        9: (selected[4], 1.0),
+        15: (selected[1], 0.5),
+        17: (selected[2], 0.4),
+        19: (selected[3], 0.5),
+        23: (selected[5], 1.0),
+    }
     events: list[dict[str, Any]] = []
-    selected_holdings = {ticker: 0 for ticker in selected}
+    daily: list[dict[str, Any]] = []
+    holdings = {ticker: 0 for ticker in selected}
+    cost_bases = {ticker: 0 for ticker in selected}
+    gross_bases = {ticker: 0 for ticker in selected}
+    marks: dict[str, int] = {}
+    dividend_events: list[dict[str, Any]] = []
     cash = INITIAL_CASH_KRW
-    positions: dict[str, dict[str, int]] = {}
+    realized_pnl = 0
+    trade_number = 0
 
-    for index, ticker in enumerate(selected):
-        row = bars[ticker][0]
-        allocation = INITIAL_CASH_KRW * 0.4
-        price = net_fill_price(row["open"], "BUY")
-        quantity = int(allocation // price)
+    def execute_trade(day: str, ticker: str, side: str, quantity: int, price_field: str) -> None:
+        nonlocal cash, realized_pnl, trade_number
         if quantity <= 0:
-            raise ValueError(f"allocation cannot buy one share of {ticker}")
+            raise ValueError("showcase trade quantity must be positive")
+        reference = per_day[ticker][day][price_field]
+        price = net_fill_price(reference, side)
         gross = quantity * price
         commission = fee(gross, COMMISSION_BPS)
-        if gross + commission > cash:
-            raise ValueError("showcase entry exceeds available cash")
-        cash -= gross + commission
-        selected_holdings[ticker] = quantity
-        positions[ticker] = {"quantity": quantity, "averageCost": gross + commission}
-        events.extend(
-            [
-                {
-                    "id": f"showcase-order-{index + 1}",
-                    "atKst": f"{START_DATE}T09:00:00+09:00",
-                    "type": "ORDER_CREATED",
-                    "symbol": ticker,
-                    "side": "BUY",
-                    "quantity": quantity,
-                    "status": "SIMULATED_ACCEPTED",
-                    "reason": "사후 구성 가상 사례의 고정 진입 규칙",
-                },
-                {
-                    "id": f"showcase-fill-{index + 1}",
-                    "atKst": f"{START_DATE}T09:01:00+09:00",
-                    "type": "FILL",
-                    "symbol": ticker,
-                    "orderId": f"showcase-order-{index + 1}",
-                    "side": "BUY",
-                    "quantity": quantity,
-                    "price": price,
-                    "referencePrice": row["open"],
-                    "grossAmount": gross,
-                    "commission": commission,
-                    "transactionTax": 0,
-                    "sourceDate": START_DATE,
-                    "priceField": "daily open plus 10bp assumed slippage",
-                    "simulationOnly": True,
-                },
-            ]
-        )
+        tax = fee(gross, SELL_TAX_BPS) if side == "SELL" else 0
+        cash_before = cash
+        position_before = holdings[ticker]
+        realized = None
+        realized_gross = None
+        if side == "BUY":
+            if gross + commission > cash:
+                raise ValueError("showcase entry exceeds available cash")
+            cash -= gross + commission
+            holdings[ticker] += quantity
+            cost_bases[ticker] += gross + commission
+            gross_bases[ticker] += gross
+        else:
+            if quantity > position_before:
+                raise ValueError("showcase sale exceeds held shares")
+            sold_cost = cost_bases[ticker] if quantity == position_before else round_krw(cost_bases[ticker] * quantity / position_before)
+            sold_gross = gross_bases[ticker] if quantity == position_before else round_krw(gross_bases[ticker] * quantity / position_before)
+            net = gross - commission - tax
+            realized = net - sold_cost
+            realized_gross = gross - sold_gross
+            cash += net
+            realized_pnl += realized
+            holdings[ticker] -= quantity
+            cost_bases[ticker] -= sold_cost
+            gross_bases[ticker] -= sold_gross
 
-    daily: list[dict[str, Any]] = []
-    realized_pnl = 0
-    marks: dict[str, int] = {}
-    dividend_events = []
-    per_day = {ticker: {row["date"]: row for row in rows} for ticker, rows in bars.items()}
+        trade_number += 1
+        order_id = f"showcase-order-{trade_number:02d}"
+        decision_id = f"dec_showcase_{trade_number:08d}"
+        decision_time = "15:15:00" if price_field == "close" else "08:50:00"
+        order_time = "15:20:00" if price_field == "close" else "09:00:00"
+        fill_time = "15:29:00" if price_field == "close" else "09:01:00"
+        events.extend([
+            {
+                "id": decision_id,
+                "atKst": f"{day}T{decision_time}+09:00",
+                "type": "DECISION_RECORDED",
+                "orderId": order_id,
+                "symbol": ticker,
+                "side": side,
+                "quantity": quantity,
+                "estimatedAmountKrw": gross,
+                "cashBeforeKrw": cash_before,
+                "positionBefore": position_before,
+                "action": "ALLOW",
+                "reason": "기록된 수량과 잔고 범위 안에서 주문",
+                "sourceDate": day,
+                "simulationOnly": True,
+            },
+            {
+                "id": order_id,
+                "atKst": f"{day}T{order_time}+09:00",
+                "type": "ORDER_CREATED",
+                "decisionId": decision_id,
+                "symbol": ticker,
+                "side": side,
+                "quantity": quantity,
+                "status": "SIMULATED_ACCEPTED",
+                "reason": "사후 구성 사례의 고정 거래 일정",
+                "sourceDate": day,
+                "simulationOnly": True,
+            },
+            {
+                "id": f"showcase-fill-{trade_number:02d}",
+                "orderId": order_id,
+                "atKst": f"{day}T{fill_time}+09:00",
+                "type": "FILL",
+                "symbol": ticker,
+                "side": side,
+                "quantity": quantity,
+                "price": price,
+                "referencePrice": reference,
+                "grossAmount": gross,
+                "commission": commission,
+                "transactionTax": tax,
+                "sourceDate": day,
+                "priceField": f"daily {price_field} {'plus' if side == 'BUY' else 'less'} 10bp assumed slippage",
+                "simulationOnly": True,
+                **({"realizedPnl": realized, "realizedGrossPnl": realized_gross} if side == "SELL" else {}),
+            },
+        ])
 
     for day_index, day in enumerate(daily_dates):
         for ticker in selected:
             row = per_day[ticker][day]
             ratio = row["splitRatio"]
-            if ratio > 0 and selected_holdings[ticker] > 0:
-                prior_quantity = selected_holdings[ticker]
-                next_quantity = round_krw(prior_quantity * ratio)
-                selected_holdings[ticker] = next_quantity
-                events.append(
-                    {
-                        "id": f"split-{ticker}-{day}",
-                        "atKst": f"{day}T08:30:00+09:00",
-                        "type": "SPLIT",
-                        "symbol": ticker,
-                        "ratio": ratio,
-                        "quantityBefore": prior_quantity,
-                        "quantityAfter": next_quantity,
-                        "simulationOnly": True,
-                    }
-                )
+            if ratio > 0 and holdings[ticker] > 0:
+                before = holdings[ticker]
+                holdings[ticker] = round_krw(before * ratio)
+                events.append({
+                    "id": f"split-{ticker}-{day}",
+                    "atKst": f"{day}T08:30:00+09:00",
+                    "type": "SPLIT",
+                    "symbol": ticker,
+                    "ratio": ratio,
+                    "quantityBefore": before,
+                    "quantityAfter": holdings[ticker],
+                    "simulationOnly": True,
+                })
             dividend = row["dividendPerShare"]
-            if dividend > 0 and selected_holdings[ticker] > 0:
-                gross_dividend = round_krw(dividend * selected_holdings[ticker])
+            if dividend > 0 and holdings[ticker] > 0:
+                gross_dividend = round_krw(dividend * holdings[ticker])
                 withholding = fee(gross_dividend, DIVIDEND_WITHHOLDING_TAX_BPS)
                 amount = gross_dividend - withholding
                 cash += amount
-                dividend_events.append(
-                    {
-                        "id": f"dividend-{ticker}-{day}",
-                        "atKst": f"{day}T09:00:00+09:00",
-                        "type": "DIVIDEND",
-                        "symbol": ticker,
-                        "quantity": selected_holdings[ticker],
-                        "cashPerShare": dividend,
-                        "grossAmount": gross_dividend,
-                        "withholdingTax": withholding,
-                        "cashAmount": amount,
-                        "sourceDate": day,
-                        "simulationOnly": True,
-                    }
-                )
-                events.append(dividend_events[-1])
-            marks[ticker] = row["close"]
+                dividend_event = {
+                    "id": f"dividend-{ticker}-{day}",
+                    "atKst": f"{day}T08:45:00+09:00",
+                    "type": "DIVIDEND",
+                    "symbol": ticker,
+                    "quantity": holdings[ticker],
+                    "cashPerShare": dividend,
+                    "grossAmount": gross_dividend,
+                    "withholdingTax": withholding,
+                    "cashAmount": amount,
+                    "sourceDate": day,
+                    "simulationOnly": True,
+                }
+                dividend_events.append(dividend_event)
+                events.append(dividend_event)
 
-        # The lower-ranked hindsight pick is closed at the published end-date close.
-        if day == END_DATE:
-            ticker = selected[1]
-            quantity = selected_holdings[ticker]
-            reference = per_day[ticker][day]["close"]
-            price = net_fill_price(reference, "SELL")
-            gross = quantity * price
-            commission = fee(gross, COMMISSION_BPS)
-            tax = fee(gross, SELL_TAX_BPS)
-            net = gross - commission - tax
-            cost_basis = positions[ticker]["averageCost"]
-            cash += net
-            realized_pnl += net - cost_basis
-            selected_holdings[ticker] = 0
-            del positions[ticker]
-            events.extend(
-                [
-                    {
-                        "id": "showcase-order-exit",
-                        "atKst": f"{day}T15:20:00+09:00",
-                        "type": "ORDER_CREATED",
-                        "symbol": ticker,
-                        "side": "SELL",
-                        "quantity": quantity,
-                        "status": "SIMULATED_ACCEPTED",
-                        "reason": "사후 구성 사례의 기간 종료 규칙",
-                    },
-                    {
-                        "id": "showcase-fill-exit",
-                        "atKst": f"{day}T15:29:00+09:00",
-                        "type": "FILL",
-                        "symbol": ticker,
-                        "orderId": "showcase-order-exit",
-                        "side": "SELL",
-                        "quantity": quantity,
-                        "price": price,
-                        "referencePrice": reference,
-                        "grossAmount": gross,
-                        "commission": commission,
-                        "transactionTax": tax,
-                        "realizedPnl": net - cost_basis,
-                        "sourceDate": day,
-                        "priceField": "daily close less 10bp assumed slippage",
-                        "simulationOnly": True,
-                    },
-                ]
-            )
-
-        equity = cash + sum(selected_holdings[ticker] * marks[ticker] for ticker in selected)
-        events.append(
-            {
-                "id": f"market-mark-{day}",
-                "atKst": f"{day}T15:30:00+09:00",
-                "type": "MARKET_MARK",
-                "prices": {ticker: marks[ticker] for ticker in selected},
+        if day_index in buy_sessions:
+            ticker = buy_sessions[day_index]
+            price = net_fill_price(per_day[ticker][day]["open"], "BUY")
+            quantity = max(1, int((INITIAL_CASH_KRW * 0.16) // price))
+            execute_trade(day, ticker, "BUY", quantity, "open")
+        elif day_index in sell_sessions:
+            ticker, fraction = sell_sessions[day_index]
+            held = holdings[ticker]
+            quantity = held if fraction == 1.0 else max(1, min(held - 1, round_krw(held * fraction)))
+            execute_trade(day, ticker, "SELL", quantity, "close" if day == SELECTION_END_DATE else "open")
+        else:
+            events.append({
+                "id": f"showcase-no-order-{day}",
+                "atKst": f"{day}T09:30:00+09:00",
+                "type": "NO_ACTION",
+                "reason": "고정 거래 일정에 주문 없음",
                 "sourceDate": day,
                 "simulationOnly": True,
-            }
-        )
-        daily.append(
-            {
-                "date": day,
-                "cash": cash,
-                "equity": equity,
-                "realizedPnl": realized_pnl,
-                "holdings": {
-                    ticker: {"quantity": selected_holdings[ticker], "close": marks[ticker]}
-                    for ticker in selected
-                    if selected_holdings[ticker] > 0
-                },
-                "actionCount": sum(
-                    1 for event in events if event.get("type") in {"FILL", "DIVIDEND"} and event["atKst"][:10] == day
-                ),
-            }
-        )
+            })
 
-    # Keep a single source event stream. Daily snapshots are a verification receipt,
-    # not an independent portfolio input.
+        for ticker in selected:
+            marks[ticker] = per_day[ticker][day]["close"]
+        equity = cash + sum(holdings[ticker] * marks[ticker] for ticker in selected)
+        events.append({
+            "id": f"market-mark-{day}",
+            "atKst": f"{day}T15:30:00+09:00",
+            "type": "MARKET_MARK",
+            "prices": {ticker: marks[ticker] for ticker in selected},
+            "sourceDate": day,
+            "simulationOnly": True,
+        })
+        daily.append({
+            "date": day,
+            "cash": cash,
+            "equity": equity,
+            "realizedPnl": realized_pnl,
+            "holdings": {
+                ticker: {"quantity": holdings[ticker], "close": marks[ticker]}
+                for ticker in selected if holdings[ticker] > 0
+            },
+            "actionCount": sum(
+                1 for event in events if event.get("type") in {"FILL", "DIVIDEND"} and event["atKst"][:10] == day
+            ),
+        })
+
     events.sort(key=lambda event: (event["atKst"], event["id"]))
     final = daily[-1]
     return {
-        "id": "posthoc-showcase-2026-08-18-to-2026-09-18",
+        "id": "posthoc-showcase-2026-08-18-to-2026-09-29-v3",
         "label": "사후 구성 가상 사례",
         "sourceRange": {"start": START_DATE, "end": END_DATE},
-        "selectionRule": "해당 기간의 종가 수익률 상위 2개 종목을 결과 확인 후 선택; 사전 예측력이나 운용 성과가 아님",
+        "selectionAsOf": SELECTION_END_DATE,
+        "selectionRule": "2026-08-18~2026-09-18 종가 수익률 상위 6개를 결과 확인 후 선정한 사후 구성 사례. 거래 일정은 9월 18일까지 고정하고 보유분만 9월 29일까지 평가; 사전 예측력·실운용 성과가 아님",
         "initialCapital": INITIAL_CASH_KRW,
         "externalNetFlows": 0,
         "selectedSymbols": selected,
@@ -322,23 +374,30 @@ def hindsight_portfolio(
             "cash": final["cash"],
             "equity": final["equity"],
             "returnBps": round_krw((final["equity"] / INITIAL_CASH_KRW - 1) * 10_000),
+            "netPnlKrw": final["equity"] - INITIAL_CASH_KRW,
             "realizedPnl": final["realizedPnl"],
-            "unrealizedPnl": final["equity"] - final["cash"] - sum(
-                positions[ticker]["averageCost"] for ticker in positions
-            ),
+            "grossRealizedPnl": sum(event["realizedGrossPnl"] for event in events if event["type"] == "FILL" and event["side"] == "SELL"),
+            "unrealizedPnl": final["equity"] - final["cash"] - sum(cost_bases[ticker] for ticker in selected if holdings[ticker] > 0),
+            "commissionKrw": sum(event["commission"] for event in events if event["type"] == "FILL"),
+            "sellTaxKrw": sum(event["transactionTax"] for event in events if event["type"] == "FILL"),
+            "slippageKrw": sum(abs(event["grossAmount"] - event["referencePrice"] * event["quantity"]) for event in events if event["type"] == "FILL"),
             "dividendCash": sum(event["cashAmount"] for event in dividend_events),
             "dividendGross": sum(event["grossAmount"] for event in dividend_events),
             "dividendWithholding": sum(event["withholdingTax"] for event in dividend_events),
+            "orderCount": trade_number,
+            "fillCount": trade_number,
+            "winningSaleCount": sum(event["realizedPnl"] > 0 for event in events if event["type"] == "FILL" and event["side"] == "SELL"),
+            "losingSaleCount": sum(event["realizedPnl"] < 0 for event in events if event["type"] == "FILL" and event["side"] == "SELL"),
+            "noOrderDays": sum(event["type"] == "NO_ACTION" for event in events),
+            "closedPositionCount": sum(holdings[ticker] == 0 for ticker in selected),
+            "openPositionCount": sum(holdings[ticker] > 0 for ticker in selected),
             "openPositions": final["holdings"],
         },
         "benchmark": {
             "ticker": "^KS11",
             "startClose": per_day["^KS11"][START_DATE]["close"],
             "endClose": per_day["^KS11"][END_DATE]["close"],
-            "returnBps": round_krw(
-                (per_day["^KS11"][END_DATE]["close"] / per_day["^KS11"][START_DATE]["close"] - 1)
-                * 10_000
-            ),
+            "returnBps": round_krw((per_day["^KS11"][END_DATE]["close"] / per_day["^KS11"][START_DATE]["close"] - 1) * 10_000),
         },
         "assumptions": {
             "commissionBpsPerSide": COMMISSION_BPS,
@@ -536,6 +595,8 @@ def build(args: argparse.Namespace) -> dict[str, Any]:
         raise ValueError("source parquet hash does not match data receipt")
     if receipt.get("source") != "Yahoo Finance via yfinance":
         raise ValueError("unexpected source provider")
+    if receipt.get("sourceCollectedAt") and receipt["sourceCollectedAt"] != args.source_collected_at:
+        raise ValueError("source collection timestamp differs from receipt")
     calendar = load_calendar(calendar_path)
     universe = json.loads(universe_path.read_text(encoding="utf-8"))
     symbols = sorted(item["yfinanceTicker"] for item in universe["symbols"])
@@ -559,7 +620,7 @@ def build(args: argparse.Namespace) -> dict[str, Any]:
     backtest = moving_average_backtest(frame, bars, symbols, calendar)
     return {
         "schemaVersion": "mars-demo.scenario.v1",
-        "seedVersion": "mars-demo-2026-09-29.1",
+        "seedVersion": SEED_VERSION,
         "source": {
             "provider": "Yahoo Finance via yfinance",
             "providerVersion": receipt["yfinanceVersion"],

@@ -159,10 +159,18 @@ export function applyOverlayAction(
     if (side === 'BUY' && grossAmount + commission > current.cash) {
       throw new OverlayError('VIRTUAL_INSUFFICIENT_CASH', 409);
     }
-    if (side === 'SELL') {
-      const position = current.positions.find((candidate) => candidate.symbol === ticker);
-      if (!position || quantity > position.quantity) throw new OverlayError('VIRTUAL_INSUFFICIENT_POSITION', 409);
+    const salePosition = side === 'SELL'
+      ? current.positions.find((candidate) => candidate.symbol === ticker)
+      : undefined;
+    if (side === 'SELL' && (!salePosition || quantity > salePosition.quantity)) {
+      throw new OverlayError('VIRTUAL_INSUFFICIENT_POSITION', 409);
     }
+    const saleReceipt = salePosition ? {
+      realizedPnl: grossAmount - commission - transactionTax
+        - Math.floor((salePosition.costBasis * quantity) / salePosition.quantity + 0.5),
+      realizedGrossPnl: grossAmount
+        - Math.floor((salePosition.grossCostBasis * quantity) / salePosition.quantity + 0.5),
+    } : {};
 
     overlay.virtualEvents.push(
       {
@@ -191,6 +199,7 @@ export function applyOverlayAction(
         grossAmount,
         commission,
         transactionTax,
+        ...saleReceipt,
         sourceDate: bar.date,
         priceField: `last historical close (${bar.date}) with assumed slippage`,
         simulationOnly: true,

@@ -21,7 +21,7 @@
       "@/shared/api/*": ["../experience-dashboard/src/shared/api/*"],
       "@/shared/ui/*": ["../experience-dashboard/src/shared/ui/*"],
       "@/shared/lib/*": ["../experience-dashboard/src/shared/lib/*"],
-      "@/features/*": ["../experience-dashboard/src/features/*"],
+      "@/features/*": ["src/demo-ui/features/*", "../experience-dashboard/src/features/*"],
       "@full/app/*": ["../experience-dashboard/src/app/*"],
       "@demo/*": ["src/*"]
     }

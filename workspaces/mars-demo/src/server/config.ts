@@ -72,7 +72,7 @@ export function readAgentConfig(): DemoAgentConfig {
     inputUsdPerMillionTokens: positiveRate('MARS_DEMO_AGENT_INPUT_USD_PER_MILLION_TOKENS', 0.30),
     outputUsdPerMillionTokens: positiveRate('MARS_DEMO_AGENT_OUTPUT_USD_PER_MILLION_TOKENS', 2.50),
     pricingReviewedAt,
-    pricingSource: 'https://cloud.google.com/vertex-ai/generative-ai/pricing (Gemini 2.5 Flash standard text rates, reviewed 2026-09-30)',
+    pricingSource: 'https://cloud.google.com/gemini-enterprise-agent-platform/generative-ai/pricing (Gemini 2.5 Flash standard text rates, reviewed 2026-09-30)',
   } satisfies DemoAgentConfig;
   return config;
 }

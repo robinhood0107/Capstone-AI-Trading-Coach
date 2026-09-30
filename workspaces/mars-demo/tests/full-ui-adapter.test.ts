@@ -8,6 +8,12 @@ import { apiFetch as demoApiFetch } from '../src/adapters/client';
 import { closeDatabase } from '../src/server/store';
 import { dispatchFullUiApi } from '../src/server/full-ui-adapter';
 import { DEMO_SESSION_COOKIE, issueDemoSession } from '../src/server/session';
+import { sessionHash } from '../src/server/session';
+import { showcaseMetadata } from '../src/server/ledger';
+import { initialJournalEntries } from '../src/server/seed-journals';
+import { POST as createVisitorSession } from '../src/app/api/demo/session/route';
+import { POST as askDemoAgent } from '../src/app/api/demo/agent/route';
+import signalFixture from '../data/signals.v1.json';
 
 const tempRoot = mkdtempSync(path.join(tmpdir(), 'mars-full-ui-adapter-'));
 const signingKeyFile = path.join(tempRoot, 'session.key');
@@ -38,7 +44,7 @@ function apiRequest(pathname: string, token: string, method = 'GET', body?: unkn
 }
 
 async function call(pathname: string, token: string, method = 'GET', body?: unknown) {
-  const routeParts = pathname.replace(/^\/api\//, '').split('/');
+  const routeParts = new URL(pathname, 'http://localhost:3021').pathname.replace(/^\/api\//, '').split('/');
   return dispatchFullUiApi(apiRequest(pathname, token, method, body), routeParts);
 }
 
@@ -75,6 +81,165 @@ test('FULL pages share fixture reads while arm and Agent consent stay in each si
   assert.equal(usageBody.agentUsage.sessionCalls, 0);
   assert.equal(usageBody.agentUsage.globalCalls, 0);
   assert.equal(usageBody.agentUsage.estimatedGlobalCostUsd, 0);
+});
+
+test('holdings, fills, decisions, runs, journal seeds, and report reconcile to one historical ledger', async () => {
+  const visitor = issueDemoSession();
+  const receipt = showcaseMetadata().final;
+  const balance = await (await call('/api/v1/brokerage/mock/accounts/current/balances', visitor.token)).json() as {
+    data: { cashKrw: number; portfolioEquityKrw: number; positions: { symbol: string; marketValueKrw: number }[] };
+  };
+  assert.equal(balance.data.cashKrw, receipt.cash);
+  assert.equal(balance.data.portfolioEquityKrw, receipt.equity);
+  assert.equal(balance.data.positions.length, receipt.openPositionCount);
+  assert.equal(balance.data.cashKrw + balance.data.positions.reduce((sum, item) => sum + item.marketValueKrw, 0), receipt.equity);
+
+  const positions = await (await call('/api/v2/automation/positions', visitor.token)).json() as {
+    data: { realizedSummary: { closedPositionCount: number; realizedPnlKrw: number; winningPositionCount: number; losingPositionCount: number }; items: unknown[] };
+  };
+  assert.equal(positions.data.items.length, receipt.openPositionCount);
+  assert.equal(positions.data.realizedSummary.closedPositionCount, receipt.closedPositionCount);
+  assert.equal(positions.data.realizedSummary.realizedPnlKrw, receipt.realizedPnl);
+  assert.equal(positions.data.realizedSummary.winningPositionCount, 1);
+  assert.equal(positions.data.realizedSummary.losingPositionCount, 1);
+
+  const fills = await (await call('/api/v1/brokerage/mock/accounts/current/fills', visitor.token)).json() as {
+    data: { items: { orderId: string; side: string; fillAmountKrw: number }[] };
+  };
+  assert.equal(fills.data.items.length, receipt.fillCount);
+  assert.equal(fills.data.items.filter((item) => item.side === 'SELL').length, receipt.winningSaleCount + receipt.losingSaleCount);
+  const order = await (await call(`/api/v1/brokerage/orders/${fills.data.items[0]!.orderId}`, visitor.token)).json() as {
+    data: { status: string };
+  };
+  assert.equal(order.data.status, 'FILLED');
+
+  const decisions = await (await call('/api/v1/dashboard/risk-results/recent', visitor.token)).json() as {
+    data: { items: { decisionId: string; action: string }[] };
+  };
+  assert.equal(decisions.data.items.length, receipt.orderCount);
+  assert.ok(decisions.data.items.every((item) => item.action === 'ALLOW'));
+  const dashboardDecision = await (await call(`/api/v1/dashboard/risk-results/${decisions.data.items[0]!.decisionId}`, visitor.token)).json() as {
+    data: { viewState: string; view: { action: string } };
+  };
+  assert.equal(dashboardDecision.data.viewState, 'READY');
+  assert.equal(dashboardDecision.data.view.action, 'ALLOW');
+  const detail = await (await call(`/api/v1/decisions/${decisions.data.items[0]!.decisionId}`, visitor.token)).json() as {
+    data: { decisionId: string };
+  };
+  assert.equal(detail.data.decisionId, decisions.data.items[0]!.decisionId);
+
+  const runs = await (await call('/api/v3/automation/runs', visitor.token)).json() as {
+    data: { items: { runId: string; state: string }[] };
+  };
+  const completed = runs.data.items.find((item) => item.state === 'COMPLETED');
+  const noOrder = runs.data.items.find((item) => item.state === 'SKIPPED_NO_ACTION');
+  assert.ok(completed);
+  assert.ok(noOrder);
+  const completedDetail = await (await call(`/api/v3/automation/runs/${completed.runId}`, visitor.token)).json() as {
+    data: { stageOutcomes: { stage: string; outcome: string }[] };
+  };
+  assert.ok(completedDetail.data.stageOutcomes.some((item) => item.stage === 'ORDER' && item.outcome === 'PASS'));
+  const noOrderDetail = await (await call(`/api/v3/automation/runs/${noOrder.runId}`, visitor.token)).json() as {
+    data: { stageOutcomes: { stage: string; outcome: string }[] };
+  };
+  assert.ok(noOrderDetail.data.stageOutcomes.some((item) => item.stage === 'RULE_BUY' && item.outcome === 'DROPPED'));
+  assert.equal(initialJournalEntries(sessionHash(visitor.session.id)).length, 29);
+
+  const report = await (await call('/api/v1/dashboard/performance-reports/latest', visitor.token)).json() as {
+    data: { report: { sections: { actualTrading: { openPositionCount: number; closedPositionCount: number; realizedPnlKrw: number } } } };
+  };
+  assert.equal(report.data.report.sections.actualTrading.openPositionCount, receipt.openPositionCount);
+  assert.equal(report.data.report.sections.actualTrading.closedPositionCount, receipt.closedPositionCount);
+  assert.equal(report.data.report.sections.actualTrading.realizedPnlKrw, receipt.realizedPnl);
+  assert.equal(receipt.realizedPnl + receipt.unrealizedPnl + receipt.dividendCash, receipt.netPnlKrw);
+  assert.ok(receipt.netPnlKrw > 0);
+});
+
+test('one-click entry starts an independent armed portfolio with editable trade reviews', async () => {
+  const response = await createVisitorSession(new NextRequest('http://localhost:3021/api/demo/session', {
+    method: 'POST',
+    headers: { Host: 'localhost:3021', Origin: 'http://localhost:3021', 'Content-Type': 'application/json' },
+    body: '{}',
+  }));
+  assert.equal(response.status, 200);
+  const token = response.cookies.get(DEMO_SESSION_COOKIE)?.value;
+  assert.ok(token);
+  const status = await (await call('/api/v3/automation/status', token)).json() as { data: { controlState: string } };
+  assert.equal(status.data.controlState, 'ARMED');
+  const journals = await (await call('/api/v1/journals', token)).json() as {
+    data: { items: { journalId: string; tags: string[]; links: { orderId: string | null; automationRunId: string } }[] };
+  };
+  assert.equal(journals.data.items.length, 29);
+  assert.equal(journals.data.items.filter((item) => item.links.orderId).length, showcaseMetadata().final.fillCount);
+  assert.ok(journals.data.items.every((item) => item.tags.includes('자동 생성') && item.links.automationRunId));
+});
+
+test('all historical runs, report fields, and exact-31 recorded model signals are available', async () => {
+  const visitor = issueDemoSession();
+  const catalog = await (await call('/api/v1/instruments/display', visitor.token)).json() as { data: { items: { symbol: string }[] } };
+  assert.deepEqual(catalog.data.items.map((item) => item.symbol).sort(), signalFixture.rows.map((row) => row.symbol.replace(/\.(KS|KQ)$/, '')).sort());
+  const runs = await (await call('/api/v3/automation/runs?size=40', visitor.token)).json() as { data: { items: { runId: string }[] } };
+  assert.equal(runs.data.items.length, 29);
+  for (const run of runs.data.items) {
+    const response = await call(`/api/v3/automation/runs/${run.runId}`, visitor.token);
+    assert.equal(response.status, 200);
+    const detail = await response.json() as { data: { stageOutcomes: { stage: string; reasonDetail: string }[] } };
+    assert.ok(detail.data.stageOutcomes.some((stage) => stage.stage === 'OBSERVATION' && stage.reasonDetail.includes('장마감 평가액')));
+  }
+  const backtest = await (await call('/api/v1/dashboard/backtests/demo', visitor.token)).json() as { data: { view: { strategies: { curve: unknown[]; metrics: Record<string, number> }[]; heatmap: unknown[] } } };
+  assert.equal(backtest.data.view.strategies.length, 3);
+  assert.ok(backtest.data.view.strategies.every((row) => row.curve.length === 29 && Object.values(row.metrics).every(Number.isFinite)));
+  assert.equal(backtest.data.view.heatmap.length, 2);
+  const models = await (await call('/api/v1/dashboard/model-evaluations/demo', visitor.token)).json() as { data: { view: { models: { status: string; metrics: Record<string, number> }[]; timeline: { value: number }[] } } };
+  assert.equal(models.data.view.models.length, 2);
+  assert.ok(models.data.view.models.every((row) => row.status === 'AVAILABLE' && Object.values(row.metrics).every(Number.isFinite)));
+  assert.ok(models.data.view.timeline.every((point) => point.value > 1_000_000));
+  for (const row of signalFixture.rows) {
+    const symbol = row.symbol.replace(/\.(KS|KQ)$/, '');
+    const signal = await (await call(`/api/v3/signals/${symbol}`, visitor.token)).json() as { data: { sourceSession: string; targetSession: string; composite: { status: string }; components: { ruleBaseline: { status: string; featureSummary: string[] }; lstm: { status: string }; hmmRegime: { status: string; confidence: number } } } };
+    assert.equal(signal.data.sourceSession, '2026-09-29');
+    assert.equal(signal.data.targetSession, '2026-09-30');
+    assert.equal(signal.data.composite.status, 'AVAILABLE');
+    assert.equal(signal.data.components.ruleBaseline.status, 'AVAILABLE');
+    assert.equal(signal.data.components.ruleBaseline.featureSummary.length, 3);
+    assert.equal(signal.data.components.lstm.status, 'AVAILABLE');
+    assert.equal(signal.data.components.hmmRegime.status, 'AVAILABLE');
+    assert.ok(signal.data.components.hmmRegime.confidence > 0 && signal.data.components.hmmRegime.confidence <= 1);
+  }
+});
+
+test('the direct Agent route requires the same external-processing consent as the FULL UI route', async () => {
+  const visitor = issueDemoSession();
+  const response = await askDemoAgent(new NextRequest('http://localhost:3021/api/demo/agent', {
+    method: 'POST',
+    headers: {
+      Host: 'localhost:3021',
+      Origin: 'http://localhost:3021',
+      Cookie: `${DEMO_SESSION_COOKIE}=${visitor.token}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ question: '보유 종목을 알려 주세요.' }),
+  }));
+  assert.equal(response.status, 403);
+  assert.equal((await response.json() as { error: { code: string } }).error.code, 'EXTERNAL_AI_CONSENT_REQUIRED');
+});
+
+test('personal order stop persists per visitor and blocks arm until resumed', async () => {
+  const stoppedVisitor = issueDemoSession();
+  const otherVisitor = issueDemoSession();
+  const stopped = await call('/api/v2/risk/kill-switch', stoppedVisitor.token, 'POST', { active: true });
+  assert.equal(stopped.status, 200);
+  const personalState = await call('/api/v2/risk/kill-switch', stoppedVisitor.token);
+  assert.equal((await personalState.json() as { data: { active: boolean; effectiveActive: boolean } }).data.active, true);
+  const automation = await call('/api/v3/automation/status', stoppedVisitor.token);
+  const automationBody = await automation.json() as { data: { killSwitchActive: boolean; canArm: boolean; blockers: string[] } };
+  assert.equal(automationBody.data.killSwitchActive, true);
+  assert.equal(automationBody.data.canArm, false);
+  assert.ok(automationBody.data.blockers.includes('KILL_SWITCH_ACTIVE'));
+  assert.equal((await call('/api/v3/automation/arm', stoppedVisitor.token, 'POST', {})).status, 409);
+  assert.equal((await (await call('/api/v2/risk/kill-switch', otherVisitor.token)).json() as { data: { active: boolean } }).data.active, false);
+  assert.equal((await call('/api/v2/risk/kill-switch', stoppedVisitor.token, 'POST', { active: false })).status, 200);
+  assert.equal((await call('/api/v3/automation/status', stoppedVisitor.token)).status, 200);
 });
 
 test('invalid Agent environment is isolated from the rest of the FULL screens', async () => {
@@ -134,6 +299,24 @@ test('FULL automation capital reads start as empty and persist through the visit
 
   const persisted = await call('/api/v4/automation/capital-policy', session.token);
   assert.equal((await persisted.json() as { data: { version: number } }).data.version, 1);
+  const capital = await call('/api/v4/automation/capital-status', session.token);
+  const capitalBody = await capital.json() as { data: { policyVersion: number; positions: unknown[]; botPositionMarketValueKrw: number; brokerBuyableCashKrw: number } };
+  assert.equal(capitalBody.data.policyVersion, 1);
+  assert.equal(capitalBody.data.positions.length, showcaseMetadata().final.openPositionCount);
+  assert.equal(capitalBody.data.botPositionMarketValueKrw + capitalBody.data.brokerBuyableCashKrw, showcaseMetadata().final.equity);
+  const updatedAutomationPolicy = await call('/api/v3/automation/policy', session.token, 'PUT', {
+    expectedVersion: 1,
+    capitalLimitKrw: 8_500_000,
+    stopLossBps: 400,
+    takeProfitBps: 900,
+  });
+  assert.equal(updatedAutomationPolicy.status, 200);
+  const capitalPolicyAfterAutomationSave = await call('/api/v4/automation/capital-policy', session.token);
+  const capitalPolicyAfterAutomationSaveBody = await capitalPolicyAfterAutomationSave.json() as {
+    data: { version: number; reinvestRealizedPnl: boolean };
+  };
+  assert.equal(capitalPolicyAfterAutomationSaveBody.data.version, 1);
+  assert.equal(capitalPolicyAfterAutomationSaveBody.data.reinvestRealizedPnl, true);
   const stale = await call('/api/v4/automation/capital-policy', session.token, 'PUT', {
     reinvestRealizedPnl: false,
     expectedVersion: 0,

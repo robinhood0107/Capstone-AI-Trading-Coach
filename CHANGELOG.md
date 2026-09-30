@@ -2,6 +2,12 @@
 
 이 문서는 [Keep a Changelog](https://keepachangelog.com/ko/1.1.0/) 형식을 따르고, 버전은 [유의적 버전](https://semver.org/lang/ko/)을 따릅니다. 버전 하나가 GitHub Release `vX.Y.Z` 하나와 Docker Hub 이미지 태그 `vX.Y.Z-<part>` 한 벌에 대응합니다.
 
+## [1.0.15] - 2026-09-30
+
+### 수정
+
+- 브로커 gRPC 제한 시간 90초를 Spring 설정 검증의 상한과 일치시켜 FULL API가 시작 시 거부되지 않도록 수정
+
 ## [1.0.14] - 2026-09-30
 
 ### 수정

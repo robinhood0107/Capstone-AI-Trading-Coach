@@ -319,7 +319,7 @@ function ModelTableRow({
 
 function SignalSlotRow({ slot }: { slot: SignalSlot }) {
   return (
-    <li className="flex flex-wrap items-center justify-between gap-3 py-3">
+    <li className="flex flex-wrap items-start justify-between gap-3 py-3 sm:items-center">
       <div className="min-w-0">
         <p className="text-[13px] font-medium text-ink">{slot.displayName}</p>
         <p className="text-[11px] text-faint">{slot.status === 'AVAILABLE' && slot.estimator === 'RIDGE' ? 'Ridge 수익률 추정 · 비교 검증 예정' : slot.key === 'ruleBaseline' ? '종가 추세·RSI 규칙' : slot.key === 'hmmRegime' ? '종가 기반 국면 분류' : '일일 모델 신호'}</p>
@@ -330,11 +330,11 @@ function SignalSlotRow({ slot }: { slot: SignalSlot }) {
           <span className="text-[12px] text-muted">{slot.reason}</span>
         </div>
       ) : (
-        <div className="flex items-center gap-5">
+        <div className="flex w-full min-w-0 items-center justify-between gap-3 sm:w-auto sm:justify-end sm:gap-5">
           {slot.regimeState ? (
-            <span className="text-right text-[13px] text-ink" title={slot.regimeState}>{slot.regimeState}{slot.regimeConfidence !== undefined ? <span className="ml-2 text-[11px] text-muted">국면 확률 {formatRatio(slot.regimeConfidence, 1)}</span> : null}</span>
+            <span className="shrink-0 text-right text-[13px] text-ink" title={slot.regimeState}>{slot.regimeState}{slot.regimeConfidence !== undefined ? <span className="ml-2 text-[11px] text-muted">국면 확률 {formatRatio(slot.regimeConfidence, 1)}</span> : null}</span>
           ) : (
-            <span className={`text-[13px] font-medium ${SIGNAL_TONE[slot.signal ?? 'HOLD']}`}>
+            <span className={`shrink-0 whitespace-nowrap text-[13px] font-medium ${SIGNAL_TONE[slot.signal ?? 'HOLD']}`}>
               {SIGNAL_LABEL[slot.signal ?? 'HOLD']}
             </span>
           )}
@@ -344,7 +344,7 @@ function SignalSlotRow({ slot }: { slot: SignalSlot }) {
               <Numeric className="forecast-number text-[24px]" value={forecast.expectedReturn} format={(v) => formatSignedRatio(v, 2)} />
               <p className="text-[10px] text-faint">학습 {forecast.trainSamples}건 · 기준 {forecast.trainedThrough}</p>
             </div>)}
-          </div> : slot.predictedReturn !== null ? <Numeric value={slot.predictedReturn} format={(v) => formatSignedRatio(v, 2)} /> : slot.featureSummary?.length ? <span className="max-w-[22rem] text-right text-[11px] leading-5 text-muted">{slot.featureSummary.join(' · ')}</span> : slot.regimeState ? null : <span className="text-[11px] text-muted">수익률 예측 없음</span>}
+          </div> : slot.predictedReturn !== null ? <Numeric value={slot.predictedReturn} format={(v) => formatSignedRatio(v, 2)} /> : slot.featureSummary?.length ? <span className="min-w-0 max-w-[22rem] flex-1 break-words text-right text-[11px] leading-5 text-muted">{slot.featureSummary.join(' · ')}</span> : slot.regimeState ? null : <span className="text-[11px] text-muted">수익률 예측 없음</span>}
         </div>
       )}
     </li>

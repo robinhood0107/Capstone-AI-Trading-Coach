@@ -162,7 +162,7 @@ const STATUS_COPY: Record<
 function locatorText(citation: RagV2Citation): string {
   const locator = citation.locator;
   if (locator?.page !== undefined) return `${locator.page}쪽`;
-  if (locator?.section) return locator.section;
+  if (locator?.section && locator.section !== 'source-card') return locator.section;
   return '';
 }
 

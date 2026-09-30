@@ -89,7 +89,7 @@ app:
       grpc:
         target: ${STRONG_LLM_GRPC_TARGET:127.0.0.1:50055}
         shared-secret: ${STRONG_LLM_GRPC_SHARED_SECRET:}
-        deadline-millis: ${STRONG_LLM_GRPC_DEADLINE_MILLIS:45000}
+        deadline-millis: ${STRONG_LLM_GRPC_DEADLINE_MILLIS:60000}
         request-max-bytes: 262144
         response-max-bytes: 262144
     mcp-oauth:

@@ -673,7 +673,7 @@ function SourceRow({ source }: { source: SourceItem }) {
           {CITATION_KIND_LABEL[source.citationKind] ?? source.citationKind}
         </span>
       </div>
-      <p className="mt-1 text-[13px] leading-6 text-muted">{source.summary}</p>
+      {source.summary ? <p className="mt-1 text-[13px] leading-6 text-muted">{source.summary}</p> : null}
       {source.institution ? <p className="mt-1 text-[11px] text-faint">{source.institution}</p> : null}
       {source.href ? (
         <a

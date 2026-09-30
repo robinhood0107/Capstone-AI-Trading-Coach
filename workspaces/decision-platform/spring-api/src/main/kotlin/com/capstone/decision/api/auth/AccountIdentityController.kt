@@ -6,6 +6,7 @@ import com.capstone.decision.api.common.ApiResponseFactory
 import com.capstone.decision.api.common.ErrorCode
 import com.capstone.decision.api.common.RequestIds
 import com.capstone.decision.application.security.AppPrincipal
+import com.capstone.decision.infrastructure.security.BrowserOriginPolicy
 import com.capstone.decision.infrastructure.security.FullSocialLoginProperties
 import com.capstone.decision.infrastructure.security.SocialLoginHandoff
 import com.capstone.decision.infrastructure.security.SocialLoginSessionRepository
@@ -54,7 +55,10 @@ class AccountIdentityController(
         if (provider !in SocialLoginHandoff.REGISTRATIONS) throw ApiException(ErrorCode.VALIDATION_ERROR)
         val handoff = handoffProvider.ifAvailable ?: throw ApiException(ErrorCode.NOT_FOUND)
         val publicOrigin = propertiesProvider.getObject().validatedOrigin()
-        if (request.getHeader("Origin") != publicOrigin || request.queryString != null || request.contentLengthLong > 0) {
+        if (!BrowserOriginPolicy.allows(publicOrigin, request.getHeader("Origin")) ||
+            request.queryString != null ||
+            request.contentLengthLong > 0
+        ) {
             throw ApiException(ErrorCode.FORBIDDEN)
         }
         val session = request.getSession(true)

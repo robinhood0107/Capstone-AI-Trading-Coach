@@ -106,7 +106,7 @@ class MarsDockerHubReleaseWorkflowTest(unittest.TestCase):
     def test_product_versions_are_independent_and_full_baseline_is_preserved(self) -> None:
         full = json.loads(FULL_GATE.read_text(encoding="utf-8"))
         demo = json.loads(DEMO_GATE.read_text(encoding="utf-8"))
-        self.assertEqual(full["version"], "1.0.17")
+        self.assertEqual(full["version"], "1.0.18")
         self.assertEqual(demo["version"], "2.1.0")
         self.assertEqual(demo["imageParts"], ["web"])
         self.assertTrue(full["imagePublicationReady"])

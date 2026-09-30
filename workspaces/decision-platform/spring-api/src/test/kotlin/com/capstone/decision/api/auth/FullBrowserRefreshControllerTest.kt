@@ -2,6 +2,7 @@ package com.capstone.decision.api.auth
 
 import com.capstone.decision.api.common.ApiException
 import com.capstone.decision.infrastructure.security.AuthenticatedAccount
+import com.capstone.decision.infrastructure.security.BrowserOriginPolicy
 import com.capstone.decision.infrastructure.security.DemoRole
 import com.capstone.decision.infrastructure.security.FullBrowserRefreshCookieService
 import com.capstone.decision.infrastructure.security.FullBrowserRefreshSessionRepository
@@ -50,6 +51,16 @@ class FullBrowserRefreshControllerTest {
         assertTrue(response.getHeaders("Set-Cookie").single().contains("HttpOnly"))
         assertTrue(response.getHeaders("Set-Cookie").single().contains("SameSite=Lax"))
         verify(exactly = 1) { repository.resume(any(), 43_200) }
+
+        val loopbackAlias =
+            MockHttpServletRequest("POST", "/api/v1/auth/refresh").apply {
+                addHeader("Origin", "http://127.0.0.1:3002")
+                setCookies(jakarta.servlet.http.Cookie("mars_full_refresh", "rfs1_" + "b".repeat(64)))
+            }
+        assertEquals("fixture.jwt", controller.refresh(loopbackAlias, MockHttpServletResponse()).data?.accessToken)
+        assertTrue(BrowserOriginPolicy.allows("http://127.0.0.1:3002", "http://localhost:3002"))
+        assertTrue(!BrowserOriginPolicy.allows("http://localhost:3002", "http://127.0.0.1:3003"))
+        assertTrue(!BrowserOriginPolicy.allows("https://mars.example", "http://127.0.0.1:3002"))
 
         val rejected =
             MockHttpServletRequest("POST", "/api/v1/auth/refresh").apply {

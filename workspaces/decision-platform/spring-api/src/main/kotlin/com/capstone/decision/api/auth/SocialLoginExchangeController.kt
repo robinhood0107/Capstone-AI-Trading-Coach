@@ -5,6 +5,7 @@ import com.capstone.decision.api.common.ApiResponse
 import com.capstone.decision.api.common.ApiResponseFactory
 import com.capstone.decision.api.common.ErrorCode
 import com.capstone.decision.api.common.RequestIds
+import com.capstone.decision.infrastructure.security.BrowserOriginPolicy
 import com.capstone.decision.infrastructure.security.FullBrowserRefreshCookieService
 import com.capstone.decision.infrastructure.security.FullSocialLoginProperties
 import com.capstone.decision.infrastructure.security.SocialLoginHandoff
@@ -36,7 +37,7 @@ class SocialLoginExchangeController(
         response: HttpServletResponse,
     ): ApiResponse<LoginResponse> {
         if (
-            request.getHeader("Origin") != publicOrigin ||
+            !BrowserOriginPolicy.allows(publicOrigin, request.getHeader("Origin")) ||
             request.queryString != null ||
             request.contentLengthLong > 0
         ) {

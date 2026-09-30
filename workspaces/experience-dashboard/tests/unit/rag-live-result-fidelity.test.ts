@@ -97,6 +97,7 @@ test('preset RAG buttons use previously successful cited or uncited answers only
   const previousProduct = process.env.NEXT_PUBLIC_MARS_PRODUCT;
   const previousFetch = globalThis.fetch;
   const example = RAG_EXAMPLES[0]!;
+  let askCalls = 0;
   let responseMode:
     | 'NO_EVIDENCE'
     | 'MODEL_KNOWLEDGE'
@@ -135,6 +136,7 @@ test('preset RAG buttons use previously successful cited or uncited answers only
         error: null,
       }), { status: 200, headers: { 'Content-Type': 'application/json' } });
     }
+    if (path === '/api/v2/rag/ask') askCalls += 1;
     if (responseMode === 'NETWORK_ERROR') throw new Error('fixture network failure');
     if (responseMode === 'CONSENT_BLOCK') {
       return new Response(JSON.stringify({
@@ -218,12 +220,14 @@ test('preset RAG buttons use previously successful cited or uncited answers only
     }
 
     responseMode = 'VERTEX_UNAVAILABLE';
+    const beforeUnavailableButton = askCalls;
     const unavailableVertexButton = await askRag(example.question, 'CONCISE', true);
     assert.equal(unavailableVertexButton.kind, 'ready');
     if (unavailableVertexButton.kind === 'ready') {
       assert.equal(unavailableVertexButton.data.fallbackUsed, true);
       assert.equal(unavailableVertexButton.data.topSources[0]?.institution, '삼성자산운용');
     }
+    assert.equal(askCalls - beforeUnavailableButton, 1);
 
     responseMode = 'BLOCKED';
     const blockedButton = await askRag(example.question, 'CONCISE', true);

@@ -26,7 +26,7 @@ const TABS: readonly [
   },
 ] as const;
 
-export function StrategyView({ defaultTab = 'model' }: { defaultTab?: StrategyTab }) {
+export function StrategyView({ defaultTab = 'model', reportNote, modelNote }: { defaultTab?: StrategyTab; reportNote?: string; modelNote?: string }) {
   const [tab, setTab] = useState<StrategyTab>(defaultTab);
   const active = TABS.find((item) => item.id === tab) ?? TABS[0];
 
@@ -58,9 +58,9 @@ export function StrategyView({ defaultTab = 'model' }: { defaultTab?: StrategyTa
       </div>
 
       {tab === 'model' ? (
-        <ModelEvaluationView />
+        <ModelEvaluationView evaluationNote={modelNote} />
       ) : (
-        <BacktestReportView />
+        <BacktestReportView artifactNote={reportNote} />
       )}
     </div>
   );

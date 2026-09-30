@@ -80,7 +80,9 @@ export type SignalSlot =
       status: 'AVAILABLE';
       signal: 'BUY' | 'HOLD' | 'SELL' | null;
       regimeState: string | null;
+      regimeConfidence?: number;
       predictedReturn: number | null;
+      featureSummary?: string[];
       returnForecasts?: import('@/shared/api/wire').ReturnForecast[];
       sourceSession?: string;
       estimator?: string;
@@ -99,6 +101,10 @@ export interface SignalView {
   symbol: string;
   timeframe: string;
   asOf: string | null;
+  sourceSession: string | null;
+  targetSession: string | null;
+  archivedSignal: boolean;
+  compositionMethod: string | null;
   composite:
     | { status: 'AVAILABLE'; signal: 'BUY' | 'HOLD' | 'SELL'; predictedReturn: number | null }
     | { status: 'ABSTAIN'; reason: string };
@@ -107,6 +113,16 @@ export interface SignalView {
   distinctSignals: string[];
   warnings: string[];
 }
+
+type DemoSignalV3Runtime = Omit<SignalV3Runtime, 'components'> & {
+  sourceSession?: string;
+  targetSession?: string;
+  archivedSignal?: boolean;
+  compositionMethod?: string;
+  components: Omit<SignalV3Runtime['components'], 'hmmRegime'> & {
+    hmmRegime: SignalV3Runtime['components']['hmmRegime'] & { confidence?: number };
+  };
+};
 
 const ABSTAIN_REASON_KR: Record<string, string> = {
   MISSING_EVIDENCE: '검증된 근거가 아직 없습니다',
@@ -138,13 +154,13 @@ export function readAbstainReason(reason: string): string {
   return ABSTAIN_REASON_KR[reason] ?? reason;
 }
 
-const SLOT_NAMES: [keyof SignalV3Runtime['components'], string][] = [
+const SLOT_NAMES: [keyof DemoSignalV3Runtime['components'], string][] = [
   ['ruleBaseline', '규칙 baseline'],
   ['lstm', 'LSTM'],
   ['hmmRegime', 'HMM 시장국면'],
 ];
 
-export function toSignalView(signal: SignalV3Runtime): SignalView {
+export function toSignalView(signal: DemoSignalV3Runtime): SignalView {
   const slots: SignalSlot[] = SLOT_NAMES.map(([key, displayName]) => {
     const component = signal.components[key];
     if (component.status === 'ABSTAIN') {
@@ -163,7 +179,9 @@ export function toSignalView(signal: SignalV3Runtime): SignalView {
       status: 'AVAILABLE',
       signal: isRegime ? null : component.signal,
       regimeState: isRegime ? component.state : null,
+      regimeConfidence: isRegime ? component.confidence : undefined,
       predictedReturn: isRegime ? null : (component.predictedReturn ?? null),
+      featureSummary: isRegime ? undefined : component.featureSummary,
       returnForecasts: isRegime ? undefined : component.returnForecasts,
       sourceSession: isRegime ? undefined : component.sourceSession,
       estimator: isRegime ? undefined : component.estimator,
@@ -183,6 +201,10 @@ export function toSignalView(signal: SignalV3Runtime): SignalView {
     symbol: signal.symbol,
     timeframe: signal.timeframe,
     asOf: signal.asOf ?? null,
+    sourceSession: signal.sourceSession ?? null,
+    targetSession: signal.targetSession ?? null,
+    archivedSignal: signal.archivedSignal === true,
+    compositionMethod: signal.compositionMethod ?? null,
     composite:
       signal.composite.status === 'AVAILABLE'
         ? {
@@ -200,5 +222,6 @@ export function toSignalView(signal: SignalV3Runtime): SignalView {
 
 export async function loadSignalView(symbol: string): Promise<ViewState<SignalView>> {
   const { data } = await api.signal(symbol);
-  return { kind: 'ready', data: toSignalView(data), asOf: data.asOf ?? null };
+  const demoData = data as DemoSignalV3Runtime;
+  return { kind: 'ready', data: toSignalView(demoData), asOf: data.asOf ?? null };
 }

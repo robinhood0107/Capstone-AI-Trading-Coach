@@ -140,12 +140,12 @@ interface Draft {
  * AI 판단 근거가 전부 v3 에만 있다. 현황 화면은 실현손익 요약(`realizedSummary`)이 필요한데
  * v3 포지션 페이지에는 그 필드가 없어서 계속 v2 를 본다.
  */
-async function load(): Promise<ViewState<AutomationData>> {
+async function load(runPageSize: number): Promise<ViewState<AutomationData>> {
   // 상태만 있으면 정책 편집·시작·정지는 성립한다. 실행 이력이나 종목명 카탈로그가
   // 실패했다고 중지 버튼까지 사라지면 안 된다 - 이 화면은 위험 통제 수단을 담고 있다.
   const status = await api.automationStatusV3();
   const [runs, positions, instruments, capitalPolicy, capitalStatus] = await Promise.all([
-    api.automationRunsV3().catch(() => null),
+    api.automationRunsV3(runPageSize).catch(() => null),
     api.automationPositionsV3().catch(() => null),
     api.instrumentDisplayCatalog().catch(() => null),
     nullableRead(api.automationCapitalPolicy()),
@@ -205,10 +205,10 @@ function numericDraftV3(draft: Draft) {
   };
 }
 
-export function AutomationView() {
+export function AutomationView({ runPageSize = 20 }: { runPageSize?: number } = {}) {
   // 장중에는 체결이 계속 바뀐다. `useResource` 의 폴링은 처음부터 있었는데 아무도
   // 쓰지 않아 이 화면이 1회 로드였다 - 주문이 나가고 체결돼도 새로고침해야 보였다.
-  const { state, reload } = useResource(load, [], true, LIVE_REFRESH_MS);
+  const { state, reload } = useResource(() => load(runPageSize), [runPageSize], true, LIVE_REFRESH_MS);
   return (
     <AsyncBoundary state={state} onRetry={reload}>
       {(data) => (
@@ -1054,7 +1054,7 @@ function PositionPanel({ positions, instruments }: { positions: AutomationPositi
 
 function RunPanel({ runs, instruments }: { runs: AutomationRunV3[]; instruments: InstrumentDisplayCatalog }) {
   const bySymbol = instrumentMap(instruments.items);
-  const [showAll, setShowAll] = useState(false);
+  const [showAll, setShowAll] = useState(true);
   const visibleRuns = showAll ? runs : runs.slice(0, 3);
   const hiddenCount = Math.max(0, runs.length - visibleRuns.length);
   return (

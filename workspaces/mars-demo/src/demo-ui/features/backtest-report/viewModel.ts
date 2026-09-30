@@ -90,7 +90,7 @@ export function toBacktestReportView(view: DashboardBacktestView): BacktestRepor
       value: bestNetReturn?.value ?? null,
       format: 'SIGNED_RATIO',
       note: bestNetReturn
-        ? `${bestNetReturn.scenario}의 비용 반영 수익률입니다. 세 시나리오를 같은 DB 입력과 조건으로 계산했습니다.`
+        ? `${bestNetReturn.scenario}의 비용 반영 수익률입니다. 세 시나리오를 같은 원본 가격과 거래비용 조건으로 계산했습니다.`
         : '비용 반영 수익률이 저장되지 않았습니다.',
       emphasis: true,
     },

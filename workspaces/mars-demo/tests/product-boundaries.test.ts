@@ -27,7 +27,7 @@ test('DEMO mounts the original FULL pages, shell, and common components', () => 
   };
   assert.deepEqual(config.compilerOptions.paths['@/shared/api/client'], ['src/adapters/client.ts']);
   assert.deepEqual(config.compilerOptions.paths['@/shared/api/session'], ['src/adapters/session.tsx']);
-  assert.deepEqual(config.compilerOptions.paths['@/features/*'], ['../experience-dashboard/src/features/*']);
+  assert.deepEqual(config.compilerOptions.paths['@/features/*'], ['src/demo-ui/features/*', '../experience-dashboard/src/features/*']);
   assert.deepEqual(config.compilerOptions.paths['@/shared/ui/*'], ['../experience-dashboard/src/shared/ui/*']);
 
   const shell = readFileSync(path.resolve(demoRoot, '../src/app/layout.tsx'), 'utf8');

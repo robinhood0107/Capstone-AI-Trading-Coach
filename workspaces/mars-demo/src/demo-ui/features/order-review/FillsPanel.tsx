@@ -20,7 +20,7 @@ import { fillWindow, FILL_WINDOW_MAX_DAYS } from './orderGates';
  * 뜻이므로(`JdbcOrderFillRepository.kt:209`) 빈 상태로 그린다 — 붉은 오류 상자를 띄우면
  * 사용자가 고장으로 읽는다.
  */
-export function FillsPanel() {
+export function FillsPanel({ fromDate }: { fromDate?: string } = {}) {
   const { state, reload, refreshError } = useResource(async () => {
     // 종목명 카탈로그는 표시용 곁가지다. 이것 하나가 실패해서 체결 목록이 사라지면
     // 사용자는 주문이 실제로 어떻게 됐는지 확인할 방법을 잃는다. 없으면 코드로 표시한다.
@@ -35,7 +35,8 @@ export function FillsPanel() {
       instruments,
     });
 
-    const { from, to } = fillWindow();
+    const { from: recentFrom, to } = fillWindow();
+    const from = fromDate ?? recentFrom;
     const fills = await api
       .mockFills(accountId, from, to)
       .then((result) => result.data.items)
@@ -44,7 +45,7 @@ export function FillsPanel() {
         throw error;
       });
     return ready({ fills, instruments });
-  }, [], true, 5_000);
+  }, [fromDate], true, 5_000);
 
   return (
     <AsyncBoundary state={state} onRetry={reload}>
@@ -54,7 +55,9 @@ export function FillsPanel() {
           <Panel
             contract="GET /api/v1/brokerage/mock/accounts/{accountId}/fills"
             title="최근 체결"
-            hint={`최근 ${FILL_WINDOW_MAX_DAYS}일 체결 기록입니다. 부분 체결의 가격은 증권사가 제공한 누적 평균가일 수 있습니다.`}
+            hint={fromDate
+              ? `${fromDate} 이후 체결 기록입니다. 부분 체결의 가격은 기록된 누적 평균가일 수 있습니다.`
+              : `최근 ${FILL_WINDOW_MAX_DAYS}일 체결 기록입니다. 부분 체결의 가격은 증권사가 제공한 누적 평균가일 수 있습니다.`}
           >
             <p className="h-8 overflow-hidden text-[11px] text-muted" role="status">{refreshError ?? '\u00a0'}</p>
             {data.fills.length === 0 ? (

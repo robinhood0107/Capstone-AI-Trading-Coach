@@ -870,7 +870,6 @@ export interface RegimeAvailable {
   sourceWorkspace: string;
   asOf: string;
   state: RegimeState;
-  confidence?: number;
   modelReportId?: string;
   modelVersion?: string;
 }
@@ -897,10 +896,6 @@ export interface SignalV3Runtime {
   symbol: string;
   timeframe: string;
   asOf?: string;
-  sourceSession?: string;
-  targetSession?: string;
-  archivedSignal?: boolean;
-  compositionMethod?: string;
   modelReportId?: string;
   composite: CompositeSignal;
   components: {

@@ -32,7 +32,7 @@ const SIGNAL_TONE: Record<string, string> = {
   HOLD: 'text-hold',
 };
 
-export function ModelEvaluationView() {
+export function ModelEvaluationView({ evaluationNote }: { evaluationNote?: string } = {}) {
   const { runId, pending, failed, errorMessage, reload: reloadLatest } = useLatestRun('model-evaluations');
   const [symbol, setSymbol] = useState('');
   const symbolValid = ID_PATTERN.symbol.test(symbol);
@@ -53,6 +53,7 @@ export function ModelEvaluationView() {
 
   return (
     <div className="space-y-6">
+      {evaluationNote ? <p className="border-l-2 border-line bg-surface px-3 py-2 text-[13px] leading-6 text-muted">{evaluationNote}</p> : null}
       <label className="block max-w-md">
         <span className="text-[13px] font-semibold text-ink">현재 신호를 볼 종목</span>
         <span className="mt-1 block text-[12px] text-muted">31개 운용 종목에서 이름으로 선택합니다.</span>
@@ -191,12 +192,14 @@ export function ModelEvaluationView() {
           {(view) => (
             <Panel
               contract="GET /api/v2/signals/{symbol}"
-              title={`${bySymbol.get(view.symbol)?.nameKo ?? view.symbol} 현재 신호`}
-              hint="추정 수익률은 기준 종가 대비입니다. 실제 주문은 현재 가격·비용·위험 한도를 다시 확인합니다."
+              title={`${bySymbol.get(view.symbol)?.nameKo ?? view.symbol} ${view.archivedSignal ? '과거 신호' : '현재 신호'}`}
+              hint={view.sourceSession && view.targetSession
+                ? `${view.sourceSession} 종가 기준 · ${view.targetSession} 거래 세션 대상입니다. 상단 수익률은 LSTM의 1일 추정값이며 실제 주문은 현재 가격·비용·위험 한도를 다시 확인합니다.`
+                : '추정 수익률은 기준 종가 대비입니다. 실제 주문은 현재 가격·비용·위험 한도를 다시 확인합니다.'}
               actions={
                 view.composite.status === 'AVAILABLE' ? (
                   <span className="inline-flex flex-wrap items-center gap-2 rounded-full border border-line px-3 py-1 text-[13px]">
-                    1일 결합예측 · 고정 50:50 · 비교 검증 예정{' '}
+                    {view.compositionMethod ?? '1일 결합예측 · 고정 50:50 · 비교 검증 예정'}{' '}
                     <strong className="text-ink">
                       <Numeric value={view.composite.predictedReturn} format={(v) => formatSignedRatio(v, 2)} />
                     </strong>
@@ -215,7 +218,7 @@ export function ModelEvaluationView() {
 
               <div className="mt-5 border-t border-line pt-4">
                 <p className="text-[13px] font-medium text-ink">
-                  {view.disagrees ? '모델 의견이 갈립니다' : '비교 가능한 모델이 같은 방향입니다'}
+                  {view.distinctSignals.length === 0 ? '비교 가능한 모델 신호가 없습니다' : view.disagrees ? '모델 의견이 갈립니다' : '비교 가능한 모델이 같은 방향입니다'}
                 </p>
                 <p className="mt-1 text-[12px] leading-5 text-muted">
                   불일치는 표시만 하며 주문 가능 여부를 바꾸지 않습니다. HMM은 예측 모델이 아니므로
@@ -316,10 +319,10 @@ function ModelTableRow({
 
 function SignalSlotRow({ slot }: { slot: SignalSlot }) {
   return (
-    <li className="flex flex-wrap items-center justify-between gap-3 py-3">
+    <li className="flex flex-wrap items-start justify-between gap-3 py-3 sm:items-center">
       <div className="min-w-0">
         <p className="text-[13px] font-medium text-ink">{slot.displayName}</p>
-        <p className="text-[11px] text-faint">{slot.status === 'AVAILABLE' && slot.estimator === 'RIDGE' ? 'Ridge 수익률 추정 · 비교 검증 예정' : '일일 모델 신호'}</p>
+        <p className="text-[11px] text-faint">{slot.status === 'AVAILABLE' && slot.estimator === 'RIDGE' ? 'Ridge 수익률 추정 · 비교 검증 예정' : slot.key === 'ruleBaseline' ? '종가 추세·RSI 규칙' : slot.key === 'hmmRegime' ? '종가 기반 국면 분류' : '일일 모델 신호'}</p>
       </div>
       {slot.status === 'ABSTAIN' ? (
         <div className="flex items-center gap-3">
@@ -327,11 +330,11 @@ function SignalSlotRow({ slot }: { slot: SignalSlot }) {
           <span className="text-[12px] text-muted">{slot.reason}</span>
         </div>
       ) : (
-        <div className="flex items-center gap-5">
+        <div className="flex w-full min-w-0 items-center justify-between gap-3 sm:w-auto sm:justify-end sm:gap-5">
           {slot.regimeState ? (
-            <span className="font-mono text-[13px] text-ink">{slot.regimeState}</span>
+            <span className="shrink-0 text-right text-[13px] text-ink" title={slot.regimeState}>{slot.regimeState}{slot.regimeConfidence !== undefined ? <span className="ml-2 text-[11px] text-muted">국면 확률 {formatRatio(slot.regimeConfidence, 1)}</span> : null}</span>
           ) : (
-            <span className={`text-[13px] font-medium ${SIGNAL_TONE[slot.signal ?? 'HOLD']}`}>
+            <span className={`shrink-0 whitespace-nowrap text-[13px] font-medium ${SIGNAL_TONE[slot.signal ?? 'HOLD']}`}>
               {SIGNAL_LABEL[slot.signal ?? 'HOLD']}
             </span>
           )}
@@ -341,7 +344,7 @@ function SignalSlotRow({ slot }: { slot: SignalSlot }) {
               <Numeric className="forecast-number text-[24px]" value={forecast.expectedReturn} format={(v) => formatSignedRatio(v, 2)} />
               <p className="text-[10px] text-faint">학습 {forecast.trainSamples}건 · 기준 {forecast.trainedThrough}</p>
             </div>)}
-          </div> : <Numeric value={slot.predictedReturn} format={(v) => formatSignedRatio(v, 2)} />}
+          </div> : slot.predictedReturn !== null ? <Numeric value={slot.predictedReturn} format={(v) => formatSignedRatio(v, 2)} /> : slot.featureSummary?.length ? <span className="min-w-0 max-w-[22rem] flex-1 break-words text-right text-[11px] leading-5 text-muted">{slot.featureSummary.join(' · ')}</span> : slot.regimeState ? null : <span className="text-[11px] text-muted">수익률 예측 없음</span>}
         </div>
       )}
     </li>

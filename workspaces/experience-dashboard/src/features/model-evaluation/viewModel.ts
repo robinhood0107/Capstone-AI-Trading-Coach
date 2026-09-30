@@ -80,7 +80,9 @@ export type SignalSlot =
       status: 'AVAILABLE';
       signal: 'BUY' | 'HOLD' | 'SELL' | null;
       regimeState: string | null;
+      regimeConfidence?: number;
       predictedReturn: number | null;
+      featureSummary?: string[];
       returnForecasts?: import('@/shared/api/wire').ReturnForecast[];
       sourceSession?: string;
       estimator?: string;
@@ -167,7 +169,9 @@ export function toSignalView(signal: SignalV3Runtime): SignalView {
       status: 'AVAILABLE',
       signal: isRegime ? null : component.signal,
       regimeState: isRegime ? component.state : null,
+      regimeConfidence: isRegime ? component.confidence : undefined,
       predictedReturn: isRegime ? null : (component.predictedReturn ?? null),
+      featureSummary: isRegime ? undefined : component.featureSummary,
       returnForecasts: isRegime ? undefined : component.returnForecasts,
       sourceSession: isRegime ? undefined : component.sourceSession,
       estimator: isRegime ? undefined : component.estimator,

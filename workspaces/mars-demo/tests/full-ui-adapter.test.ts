@@ -194,13 +194,15 @@ test('all historical runs, report fields, and exact-31 recorded model signals ar
   assert.ok(models.data.view.timeline.every((point) => point.value > 1_000_000));
   for (const row of signalFixture.rows) {
     const symbol = row.symbol.replace(/\.(KS|KQ)$/, '');
-    const signal = await (await call(`/api/v3/signals/${symbol}`, visitor.token)).json() as { data: { sourceSession: string; targetSession: string; composite: { status: string }; components: { ruleBaseline: { status: string }; lstm: { status: string }; hmmRegime: { status: string } } } };
+    const signal = await (await call(`/api/v3/signals/${symbol}`, visitor.token)).json() as { data: { sourceSession: string; targetSession: string; composite: { status: string }; components: { ruleBaseline: { status: string; featureSummary: string[] }; lstm: { status: string }; hmmRegime: { status: string; confidence: number } } } };
     assert.equal(signal.data.sourceSession, '2026-09-29');
     assert.equal(signal.data.targetSession, '2026-09-30');
     assert.equal(signal.data.composite.status, 'AVAILABLE');
     assert.equal(signal.data.components.ruleBaseline.status, 'AVAILABLE');
+    assert.equal(signal.data.components.ruleBaseline.featureSummary.length, 3);
     assert.equal(signal.data.components.lstm.status, 'AVAILABLE');
     assert.equal(signal.data.components.hmmRegime.status, 'AVAILABLE');
+    assert.ok(signal.data.components.hmmRegime.confidence > 0 && signal.data.components.hmmRegime.confidence <= 1);
   }
 });
 

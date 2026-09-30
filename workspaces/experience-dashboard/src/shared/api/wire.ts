@@ -870,6 +870,7 @@ export interface RegimeAvailable {
   sourceWorkspace: string;
   asOf: string;
   state: RegimeState;
+  confidence?: number;
   modelReportId?: string;
   modelVersion?: string;
 }

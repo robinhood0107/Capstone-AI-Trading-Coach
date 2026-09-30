@@ -1222,10 +1222,10 @@ async function dispatchFullUiApiCore(context: DispatchContext) {
       compositionMethod: '규칙·LSTM 합의 · LSTM 추정 수익률',
       composite: { status: 'AVAILABLE', signal: row.composite.signal, predictedReturn: row.composite.predictedReturn },
       components: {
-        ruleBaseline: { status: 'AVAILABLE', producer: 'RULE_BASELINE', sourceWorkspace: 'mars-demo', asOf: signals.sourceAsOf, signal: row.rule.signal, predictedReturn: null, sourceSession: signals.sourceSession, estimator: 'trend-200/rsi14' },
+        ruleBaseline: { status: 'AVAILABLE', producer: 'RULE_BASELINE', sourceWorkspace: 'mars-demo', asOf: signals.sourceAsOf, signal: row.rule.signal, predictedReturn: null, sourceSession: signals.sourceSession, estimator: 'trend-200/rsi14', featureSummary: [`종가 ${Number(row.rule.close).toLocaleString('ko-KR')}원`, `추세선 ${Math.round(row.rule.trendAverage).toLocaleString('ko-KR')}원`, `RSI14 ${row.rule.rsi14.toFixed(1)}`] },
         lstm: { status: 'AVAILABLE', producer: 'LSTM', sourceWorkspace: 'mars-demo', asOf: signals.sourceAsOf, signal: row.lstm.signal, predictedReturn: row.lstm.predictedReturn, sourceSession: signals.sourceSession, estimator: 'w756-quarterly', modelVersion: row.lstm.modelHash },
         lightgbm: { status: 'ABSTAIN', producer: 'LIGHTGBM', sourceWorkspace: 'mars-demo', reason: 'MISSING_EVIDENCE' },
-        hmmRegime: { status: 'AVAILABLE', producer: 'HMM', sourceWorkspace: 'mars-demo', asOf: signals.sourceAsOf, state: row.hmm.state, modelVersion: row.hmm.artifactHash },
+        hmmRegime: { status: 'AVAILABLE', producer: 'HMM', sourceWorkspace: 'mars-demo', asOf: signals.sourceAsOf, state: row.hmm.state, confidence: row.hmm.confidence, modelVersion: row.hmm.artifactHash },
       },
       warnings: [
         archivedSignal

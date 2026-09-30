@@ -1220,7 +1220,7 @@ async function dispatchFullUiApiCore(context: DispatchContext) {
       sourceSession: signals.sourceSession,
       targetSession: signals.targetSession,
       archivedSignal,
-      compositionMethod: '규칙·LSTM 합의 · LSTM 추정 수익률',
+      compositionMethod: '규칙·LSTM 합의',
       composite: { status: 'AVAILABLE', signal: row.composite.signal, predictedReturn: row.composite.predictedReturn },
       components: {
         ruleBaseline: { status: 'AVAILABLE', producer: 'RULE_BASELINE', sourceWorkspace: 'mars-demo', asOf: signals.sourceAsOf, signal: row.rule.signal, predictedReturn: null, sourceSession: signals.sourceSession, estimator: 'trend-200/rsi14', featureSummary: [`종가 ${Number(row.rule.close).toLocaleString('ko-KR')}원`, `추세선 ${Math.round(row.rule.trendAverage).toLocaleString('ko-KR')}원`, `RSI14 ${row.rule.rsi14.toFixed(1)}`] },

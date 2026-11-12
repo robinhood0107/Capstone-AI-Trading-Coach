@@ -21,6 +21,12 @@ class Rule:
 
 
 RULES = (
+    Rule("capstone-rag/ocr/cpu/pyproject.toml", "FULL-only", "full-product-owner"),
+    Rule("capstone-rag/ocr/cpu/uv.lock", "FULL-only", "full-product-owner"),
+    Rule("capstone-rag/ocr/intel/pyproject.toml", "FULL-only", "full-product-owner"),
+    Rule("capstone-rag/ocr/intel/uv.lock", "FULL-only", "full-product-owner"),
+    Rule("capstone-rag/ocr/nvidia/pyproject.toml", "FULL-only", "full-product-owner"),
+    Rule("capstone-rag/ocr/nvidia/uv.lock", "FULL-only", "full-product-owner"),
     Rule("workspaces/mars-demo/", "DEMO-only", "demo-product-owner"),
     Rule("deploy/p1/mars-demo-release.json", "DEMO-only", "demo-product-owner"),
     Rule("contracts/openapi/mars-demo-", "DEMO-only", "demo-product-owner"),
@@ -108,7 +114,7 @@ def classify_paths(paths: Iterable[str]) -> dict[str, object]:
     owners: dict[str, list[str]] = {}
     unclassified: list[str] = []
     for path in normalized_paths:
-        matching = next((rule for rule in RULES if path == rule.prefix or path.startswith(rule.prefix)), None)
+        matching = next((rule for rule in RULES if path == rule.prefix or (not rule.prefix.startswith("capstone-rag/ocr/") and path.startswith(rule.prefix))), None)
         if matching is None:
             unclassified.append(path)
             continue

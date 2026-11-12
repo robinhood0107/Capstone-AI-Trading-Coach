@@ -197,8 +197,8 @@ class P1ReleaseWorkflowSecurityTest(unittest.TestCase):
             encoding="utf-8"
         )
         self.assertIn("redis:7.2-alpine@sha256:", dockerfile)
-        self.assertIn("libcrypto3=3.3.7-r1", dockerfile)
-        self.assertIn("libssl3=3.3.7-r1", dockerfile)
+        self.assertIn("libcrypto3=3.3.7-r2", dockerfile)
+        self.assertIn("libssl3=3.3.7-r2", dockerfile)
 
     def test_runtime_images_and_secret_boundary_are_pinned(self) -> None:
         python_dockerfile = (

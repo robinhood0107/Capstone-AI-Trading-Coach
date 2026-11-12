@@ -2,6 +2,12 @@
 
 이 문서는 [Keep a Changelog](https://keepachangelog.com/ko/1.1.0/) 형식을 따르고, 버전은 [유의적 버전](https://semver.org/lang/ko/)을 따릅니다. 버전 하나가 GitHub Release `vX.Y.Z` 하나와 Docker Hub 이미지 태그 `vX.Y.Z-<part>` 한 벌에 대응합니다.
 
+## [1.0.21] - 2026-11-13
+
+### 수정
+
+- 의존성 보안 업데이트를 적용하고 이미지 빌드에서 고정된 의존성 목록을 사용합니다.
+
 ## [1.0.20] - 2026-09-30
 
 ### 수정

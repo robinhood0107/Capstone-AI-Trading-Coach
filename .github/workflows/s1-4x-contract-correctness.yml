@@ -171,6 +171,8 @@ jobs:
           #                             langchain-anthropic==1.7.0 을 더하고, 보안 패치로
           #                             cryptography 를 >=50,<51 로 pillow 를 12.3.0 으로 올렸다.
           #
+          #   3  아래 값                 의존성 보안 수정. numpy, scipy, jax 버전은 유지한다.
+          #
           # 이 pin이 지키는 것은 수치 패리티이고 그것이 걸린 것은 numpy·scipy·jax 계열이다.
           # amendment 2는 그 셋을 건드리지 않는다. 다음에 누가 수치 패키지를 옮기면 여기서 죽고,
           # 그때도 지금처럼 이유를 적고 지나가야 한다.
@@ -183,9 +185,9 @@ jobs:
           test "${S5_6_RUNTIME_PATHS[*]}" = \
             "workspaces/decision-platform/python-services/pyproject.toml workspaces/decision-platform/python-services/uv.lock"
           test "$(sha256sum workspaces/decision-platform/python-services/pyproject.toml | cut -d' ' -f1)" = \
-            "3d1d4a4c620e11007bb083a977975ba5ee0380101c45f7652ab69b405ac6453f"
+            "cd4b77a3955912ed7b205de97919e0d97ea6928d2de83c651bac2cd02af69ad9"
           test "$(sha256sum workspaces/decision-platform/python-services/uv.lock | cut -d' ' -f1)" = \
-            "7762ff5bcdf07d8b0e3e55ca75181d15c78ca3e3c0e379f0859f08af5da3163e"
+            "31e20a0fcc7d0891b6fac46b62e3c093bb1a66dce606fdcf89a7f1289d289f56"
 
           # 로컬 자료 경로에 결합된 obsolete host-only 검사는 한 번만 exact hash 전이로 제거한다.
           S1_4R_ISOLATION_TEST=workspaces/decision-platform/research/s1-4r-jax-risk/tests/test_production_isolation.py

@@ -5,7 +5,7 @@ FROM --platform=linux/amd64 eclipse-temurin:25-jdk-jammy@sha256:89565961a318534f
 WORKDIR /source
 COPY workspaces/decision-platform/spring-api/gradlew workspaces/decision-platform/spring-api/gradlew
 COPY workspaces/decision-platform/spring-api/gradle workspaces/decision-platform/spring-api/gradle
-COPY workspaces/decision-platform/spring-api/settings.gradle.kts workspaces/decision-platform/spring-api/build.gradle.kts workspaces/decision-platform/spring-api/
+COPY workspaces/decision-platform/spring-api/settings.gradle.kts workspaces/decision-platform/spring-api/build.gradle.kts workspaces/decision-platform/spring-api/gradle.lockfile workspaces/decision-platform/spring-api/
 COPY workspaces/decision-platform/spring-api/gradle.properties workspaces/decision-platform/spring-api/gradle.properties
 COPY contracts contracts
 COPY workspaces/decision-platform/spring-api/src workspaces/decision-platform/spring-api/src

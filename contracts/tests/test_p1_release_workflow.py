@@ -180,6 +180,11 @@ class P1ReleaseWorkflowSecurityTest(unittest.TestCase):
         self.assertIn("libcrypto3=3.5.9-r0", dockerfile)
         self.assertIn("libssl3=3.5.9-r0", dockerfile)
         self.assertIn("libuuid=2.42.3-r1", dockerfile)
+        self.assertIn("krb5-libs=1.22.3-r0", dockerfile)
+        self.assertIn("libxslt=1.1.43-r4", dockerfile)
+        self.assertIn("musl=1.2.6-r3", dockerfile)
+        self.assertIn("musl-utils=1.2.6-r3", dockerfile)
+        self.assertIn("zlib=1.4-r0", dockerfile)
         self.assertIn("PGVECTOR_VERSION=0.8.6", dockerfile)
         self.assertIn(
             "PGVECTOR_SHA256=10bf9938906e5d643bbc4a7eea104b6f57ba4898e5b76b20e60484ea1d5a7f8f",

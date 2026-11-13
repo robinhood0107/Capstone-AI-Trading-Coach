@@ -180,6 +180,11 @@ class P1ReleaseWorkflowSecurityTest(unittest.TestCase):
         self.assertIn("libcrypto3=3.5.9-r0", dockerfile)
         self.assertIn("libssl3=3.5.9-r0", dockerfile)
         self.assertIn("libuuid=2.42.3-r1", dockerfile)
+        self.assertIn("krb5-libs=1.22.3-r0", dockerfile)
+        self.assertIn("libxslt=1.1.43-r4", dockerfile)
+        self.assertIn("musl=1.2.6-r3", dockerfile)
+        self.assertIn("musl-utils=1.2.6-r3", dockerfile)
+        self.assertIn("zlib=1.4-r0", dockerfile)
         self.assertIn("PGVECTOR_VERSION=0.8.6", dockerfile)
         self.assertIn(
             "PGVECTOR_SHA256=10bf9938906e5d643bbc4a7eea104b6f57ba4898e5b76b20e60484ea1d5a7f8f",
@@ -197,8 +202,26 @@ class P1ReleaseWorkflowSecurityTest(unittest.TestCase):
             encoding="utf-8"
         )
         self.assertIn("redis:7.2-alpine@sha256:", dockerfile)
-        self.assertIn("libcrypto3=3.3.7-r1", dockerfile)
-        self.assertIn("libssl3=3.3.7-r1", dockerfile)
+        self.assertIn("libcrypto3=3.3.7-r2", dockerfile)
+        self.assertIn("libssl3=3.3.7-r2", dockerfile)
+        self.assertIn("musl=1.2.5-r12", dockerfile)
+        self.assertIn("musl-utils=1.2.5-r12", dockerfile)
+        self.assertIn("zlib=1.4-r0", dockerfile)
+
+    def test_full_web_image_pins_fixed_alpine_packages(self) -> None:
+        dockerfile = (REPOSITORY_ROOT / "workspaces/experience-dashboard/Dockerfile").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn("musl=1.2.6-r3", dockerfile)
+        self.assertIn("musl-utils=1.2.6-r3", dockerfile)
+        self.assertIn("zlib=1.4-r0", dockerfile)
+
+    def test_full_api_image_pins_fixed_wolfi_packages(self) -> None:
+        dockerfile = (REPOSITORY_ROOT / "deploy/p1/docker/decision-platform.Dockerfile").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn("ca-certificates-bundle=20260909-r3", dockerfile)
+        self.assertIn("zlib=1.3.2.1_rc20260601-r0", dockerfile)
 
     def test_runtime_images_and_secret_boundary_are_pinned(self) -> None:
         python_dockerfile = (

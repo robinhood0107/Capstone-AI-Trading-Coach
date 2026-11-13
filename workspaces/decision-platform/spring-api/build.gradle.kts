@@ -57,14 +57,21 @@ configurations.all {
         "org.apache.tomcat.embed:tomcat-embed-core:11.0.25",
         "org.apache.tomcat.embed:tomcat-embed-el:11.0.25",
         "org.apache.tomcat.embed:tomcat-embed-websocket:11.0.25",
-        "com.fasterxml.jackson.core:jackson-databind:2.21.6",
-        "tools.jackson.core:jackson-core:3.1.6",
-        "tools.jackson.core:jackson-databind:3.1.6",
-        "tools.jackson.dataformat:jackson-dataformat-yaml:3.1.6",
-        "tools.jackson.module:jackson-module-kotlin:3.1.6",
+        "at.yawk.lz4:lz4-java:1.11.4",
+        "com.google.guava:guava:33.7.2-android",
+        "org.xerial.snappy:snappy-java:1.1.10.9",
+        "com.fasterxml.jackson.core:jackson-core:2.21.7",
+        "com.fasterxml.jackson.core:jackson-databind:2.21.7",
+        "tools.jackson.core:jackson-core:3.1.7",
+        "tools.jackson.core:jackson-databind:3.1.7",
+        "tools.jackson.dataformat:jackson-dataformat-yaml:3.1.7",
+        "tools.jackson.module:jackson-module-kotlin:3.1.7",
     )
     // Spring Boot BOM이 고정한 4.2.15의 SNI 취약점을 피하면서 Netty 모듈을 같은 patch로 맞춘다.
     resolutionStrategy.eachDependency {
+        if (requested.group == "org.springframework") {
+            useVersion("7.0.9")
+        }
         if (requested.group == "io.netty") {
             useVersion("4.2.18.Final")
         }
@@ -75,12 +82,12 @@ dependencyManagement {
     imports {
         mavenBom("io.grpc:grpc-bom:1.81.0")
         mavenBom("org.springframework.ai:spring-ai-bom:2.0.0")
-        mavenBom("com.fasterxml.jackson:jackson-bom:2.21.6")
-        mavenBom("tools.jackson:jackson-bom:3.1.6")
+        mavenBom("com.fasterxml.jackson:jackson-bom:2.21.7")
+        mavenBom("tools.jackson:jackson-bom:3.1.7")
     }
     dependencies {
         // Boot BOM의 다음 patch 반영 전에도 공개 취약점 수정 버전을 우선한다.
-        dependency("com.fasterxml.jackson.core:jackson-databind:2.21.6")
+        dependency("com.fasterxml.jackson.core:jackson-databind:2.21.7")
         dependency("ch.qos.logback:logback-core:1.5.35")
         dependency("ch.qos.logback:logback-classic:1.5.35")
         // CVE-2026-65182 / CVE-2026-65905 / CVE-2026-68525 - 전부 인증·권한 우회다.
@@ -103,7 +110,7 @@ dependencies {
     implementation("org.springframework.security:spring-security-oauth2-authorization-server")
     implementation("org.springframework.boot:spring-boot-starter-oauth2-resource-server")
     implementation("org.springframework.ai:spring-ai-starter-mcp-server-webmvc")
-    implementation("org.jsoup:jsoup:1.21.2")
+    implementation("org.jsoup:jsoup:1.23.2")
     implementation("org.springframework.boot:spring-boot-starter-actuator")
     implementation("org.springframework.boot:spring-boot-starter-aspectj")
     implementation("org.springframework.boot:spring-boot-starter-kafka")
@@ -719,10 +726,10 @@ val verifySecurityDependencyVersions by tasks.registering {
         check(selectedVersion(runtime, "ch.qos.logback", "logback-core") == "1.5.35") {
             "logback-core must include the GHSA-jhq6-gfmj-v8fx fix"
         }
-        check(selectedVersion(runtime, "com.fasterxml.jackson.core", "jackson-databind") == "2.21.6") {
+        check(selectedVersion(runtime, "com.fasterxml.jackson.core", "jackson-databind") == "2.21.7") {
             "jackson-databind must include the CVE-2026-68497 fix"
         }
-        check(selectedVersion(runtime, "tools.jackson.core", "jackson-databind") == "3.1.6") {
+        check(selectedVersion(runtime, "tools.jackson.core", "jackson-databind") == "3.1.7") {
             "Jackson 3 databind must include the CVE-2026-68497 fix"
         }
         check(

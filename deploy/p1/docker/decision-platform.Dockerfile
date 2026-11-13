@@ -5,7 +5,7 @@ FROM --platform=linux/amd64 eclipse-temurin:25-jdk-jammy@sha256:89565961a318534f
 WORKDIR /source
 COPY workspaces/decision-platform/spring-api/gradlew workspaces/decision-platform/spring-api/gradlew
 COPY workspaces/decision-platform/spring-api/gradle workspaces/decision-platform/spring-api/gradle
-COPY workspaces/decision-platform/spring-api/settings.gradle.kts workspaces/decision-platform/spring-api/build.gradle.kts workspaces/decision-platform/spring-api/
+COPY workspaces/decision-platform/spring-api/settings.gradle.kts workspaces/decision-platform/spring-api/build.gradle.kts workspaces/decision-platform/spring-api/gradle.lockfile workspaces/decision-platform/spring-api/
 COPY workspaces/decision-platform/spring-api/gradle.properties workspaces/decision-platform/spring-api/gradle.properties
 COPY contracts contracts
 COPY workspaces/decision-platform/spring-api/src workspaces/decision-platform/spring-api/src
@@ -38,7 +38,8 @@ LABEL org.opencontainers.image.title="Capstone Decision Platform" \
       org.opencontainers.image.revision="$SOURCE_REVISION" \
       org.opencontainers.image.version="$RELEASE_VERSION" \
       org.opencontainers.image.licenses="AGPL-3.0-only"
-RUN apk add --no-cache openjdk-25-jre=25.0.4.1-r0 python-3.14=3.14.7-r1 libgomp=16.2.0-r0
+RUN apk add --no-cache openjdk-25-jre=25.0.4.1-r0 python-3.14=3.14.7-r1 libgomp=16.2.0-r0 \
+    ca-certificates-bundle=20260909-r3 zlib=1.3.2.1_rc20260601-r0
 ENV JAVA_HOME=/usr/lib/jvm/java-25-openjdk \
     PATH=/opt/venv/bin:/usr/lib/jvm/java-25-openjdk/bin:$PATH \
     PYTHONUNBUFFERED=1 \

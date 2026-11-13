@@ -100,6 +100,21 @@ def test_mixed_categories_publish_only_the_affected_products() -> None:
     assert result["demoOnlyFullPublishNoOp"] is False
 
 
+def test_ocr_dependency_files_are_full_only_and_other_paths_fail_closed() -> None:
+    for lane in ("cpu", "intel", "nvidia"):
+        for name in ("pyproject.toml", "uv.lock"):
+            result = MODULE.classify_paths([f"capstone-rag/ocr/{lane}/{name}"])
+            assert result["categories"] == ["FULL-only"]
+            assert result["fullImageRequired"] is True
+        for name in ("unknown.txt", "uv.lock.extra"):
+            try:
+                MODULE.classify_paths([f"capstone-rag/ocr/{lane}/{name}"])
+            except ValueError:
+                pass
+            else:
+                raise AssertionError("unknown OCR path must fail closed")
+
+
 def test_unknown_path_fails_before_any_publish_decision() -> None:
     try:
         MODULE.classify_paths(["mystery/product/file.txt"])
@@ -119,5 +134,6 @@ if __name__ == "__main__":
     test_deployment_only_does_not_publish_product_images()
     test_docker_ignore_changes_gate_both_image_contexts()
     test_mixed_categories_publish_only_the_affected_products()
+    test_ocr_dependency_files_are_full_only_and_other_paths_fail_closed()
     test_unknown_path_fails_before_any_publish_decision()
     print("PRODUCT_IMPACT_CLASSIFIER_TESTS=PASS")

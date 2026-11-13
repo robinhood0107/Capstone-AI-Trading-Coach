@@ -37,7 +37,12 @@ ARG RELEASE_VERSION=0.0.0
 RUN apk add --no-cache --upgrade \
     libcrypto3=3.5.9-r0 \
     libssl3=3.5.9-r0 \
-    libuuid=2.42.3-r1
+    libuuid=2.42.3-r1 \
+    krb5-libs=1.22.3-r0 \
+    libxslt=1.1.43-r4 \
+    musl=1.2.6-r3 \
+    musl-utils=1.2.6-r3 \
+    zlib=1.4-r0
 
 LABEL org.opencontainers.image.title="Capstone P1 PostgreSQL with pgvector" \
       org.opencontainers.image.description="PostgreSQL 16 runtime with the pinned pgvector extension for P1_OFFLINE_DEMO" \

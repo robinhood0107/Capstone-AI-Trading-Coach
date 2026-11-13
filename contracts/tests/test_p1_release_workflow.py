@@ -204,6 +204,17 @@ class P1ReleaseWorkflowSecurityTest(unittest.TestCase):
         self.assertIn("redis:7.2-alpine@sha256:", dockerfile)
         self.assertIn("libcrypto3=3.3.7-r2", dockerfile)
         self.assertIn("libssl3=3.3.7-r2", dockerfile)
+        self.assertIn("musl=1.2.5-r12", dockerfile)
+        self.assertIn("musl-utils=1.2.5-r12", dockerfile)
+        self.assertIn("zlib=1.4-r0", dockerfile)
+
+    def test_full_web_image_pins_fixed_alpine_packages(self) -> None:
+        dockerfile = (REPOSITORY_ROOT / "workspaces/experience-dashboard/Dockerfile").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn("musl=1.2.6-r3", dockerfile)
+        self.assertIn("musl-utils=1.2.6-r3", dockerfile)
+        self.assertIn("zlib=1.4-r0", dockerfile)
 
     def test_full_api_image_pins_fixed_wolfi_packages(self) -> None:
         dockerfile = (REPOSITORY_ROOT / "deploy/p1/docker/decision-platform.Dockerfile").read_text(

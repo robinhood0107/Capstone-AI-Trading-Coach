@@ -15,7 +15,10 @@ ARG RELEASE_VERSION=0.0.0
 # Pin the fixed Alpine 3.21 OpenSSL revisions used by the release scan.
 RUN apk add --no-cache --upgrade \
     libcrypto3=3.3.7-r2 \
-    libssl3=3.3.7-r2
+    libssl3=3.3.7-r2 \
+    musl=1.2.5-r12 \
+    musl-utils=1.2.5-r12 \
+    zlib=1.4-r0
 
 LABEL org.opencontainers.image.title="Capstone P1 Redis" \
       org.opencontainers.image.description="Redis 7.2 with the P1 secret loader entrypoint" \

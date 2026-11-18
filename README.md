@@ -50,7 +50,6 @@
 | 근거 부족 시 | 추정값으로 채움 | `HOLD`, `ABSTAIN`과 차단 사유를 그대로 표시 |
 | 위험 통제 | 모델 출력에 의존 | 결정적 RiskEngine이 최종 수량과 허용을 결정 |
 | 성과 표기 | 백테스트 수익률 중심 | 기준선 대비 판정(`BELOW_BASELINE` 등)을 함께 공개 |
-| AI 설명 | 주문을 결정하기도 함 | 출처를 단 설명만 제공하고 주문 권한은 없음 |
 
 #### 사회적 가치 도입 계획
 
@@ -89,7 +88,6 @@ flowchart TD
 | KIS 모의 주문, 대사 | 허용된 주문 의도 | 주문 접수, 체결, 잔고 대사 | 사용자별 계좌에만 주문. 호출 유량(모의 1건/초) 준수 |
 | 수집기 | 일봉, 공시, GDELT 파일 | 품질 상태가 붙은 데이터 | 시각, 결측, 미발행을 구분해 저장 |
 | 예측, 모델 비교 | 완료된 feature | 규칙, LSTM, 회귀 신호 비교 | 모델은 주문 권한 없음 |
-| 금융 Agent | 질문 | 출처를 단 답변 또는 근거 부족 응답 | 공시, 뉴스, 시세 근거 검색(RAG) |
 | 주문 검토 | 후보, 원칙 | 통과, 차단 판정과 이유 | 사람이 주문 전에 판정 근거 확인 |
 
 #### FULL 계좌, 자동운용 준비 상태
@@ -100,17 +98,11 @@ flowchart TD
 - 자동운용 정지는 제어 상태와 미래 예약을 함께 해제하고 기록을 남깁니다. 정책을 정지 중 저장하면 다음 시작이 저장된 새 버전을 사용합니다. 시작은 예약만 만들며 런타임이 꺼져 있으면 실행, 주문은 일어나지 않습니다.
 - 각 버튼의 API, DB 효과와 내부 모의 계좌, 과거 paper 기록 귀속은 [FULL 상태 전이와 DB 검증표](https://github.com/robinhood0107/Capstone-AI-Trading-Coach/blob/main/docs/FULL_상태전이_DB_검증표.md)에 정리했습니다.
 
-#### Vertex 키와 Agent 사용량
-
-- 사용자는 본인 Vertex 키를 등록, 삭제할 수 있습니다. 키는 암호화해 저장하고 다시 표시하지 않습니다. 자동운용 AI 검토와 금융 Agent는 본인 키를 먼저 쓰고 관리자가 허용한 경우에만 공용 키를 대체 경로로 씁니다.
-- 관리자는 공용 키의 설정 상태와 사용자별 사용량만 확인할 수 있습니다. 사용자 키의 비밀값은 조회할 수 없으며 사용량은 개인 키, 공용 키로 나눠 기록합니다.
-
 ### 화면 사용 흐름
 
 1. 로그인 후 **내 원칙**에서 프리셋과 위험 한도를 정합니다.
 2. 모델 비교와 백테스트에서 신호와 결과를 살펴보고 **주문 검토**에서 원칙과 RiskEngine의 판정 근거를 확인합니다.
 3. **자동운용**에서 준비 상태와 실행 이력, 차단 사유를 살펴봅니다. 주문 접수와 체결은 서로 다른 상태입니다.
-4. **금융 Agent**에서 질문하고 출처를 확인한 뒤 필요한 내용을 학습일지에 남깁니다.
 
 ## 화면과 시연 영상
 
@@ -119,8 +111,8 @@ flowchart TD
 | 자동운용 | 주문 검토 |
 |---|---|
 | <img src="docs/readme-media/automation.png" width="420" alt="자동운용 화면"> | <img src="docs/readme-media/order-review.png" width="420" alt="주문 검토 화면"> |
-| **백테스트** | **금융 Agent** |
-| <img src="docs/readme-media/backtest.png" width="420" alt="백테스트 화면"> | <img src="docs/readme-media/agent-answers.png" width="420" alt="금융 Agent 답변 화면"> |
+| **백테스트** | |
+| <img src="docs/readme-media/backtest.png" width="420" alt="백테스트 화면"> | |
 
 
 ### 시연 영상
@@ -151,11 +143,10 @@ flowchart LR
   T --> A[Decision Platform API<br/>Spring Boot]
   W --> A
   A --> AA[Actor Authority<br/>내부 권한 발급]
-  A <--> P[(PostgreSQL + pgvector)]
+  A <--> P[(PostgreSQL)]
   A <--> R[(Redis)]
-  A <--> PY[Python 서비스<br/>gRPC: 공시·RAG·예측·주문]
+  A <--> PY[Python 서비스<br/>gRPC: 공시·예측·주문]
   PY --> K[KIS 모의투자 API]
-  PY --> V[Vertex AI · Voyage<br/>금융 Agent·검색]
   C[수집기<br/>일봉·세계 뉴스·공시] --> P
   RT[자동운용 런타임] --> A
   A -. 선택 .-> O[Google · Kakao OAuth]
@@ -163,9 +154,9 @@ flowchart LR
 
 | 구성 요소 | 소스 경로 | 포트 | 주요 역할 |
 |---|---|---|---|
-| Experience Dashboard | `workspaces/experience-dashboard` | 127.0.0.1:3000 | 로그인, 원칙, 자동운용, 주문 검토, 금융 Agent 화면 |
+| Experience Dashboard | `workspaces/experience-dashboard` | 127.0.0.1:3000 | 로그인, 원칙, 자동운용, 주문 검토 |
 | Decision Platform API | `workspaces/decision-platform/spring-api` | 127.0.0.1:18080 | 인증, 원칙, 위험 판정, 자동운용, 주문, 대사 API |
-| Python 서비스 | `workspaces/decision-platform/python-services` | 내부 gRPC | 수집기, 공시, RAG, 예측 추론, KIS 주문 어댑터 |
+| Python 서비스 | `workspaces/decision-platform/python-services` | 내부 gRPC | 수집기, 공시, 예측 추론, KIS 주문 어댑터 |
 | Return Engine | `workspaces/return-engine` | 내부 | LSTM, 규칙 기준선, 백테스트 산출물 |
 | TLS 프록시 | `deploy/p1/docker/tls-proxy.nginx.conf` | 443 / 80 (서버) | 외부 HTTPS 단일 입구 |
 | PostgreSQL, Redis | `deploy/p1/docker` | 내부 | 운영 데이터, 세션, 호출 제한, 작업 상태 |
@@ -182,7 +173,7 @@ flowchart LR
 
 #### API와 저장 경계
 
-이전 판본은 인증, 투자 원칙, 주문 평가, RAG 질문과 이력, 계좌 잔고, 주문 대사, 체결 조회, 자동운용 상태와 학습일지를 별도 API 영역으로 나눴습니다. 현행 API의 경로와 요청 형식은 실행 중 Swagger와 API 명세에서 확인합니다. PostgreSQL에는 원칙 버전과 실행, 주문, 체결, 계좌 대사 등 서로 다른 사건을 저장하고 Redis는 세션과 호출 제한, 작업 상태에 사용합니다. 내부 모의 원장과 현재 KIS 계좌 기록을 합치지 않는 것이 계좌 귀속의 기준입니다.
+이전 판본은 인증, 투자 원칙, 주문 평가, 계좌 잔고, 주문 대사, 체결 조회, 자동운용 상태와 학습일지를 별도 API 영역으로 나눴습니다. 현행 API의 경로와 요청 형식은 실행 중 Swagger와 API 명세에서 확인합니다. PostgreSQL에는 원칙 버전과 실행, 주문, 체결, 계좌 대사 등 서로 다른 사건을 저장하고 Redis는 세션과 호출 제한, 작업 상태에 사용합니다. 내부 모의 원장과 현재 KIS 계좌 기록을 합치지 않는 것이 계좌 귀속의 기준입니다.
 
 ## 기술 스택
 
@@ -190,9 +181,9 @@ flowchart LR
 |---|---|
 | 프론트엔드 | TypeScript, React, Next.js, Tailwind CSS |
 | 백엔드 | Java 25, Kotlin, Spring Boot, Spring Security(OAuth2 Client), Flyway, gRPC |
-| 데이터, 분석 | Python 3.12, uv, pandas, NumPy, PyTorch(LSTM), LangGraph |
-| 저장소 | PostgreSQL 16 + pgvector, Redis |
-| 외부 API | KIS Developers(모의투자), OpenDART, GDELT, Google Vertex AI, Voyage AI, Google, Kakao 로그인 |
+| 데이터, 분석 | Python 3.12, uv, pandas, NumPy, PyTorch(LSTM) |
+| 저장소 | PostgreSQL 16, Redis |
+| 외부 API | KIS Developers(모의투자), OpenDART, GDELT, Google, Kakao 로그인 |
 | 배포, 운영 | Docker Compose, nginx(TLS), GitHub Actions, Docker Hub |
 
 ## 빠른 시작
@@ -207,7 +198,7 @@ flowchart LR
 |---|---|
 | OS | Linux `amd64` 또는 Windows WSL2(Ubuntu). 레포와 데이터는 Linux 홈 아래에 둠 |
 | 필수 도구 | Docker Engine(또는 WSL 통합이 켜진 Docker Desktop), Docker Compose v2, Git, Python 3, OpenSSL |
-| 외부 키 | KIS 모의투자 App Key, Secret, 계좌번호, (선택) OpenDART, Vertex AI, Voyage, Google, Kakao OAuth |
+| 외부 키 | KIS 모의투자 App Key, Secret, 계좌번호, (선택) OpenDART, Google, Kakao OAuth |
 
 #### 환경 변수 설정
 
@@ -221,8 +212,6 @@ install -m 600 .env.example .env   # 값 입력 후에도 권한 0600 유지
 |---|---|
 | `KIS_MOCK_APP_KEY`, `KIS_MOCK_APP_SECRET`, `KIS_MOCK_ACCOUNT_NO` | KIS 모의투자 계좌 |
 | `OPENDART_API_KEY` | 공시 수집(선택) |
-| `MARS_VERTEX_PROJECT_ID`, `MARS_VERTEX_MODEL_ID`, `MARS_VERTEX_SERVICE_ACCOUNT_JSON_B64` | 금융 Agent(선택). JSON은 `python3 deploy/p1/import_vertex_service_account_to_env.py <json>`으로 가져옴 |
-| `VOYAGE_API_KEY` | 검색 임베딩(선택) |
 | `MARS_PUBLIC_ORIGIN`, `GOOGLE_OIDC_CLIENT_ID`, `GOOGLE_OIDC_CLIENT_SECRET`, `KAKAO_OAUTH_CLIENT_ID`, `KAKAO_OAUTH_CLIENT_SECRET` | Google, Kakao 로그인(선택). 공개 HTTPS 주소와 두 제공자가 모두 있을 때만 켜짐 |
 
 Google, Kakao 콘솔에는 `<MARS_PUBLIC_ORIGIN>/api/v1/auth/oidc/callback/google`, `<MARS_PUBLIC_ORIGIN>/api/v1/auth/oidc/callback/kakao`를 리디렉션 URI로 등록합니다.
@@ -291,7 +280,7 @@ cd workspaces/decision-platform/spring-api && ./gradlew bootRun
 
 #### 공개 체험판 이미지 (선택)
 
-로그인 없는 금융 Agent 체험판 DEMO와 계좌 기능 FULL은 [Docker Hub](https://hub.docker.com/r/pjjpjj111/mars-full)와 [GitHub Release](https://github.com/robinhood0107/Capstone-AI-Trading-Coach/releases/latest)의 digest 고정 Compose로도 실행할 수 있습니다. 이미지에는 코드만 들어 있고 사용자 데이터는 포함되지 않습니다. NAS에서 Portainer 스택 하나로 운영하는 방법과 기존 배포를 옮기는 절차는 [deploy/p1/portainer/README.md](https://github.com/robinhood0107/Capstone-AI-Trading-Coach/blob/main/deploy/p1/portainer/README.md)에 있습니다.
+계좌 기능 FULL은 [Docker Hub](https://hub.docker.com/r/pjjpjj111/mars-full)와 [GitHub Release](https://github.com/robinhood0107/Capstone-AI-Trading-Coach/releases/latest)의 digest 고정 Compose로도 실행할 수 있습니다. 이미지에는 코드만 들어 있고 사용자 데이터는 포함되지 않습니다. NAS에서 Portainer 스택 하나로 운영하는 방법과 기존 배포를 옮기는 절차는 [deploy/p1/portainer/README.md](https://github.com/robinhood0107/Capstone-AI-Trading-Coach/blob/main/deploy/p1/portainer/README.md)에 있습니다.
 
 ### 오류 발생 시 해결 방법
 
@@ -325,7 +314,7 @@ Capstone-AI-Trading-Coach/
 ├── workspaces/
 │   ├── decision-platform/
 │   │   ├── spring-api/               # 인증, 원칙, RiskEngine, 자동운용, 주문 API
-│   │   ├── python-services/          # 수집기, 공시, RAG, 예측, KIS 어댑터
+│   │   ├── python-services/          # 수집기, 공시, 예측, KIS 어댑터
 │   │   └── research/                 # 규칙·결합 평가, 수익성 검증
 │   ├── return-engine/                # LSTM·규칙 기준선·백테스트
 │   └── experience-dashboard/         # Next.js 사용자 화면
@@ -340,10 +329,10 @@ Capstone-AI-Trading-Coach/
 
 | 멘토 의견 | 반영 사항 |
 |---|---|
-| 핵심 가치는 높은 수익률이 아니라, 자신의 원칙을 지키며 판단 근거와 위험을 확인하는 데 있다 | AI 권한을 후보 재순위와 매수 거부 두 가지로만 제한하고, 수량 결정이나 새 종목 선택 권한은 두지 않음. 소개 화면과 발표도 수익률 대신 "원칙이 모델을 이긴 순간"을 중심으로 구성 |
+| 핵심 가치는 높은 수익률이 아니라, 자신의 원칙을 지키며 판단 근거와 위험을 확인하는 데 있다 | 소개 화면과 발표를 수익률 대신 "원칙이 모델을 이긴 순간"을 중심으로 구성 |
 | 기술 범위가 넓으므로 원칙 설정 → 모델 신호 → RiskEngine 판단 → 주문 검토 → 결과 확인의 대표 시나리오를 먼저 완성 | 이 흐름을 내 원칙, 자동운용, 주문 검토, 학습일지 화면으로 끝까지 연결하고, 실제 KIS 모의계좌로 자동운용이 도는 상태까지 완성 |
 | 설계 설명과 실제 구현 결과를 구분하고, 화면, 판정 사례, 근거, 백테스트를 순서대로 연결 | 보고서 캡처 화면에서 보고서의 그림, 표 번호와 실제 화면을 1:1로 연결. 판정 레일(ALLOW, WARN, HOLD, BLOCK), 넘어선 원칙, 백테스트를 한 화면에서 확인 |
-| 입력 데이터 시점, 모델 버전, 원칙 설정값, RiskEngine 판단 사유를 함께 기록 | 자동운용 실행마다 원칙 버전, 단계별 판단 사유, AI 검토 결과를 저장하고 "판단 근거 보기"로 다시 확인. 원칙은 저장할 때마다 새 버전으로 남고 이전 버전은 지우지 않음 |
+| 입력 데이터 시점, 모델 버전, 원칙 설정값, RiskEngine 판단 사유를 함께 기록 | 자동운용 실행마다 원칙 버전과 단계별 판단 사유를 저장하고 "판단 근거 보기"로 다시 확인. 원칙은 저장할 때마다 새 버전으로 남고 이전 버전은 지우지 않음 |
 | Baseline, Guide, Strict 비교와 함께 원칙 위반, 차단 횟수를 보고, 정상 주문을 과도하게 막지 않았는지도 확인 | 백테스트 리포트에 MDD, CVaR 개선율과 함께 차단한 원칙 위반 건수, 안전장치를 켰을 때의 CAGR 차이를 나란히 표시해 개선과 대가를 함께 보도록 함 |
 
 ### 연구 결과와 해석
@@ -364,7 +353,7 @@ LSTM walk-forward 평가에서는 0 예측 기준보다 RMSE가 높아 `BELOW_BA
 
 초기 판본부터 원칙 설정, 모델 비교, 위험 판정, 주문과 대사, 학습일지를 한 흐름으로 연결했습니다. 과거 설명에는 Mock과 Live를 같은 어댑터에서 구분하는 설계가 있었지만 이 문서의 현행 사용 경로는 KIS 모의투자입니다. 두 판본의 계좌 인증과 시작 명령은 서로 호환된다고 가정하지 않습니다.
 
-AI는 후보를 재정렬하거나 매수를 거부할 수 있지만 새 종목과 주문 수량을 직접 정하지 않습니다. 사용자가 정한 원칙과 결정적 RiskEngine을 두어 모델 출력과 주문 권한을 분리했습니다. 부분 체결과 미확정 주문을 대사하고 계좌 상태가 맞지 않으면 중지하는 것도 이 경계의 일부입니다.
+사용자가 정한 원칙과 결정적 RiskEngine을 두어 모델 출력과 주문 권한을 분리했습니다. 부분 체결과 미확정 주문을 대사하고 계좌 상태가 맞지 않으면 중지하는 것도 이 경계의 일부입니다.
 
 예전 문서에서는 투자 원칙을 적용하지 않은 Baseline과 Guide, Strict를 비교했습니다. 전략의 위험 지표와 수익 변화는 같은 구간과 조건에서 함께 봐야 하며 짧은 표본을 실전 성과로 일반화하지 않습니다.
 
@@ -406,7 +395,7 @@ AI는 후보를 재정렬하거나 매수를 거부할 수 있지만 새 종목�
 
 <!-- MARS_CAPTURE_GALLERY_BEGIN -->
 <details>
-<summary>실행 화면 전체 갤러리</summary>
+<summary>실행 화면 갤러리</summary>
 
 화면은 각 실행에서 촬영한 UI 기록입니다. 최초 실행은 API 미기동으로 제품 흐름 검증에 실패했습니다. 다른 실행도 화면 촬영만으로 기능 검증을 뜻하지 않습니다. 화면 수치는 모의 시연값이며 실제 수익 성과의 근거가 아닙니다.
 
@@ -481,34 +470,6 @@ AI는 후보를 재정렬하거나 매수를 거부할 수 있지만 새 종목�
 **demo / desktop / /model-evaluation / ctl_CAGR**
 
 ![demo / desktop / /model-evaluation / ctl_CAGR](docs/readme-media/capture-959ac9d8fe6213ce83e9.png)
-
-**demo / desktop / /rag / page**
-
-![demo / desktop / /rag / page](docs/readme-media/capture-d64228d1455349b4fcfd.png)
-
-**demo / desktop / /rag / ctl_밝게**
-
-![demo / desktop / /rag / ctl_밝게](docs/readme-media/capture-7ebabc838ae9c0354978.png)
-
-**demo / desktop / /rag / ctl_어둡게**
-
-![demo / desktop / /rag / ctl_어둡게](docs/readme-media/capture-3544b08095f30d983bde.png)
-
-**demo / desktop / /rag / ctl_동의**
-
-![demo / desktop / /rag / ctl_동의](docs/readme-media/capture-7773da7ebad7c19134ef.png)
-
-**demo / desktop / /rag / ctl_짧게**
-
-![demo / desktop / /rag / ctl_짧게](docs/readme-media/capture-76ed693c5d5fa0051f78.png)
-
-**demo / desktop / /rag / ctl_자세히**
-
-![demo / desktop / /rag / ctl_자세히](docs/readme-media/capture-5be01a0ba88a3ccc58b4.png)
-
-**demo / desktop / /rag / ctl_연구근거1개더보기**
-
-![demo / desktop / /rag / ctl_연구근거1개더보기](docs/readme-media/capture-14d8adedac0253b0e40d.png)
 
 **demo / desktop / /automation / page**
 
@@ -813,38 +774,6 @@ AI는 후보를 재정렬하거나 매수를 거부할 수 있지만 새 종목�
 **demo / mobile / /model-evaluation / ctl_Sharpe**
 
 ![demo / mobile / /model-evaluation / ctl_Sharpe](docs/readme-media/capture-2b89c75329757b3dbaf5.png)
-
-**demo / mobile / /rag / page**
-
-![demo / mobile / /rag / page](docs/readme-media/capture-18b462d6bd629b4d8a81.png)
-
-**demo / mobile / /rag / ctl_밝게**
-
-![demo / mobile / /rag / ctl_밝게](docs/readme-media/capture-ba66cf62cff30211fd4b.png)
-
-**demo / mobile / /rag / ctl_어둡게**
-
-![demo / mobile / /rag / ctl_어둡게](docs/readme-media/capture-00b27fd4ccbf50f1eb4b.png)
-
-**demo / mobile / /rag / ctl_동의**
-
-![demo / mobile / /rag / ctl_동의](docs/readme-media/capture-0e7819abad3d8c2a6331.png)
-
-**demo / mobile / /rag / ctl_철회**
-
-![demo / mobile / /rag / ctl_철회](docs/readme-media/capture-899a1a2cac690a889c6a.png)
-
-**demo / mobile / /rag / ctl_짧게**
-
-![demo / mobile / /rag / ctl_짧게](docs/readme-media/capture-81e1b8a1a9fd5d985177.png)
-
-**demo / mobile / /rag / ctl_자세히**
-
-![demo / mobile / /rag / ctl_자세히](docs/readme-media/capture-8778375ba5cee384abef.png)
-
-**demo / mobile / /rag / ctl_연구근거1개더보기**
-
-![demo / mobile / /rag / ctl_연구근거1개더보기](docs/readme-media/capture-af90c558f56dd6bf393e.png)
 
 **demo / mobile / /automation / page**
 
@@ -1222,34 +1151,6 @@ AI는 후보를 재정렬하거나 매수를 거부할 수 있지만 새 종목�
 
 ![experience-dashboard / desktop / /model-evaluation / ctl_OpenNextjsDevTools](docs/readme-media/capture-adc3efa8d0fc3c726138.png)
 
-**experience-dashboard / desktop / /rag / page**
-
-![experience-dashboard / desktop / /rag / page](docs/readme-media/capture-f81a2affbbfa74681a15.png)
-
-**experience-dashboard / desktop / /rag / ctl_로그인**
-
-![experience-dashboard / desktop / /rag / ctl_로그인](docs/readme-media/capture-123336626cbe4d5c0208.png)
-
-**experience-dashboard / desktop / /rag / ctl_회원가입**
-
-![experience-dashboard / desktop / /rag / ctl_회원가입](docs/readme-media/capture-98de25a3c8b7d41a1e9b.png)
-
-**experience-dashboard / desktop / /rag / ctl_로그인**
-
-![experience-dashboard / desktop / /rag / ctl_로그인](docs/readme-media/capture-643d640476f27c6c6616.png)
-
-**experience-dashboard / desktop / /rag / ctl_테마**
-
-![experience-dashboard / desktop / /rag / ctl_테마](docs/readme-media/capture-65f83d03fc3d2e3c8f8a.png)
-
-**experience-dashboard / desktop / /rag / ctl_시작하기**
-
-![experience-dashboard / desktop / /rag / ctl_시작하기](docs/readme-media/capture-41a5b881958324802c5d.png)
-
-**experience-dashboard / desktop / /rag / ctl_OpenNextjsDevTools**
-
-![experience-dashboard / desktop / /rag / ctl_OpenNextjsDevTools](docs/readme-media/capture-2ee30b1b2c9efacc325b.png)
-
 **experience-dashboard / desktop / /automation / page**
 
 ![experience-dashboard / desktop / /automation / page](docs/readme-media/capture-72fc7f4589d33d460983.png)
@@ -1533,34 +1434,6 @@ AI는 후보를 재정렬하거나 매수를 거부할 수 있지만 새 종목�
 **experience-dashboard / mobile / /model-evaluation / ctl_OpenNextjsDevTools**
 
 ![experience-dashboard / mobile / /model-evaluation / ctl_OpenNextjsDevTools](docs/readme-media/capture-7576ad7c7b705088b589.png)
-
-**experience-dashboard / mobile / /rag / page**
-
-![experience-dashboard / mobile / /rag / page](docs/readme-media/capture-7a5e054214daef1aad42.png)
-
-**experience-dashboard / mobile / /rag / ctl_로그인**
-
-![experience-dashboard / mobile / /rag / ctl_로그인](docs/readme-media/capture-2998211a6ef1c08f5593.png)
-
-**experience-dashboard / mobile / /rag / ctl_회원가입**
-
-![experience-dashboard / mobile / /rag / ctl_회원가입](docs/readme-media/capture-c2fbe3b2b42122b3ac5b.png)
-
-**experience-dashboard / mobile / /rag / ctl_로그인**
-
-![experience-dashboard / mobile / /rag / ctl_로그인](docs/readme-media/capture-398e7dddb682ff449318.png)
-
-**experience-dashboard / mobile / /rag / ctl_테마**
-
-![experience-dashboard / mobile / /rag / ctl_테마](docs/readme-media/capture-678f2cdee243d41d89cb.png)
-
-**experience-dashboard / mobile / /rag / ctl_시작하기**
-
-![experience-dashboard / mobile / /rag / ctl_시작하기](docs/readme-media/capture-52f0f88d361f23db5e6c.png)
-
-**experience-dashboard / mobile / /rag / ctl_OpenNextjsDevTools**
-
-![experience-dashboard / mobile / /rag / ctl_OpenNextjsDevTools](docs/readme-media/capture-159b21ab575ad025ab5d.png)
 
 **experience-dashboard / mobile / /automation / page**
 

@@ -244,7 +244,7 @@ class P1ReleaseWorkflowSecurityTest(unittest.TestCase):
         self.assertNotIn("python-runtime-overrides.txt", python_dockerfile)
         self.assertIn("uv sync --frozen", python_dockerfile)
         self.assertIn("cgr.dev/chainguard/wolfi-base:latest@sha256:", spring_dockerfile)
-        self.assertIn("openjdk-25-jre=25.0.4.1-r0", spring_dockerfile)
+        self.assertIn("openjdk-25-jre=25.0.5.1-r0", spring_dockerfile)
         self.assertIn('runtimeOnly("org.postgresql:postgresql:42.7.12")', build)
         self.assertIn('group_add: ["${P1_SECRET_GID}"]', compose)
         self.assertIn('chmod 640 "$SECRETS_DIR"/*', p1ctl)

@@ -8,7 +8,7 @@ import { nullableRead } from '@/shared/api/nullableRead';
 import { useSession } from '@/shared/api/session';
 import { toErrorState, useResource } from '@/shared/lib/useResource';
 import { formatKrw, formatKstDateTime } from '@/shared/lib/format';
-import { ready, type ViewState } from '@/shared/lib/viewState';
+import { hasData, ready, type ViewState } from '@/shared/lib/viewState';
 import { AsyncBoundary } from '@/shared/ui/AsyncBoundary';
 import { Panel } from '@/shared/ui/Panel';
 import { Button } from '@/shared/ui/Button';
@@ -44,7 +44,7 @@ import { AutomationResults } from './AutomationResults';
 import { LIVE_REFRESH_MS } from '@/shared/lib/liveRefresh';
 
 /** 개인 중지와 관리자 전역 중지는 서로 다른 API와 상태를 사용한다. */
-function KillSwitchControl({ onChanged }: { active: boolean; onChanged: () => void }) {
+function KillSwitchControl({ onChanged }: { onChanged: () => void }) {
   const { user } = useSession();
   // 주문 중지는 다른 기기·다른 사람이 바꿀 수 있다. 1회 로드면 화면이 거짓말한다.
   const personal = useResource(
@@ -61,13 +61,20 @@ function KillSwitchControl({ onChanged }: { active: boolean; onChanged: () => vo
   );
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [stopConfirmed, setStopConfirmed] = useState(false);
+  const personalStatusAvailable = hasData(personal.state) && personal.refreshError === null;
+
   async function change(active: boolean, scope: 'personal' | 'global') {
-    if (busy) return;
+    if (busy || (scope === 'personal' && !active && !personalStatusAvailable)) return;
     setBusy(true);
     setError(null);
     try {
       if (scope === 'global') await api.changeGlobalKillSwitch(active);
-      else await api.changeKillSwitch(active);
+      else {
+        setStopConfirmed(false);
+        const { data } = await api.changeKillSwitch(active);
+        setStopConfirmed(active && data.active);
+      }
       personal.reload();
       if (user?.role === 'ADMIN') global.reload();
       onChanged();
@@ -77,11 +84,9 @@ function KillSwitchControl({ onChanged }: { active: boolean; onChanged: () => vo
       setError(state.kind === 'error' ? state.message : '중지 상태를 바꾸지 못했습니다.');
     } finally { setBusy(false); }
   }
-  return <div className="mt-5 space-y-4 border-t border-line pt-4">
+  return <div className="space-y-4">
     <p className="text-[13px] leading-6 text-muted">내 주문 중지는 직접 켜고 해제할 수 있습니다. 해제한 뒤 자동운용 시작은 별도로 선택합니다. 이미 종료된 당일 실행은 다시 시작하지 않으며, 보유 종목을 자동으로 팔거나 기존 체결을 되돌리지 않습니다.</p>
-    {/* onRetry 가 없으면 조회가 한 번 실패한 순간 중지 UI 가 에러 카드로 대체되고 사용자가
-        할 수 있는 행동이 0개가 된다. 위험 통제 수단에서 그건 허용할 수 없다. */}
-    <AsyncBoundary state={personal.state} onRetry={personal.reload}>{(state) => <div className="flex flex-wrap items-center justify-between gap-3">
+    <AsyncBoundary state={personal.state} onRetry={personal.reload}>{(state) => personalStatusAvailable ? <div className="flex flex-wrap items-center justify-between gap-3">
       <div><p className="text-sm font-semibold">내 주문 중지 · {state.active ? '작동 중' : '꺼짐'}</p>
         <p className="text-xs text-muted">변경 {formatKstDateTime(state.changedAt)}</p>
         {state.reasonClass === 'BROKERAGE_FAILURE_STOP' ? (
@@ -99,7 +104,20 @@ function KillSwitchControl({ onChanged }: { active: boolean; onChanged: () => vo
       }}>
         {state.active ? '내 주문 중지 해제' : '내 주문 즉시 중지'}
       </Button>
-    </div>}</AsyncBoundary>
+    </div> : null}</AsyncBoundary>
+    {!personalStatusAvailable ? (
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <p className="text-sm text-muted">현재 상태를 확인하는 동안에는 중지만 요청할 수 있습니다.</p>
+        <div className="flex gap-2">
+          {hasData(personal.state) ? (
+            <Button variant="secondary" onClick={personal.reload}>다시 조회</Button>
+          ) : null}
+          <Button disabled={busy} variant="danger" onClick={() => void change(true, 'personal')}>
+            내 주문 즉시 중지
+          </Button>
+        </div>
+      </div>
+    ) : null}
     {user?.role === 'ADMIN' ? <AsyncBoundary state={global.state} onRetry={global.reload}>{(state) => <div className="flex flex-wrap items-center justify-between gap-3 border-t border-line pt-4">
       <p className="text-sm font-semibold">관리자 전용 · 시스템 전체 중지 {state.active ? '작동 중' : '꺼짐'}</p>
       <Button disabled={busy} variant="danger" onClick={() => void change(!state.active, 'global')}>
@@ -107,6 +125,7 @@ function KillSwitchControl({ onChanged }: { active: boolean; onChanged: () => vo
       </Button>
     </div>}</AsyncBoundary> : null}
     {error ? <p role="alert" className="text-sm text-block">{error}</p> : null}
+    {stopConfirmed ? <p role="status" className="text-sm text-ink">내 주문 중지를 적용했습니다.</p> : null}
   </div>;
 }
 
@@ -211,15 +230,20 @@ export function AutomationView() {
   // 쓰지 않아 이 화면이 1회 로드였다 - 주문이 나가고 체결돼도 새로고침해야 보였다.
   const { state, reload } = useResource(load, [], true, LIVE_REFRESH_MS);
   return (
-    <AsyncBoundary state={state} onRetry={reload}>
-      {(data) => (
-        <AutomationBody
-          key={`${data.status.controlVersion}:${data.status.policy?.version ?? 0}:${data.capitalPolicy?.version ?? 0}`}
-          data={data}
-          onReload={reload}
-        />
-      )}
-    </AsyncBoundary>
+    <div className="space-y-6">
+      <Panel contract="GET /api/v2/risk/kill-switch" title="주문 중지">
+        <KillSwitchControl onChanged={reload} />
+      </Panel>
+      <AsyncBoundary state={state} onRetry={reload}>
+        {(data) => (
+          <AutomationBody
+            key={`${data.status.controlVersion}:${data.status.policy?.version ?? 0}:${data.capitalPolicy?.version ?? 0}`}
+            data={data}
+            onReload={reload}
+          />
+        )}
+      </AsyncBoundary>
+    </div>
   );
 }
 
@@ -502,8 +526,6 @@ function AutomationBody({ data, onReload }: { data: AutomationData; onReload: ()
             내부 모의 계좌 과거 기록입니다. 현재 KIS 잔고, 자동매도와 실현손익에는 합산하지 않습니다.
           </p>
         ) : null}
-        <KillSwitchControl active={data.status.killSwitchActive} onChanged={onReload} />
-
         {data.status.blockers.length > 0 ? (
           <div className="mt-5 border-l-2 border-hold bg-hold/5 px-4 py-3">
             <p className="text-[13px] font-semibold text-ink">현재 시작할 수 없습니다</p>

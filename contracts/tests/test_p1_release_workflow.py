@@ -247,7 +247,9 @@ class P1ReleaseWorkflowSecurityTest(unittest.TestCase):
         self.assertIn("openjdk-25-jre=25.0.5.1-r0", spring_dockerfile)
         self.assertIn('runtimeOnly("org.postgresql:postgresql:42.7.12")', build)
         self.assertIn('group_add: ["${P1_SECRET_GID}"]', compose)
-        self.assertIn('chmod 640 "$SECRETS_DIR"/*', p1ctl)
+        self.assertIn('state_write_file "$SECRETS_DIR/kis-mock-approval-private.pem" 0600', p1ctl)
+        self.assertIn('state_write_file "$SECRETS_DIR/p1-provider-claim.dsn" 0600', p1ctl)
+        self.assertNotIn('chmod 640 "$SECRETS_DIR"/*', p1ctl)
 
     def test_gradle_dependencies_are_locked_and_checksum_verified(self) -> None:
         project = REPOSITORY_ROOT / "workspaces" / "decision-platform" / "spring-api"
@@ -265,6 +267,8 @@ class P1ReleaseWorkflowSecurityTest(unittest.TestCase):
         dockerignore = (REPOSITORY_ROOT / ".dockerignore").read_text(encoding="utf-8")
         self.assertIn("deploy/p1/.state", dockerignore.splitlines())
         self.assertIn("deploy/p1/.state/**", dockerignore.splitlines())
+        self.assertIn("deploy/p1/.state-app", dockerignore.splitlines())
+        self.assertIn("deploy/p1/.state-app/**", dockerignore.splitlines())
         self.assertIn("**/.state", dockerignore.splitlines())
 
     def test_release_build_is_unprivileged_and_publish_uses_only_scanned_images(self) -> None:

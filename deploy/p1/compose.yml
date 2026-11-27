@@ -664,7 +664,7 @@ services:
       P1_USER_PASSWORD_FILE: /run/secrets/demo_user_password
     secrets: [demo_user_password]
     volumes:
-      - ${P1_DEPLOY_PROFILE_DIR:-./.state-app/deploy}:/run/deploy:ro
+      - ${P1_DEPLOY_PROFILE_DIR:-${P1_STATE_DIR:-./.state-app}/deploy}:/run/deploy:ro
     <<: *app-security
     restart: "no"
     networks: [p1-app]

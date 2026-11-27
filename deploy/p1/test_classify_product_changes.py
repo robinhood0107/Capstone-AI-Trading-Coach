@@ -115,6 +115,21 @@ def test_ocr_dependency_files_are_full_only_and_other_paths_fail_closed() -> Non
                 raise AssertionError("unknown OCR path must fail closed")
 
 
+def test_full_postgres_role_script_is_full_only_and_matches_exactly() -> None:
+    path = "infra/init/02-application-roles.sh"
+    result = MODULE.classify_paths([path])
+    assert result["categories"] == ["FULL-only"]
+    assert result["fullImageRequired"] is True
+    assert result["demoCandidateRequired"] is False
+    for unknown in (path + ".extra", "infra/init/other.sh"):
+        try:
+            MODULE.classify_paths([unknown])
+        except ValueError as error:
+            assert "unclassified changed path" in str(error)
+        else:
+            raise AssertionError("unclassified role paths must fail closed")
+
+
 def test_unknown_path_fails_before_any_publish_decision() -> None:
     try:
         MODULE.classify_paths(["mystery/product/file.txt"])
@@ -135,5 +150,6 @@ if __name__ == "__main__":
     test_docker_ignore_changes_gate_both_image_contexts()
     test_mixed_categories_publish_only_the_affected_products()
     test_ocr_dependency_files_are_full_only_and_other_paths_fail_closed()
+    test_full_postgres_role_script_is_full_only_and_matches_exactly()
     test_unknown_path_fails_before_any_publish_decision()
     print("PRODUCT_IMPACT_CLASSIFIER_TESTS=PASS")

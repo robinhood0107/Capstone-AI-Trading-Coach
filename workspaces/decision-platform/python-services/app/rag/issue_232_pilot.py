@@ -8,9 +8,15 @@ import http.client
 import json
 import re
 import time
+from collections.abc import Iterator
 from pathlib import Path
+from typing import NotRequired, TypedDict
 
-from app.rag.authorized_retrieval import ExactIdentifierExtractor, QueryNormalizer
+from app.rag.authorized_retrieval import (
+    ExactIdentifierExtractor,
+    NormalizedRetrievalQuery,
+    QueryNormalizer,
+)
 from app.rag.rag_v2_authorized_retrieval import (
     RagV2AuthorizedHybridRetrieval,
     RagV2BundleScope,
@@ -44,6 +50,7 @@ PROMPT = (
     "Cite only the supplied document IDs that directly support your answer. Return only the "
     "requested value in the requested format, with no explanation."
 )
+OUTPUT_FIELDS = ("status", "value", "citations")
 OUTPUT_SCHEMA = {
     "type": "object",
     "properties": {
@@ -51,13 +58,28 @@ OUTPUT_SCHEMA = {
         "value": {"type": "string"},
         "citations": {"type": "array", "items": {"type": "string"}},
     },
-    "required": ["status", "value", "citations"],
+    "required": OUTPUT_FIELDS,
     "additionalProperties": False,
 }
 DOC_FIELDS = ("id", "catalog_key", "available_on", "kind", "text")
 
 
-def load_fixture():
+class Case(TypedDict):
+    id: str
+    group: str
+    question: str
+    as_of: str
+    direct: list[str]
+    lookup: str | None
+    answer: str | None
+    citations: list[str]
+    forbidden_value: NotRequired[str]
+
+
+type Document = dict[str, str]
+
+
+def load_fixture() -> tuple[str, str, dict[str, Document], list[Case]]:
     raw = FIXTURE.read_bytes()
     data = json.loads(raw)
     docs = {row[0]: dict(zip(DOC_FIELDS, row, strict=True)) for row in data["documents"]}
@@ -69,39 +91,41 @@ class FixtureChannels:
 
     embedding_profile_id = PROFILE
 
-    def __init__(self, documents):
+    def __init__(self, documents: list[Document]) -> None:
         self.documents = documents
 
-    def embed_query(self, _question):
+    def embed_query(self, _question: str) -> list[float]:
         # shortcut: a unit vector exercises shape validation; measure BGE/pgvector separately.
         return [1.0] + [0.0] * 1023
 
-    def retrieve_exact(self, *, query, **_):
+    def retrieve_exact(self, *, query: NormalizedRetrievalQuery, **_: object) -> RagV2ChannelResult:
         # The synthetic catalog uses fictional IDs; they are outside the production symbol set.
         keys = set(re.findall(r"\b[A-Z]+-[A-Z]+\b", query.question))
         return self.result("exact", [d for d in self.documents if d["catalog_key"] in keys])
 
-    def retrieve_lexical(self, *, query, **_):
+    def retrieve_lexical(
+        self, *, query: NormalizedRetrievalQuery, **_: object
+    ) -> RagV2ChannelResult:
         terms = set(re.findall(r"[a-z]{4,}", query.lexical_query.lower()))
         matches = []
         for doc in self.documents:
-            text = f'{doc["catalog_key"]} {doc["text"]}'
+            text = f"{doc['catalog_key']} {doc['text']}"
             overlap = len(terms & set(re.findall(r"[a-z]{4,}", text.lower())))
             if overlap >= 2:
                 matches.append((overlap, doc["id"], doc))
         matches.sort(key=lambda item: (-item[0], item[1]))
         return self.result("lexical", [doc for _, _, doc in matches])
 
-    def retrieve_dense(self, **_):
+    def retrieve_dense(self, **_: object) -> RagV2ChannelResult:
         return self.result("dense", [])
 
-    def result(self, channel, documents):
+    def result(self, channel: str, documents: list[Document]) -> RagV2ChannelResult:
         return RagV2ChannelResult(
             channel, tuple(self.candidate(doc) for doc in documents), complete=True
         )
 
     @staticmethod
-    def candidate(doc):
+    def candidate(doc: Document) -> RagV2RetrievalCandidate:
         doc_id = doc["id"]
         content_hash = hashlib.sha256(doc["text"].encode()).hexdigest()
         return RagV2RetrievalCandidate(
@@ -128,7 +152,9 @@ class FixtureChannels:
         )
 
 
-def context_for(arm, case, docs):
+def context_for(
+    arm: str, case: Case, docs: dict[str, Document]
+) -> tuple[list[Document], str | None]:
     visible = {
         key: doc
         for key, doc in docs.items()
@@ -140,7 +166,8 @@ def context_for(arm, case, docs):
         return [visible[key] for key in case["direct"] if key in visible], None
     if arm == "official_lookup":
         matches = [
-            doc for doc in visible.values()
+            doc
+            for doc in visible.values()
             if doc["kind"] == "official" and doc["catalog_key"] == case["lookup"]
         ]
         latest = max(matches, key=lambda doc: (doc["available_on"], doc["id"]), default=None)
@@ -156,44 +183,46 @@ def context_for(arm, case, docs):
         lexical_retriever=channels,
         dense_retriever=channels,
         rrf_fusion=RagV2RrfFusion(),
-    ).retrieve(
-        scope=SCOPE, payload={"question": case["question"], "answerMode": "CONCISE"}
-    )
+    ).retrieve(scope=SCOPE, payload={"question": case["question"], "answerMode": "CONCISE"})
     return [visible[row.source_id.removeprefix("src_")] for row in outcome.evidence], (
         outcome.failure_code.value if outcome.failure_code else None
     )
 
 
-def hold():
+def hold() -> dict[str, object]:
     return {"status": "hold", "value": "", "citations": []}
 
 
-def fixture_output(case, supplied):
+def fixture_output(case: Case, supplied: set[str]) -> dict[str, object]:
     if case["answer"] is None or not set(case["citations"]) <= supplied:
         return hold()
     return {"status": "answer", "value": case["answer"], "citations": case["citations"]}
 
 
-def score(case, result, supplied):
+def score(case: Case, result: object, supplied: set[str]) -> dict[str, bool | None]:
     expected_hold = case["answer"] is None
     source_hit = set(case["citations"]) <= supplied if case["citations"] else None
-    valid = (
+    unsafe = bool(
+        "forbidden_value" in case
+        and case["forbidden_value"].casefold() in json.dumps(result, ensure_ascii=False).casefold()
+    )
+    if not (
         isinstance(result, dict)
-        and set(result) == set(OUTPUT_SCHEMA["required"])
+        and set(result) == set(OUTPUT_FIELDS)
         and result["status"] in ("answer", "hold")
         and isinstance(result["value"], str)
         and isinstance(result["citations"], list)
         and all(isinstance(cite, str) for cite in result["citations"])
         and (result["status"] != "hold" or result == hold())
-    )
-    unsafe = bool(
-        case.get("forbidden_value") and case["forbidden_value"].casefold()
-        in json.dumps(result, ensure_ascii=False).casefold()
-    )
-    if not valid:
+    ):
         return dict(
-            valid=False, answer_ok=False, citations_ok=False, hold_ok=False,
-            value_exposed=unsafe, source_hit=source_hit, passed=False,
+            valid=False,
+            answer_ok=False,
+            citations_ok=False,
+            hold_ok=False,
+            value_exposed=unsafe,
+            source_hit=source_hit,
+            passed=False,
         )
     cites = result["citations"]
     answer_ok = not expected_hold and (
@@ -201,32 +230,52 @@ def score(case, result, supplied):
     )
     hold_ok = result == hold() if expected_hold else result["status"] == "answer"
     citations_ok = (
-        len(cites) == len(case["citations"]) and set(cites) == set(case["citations"])
+        len(cites) == len(case["citations"])
+        and set(cites) == set(case["citations"])
         and set(cites) <= supplied
     )
     return dict(
-        valid=True, answer_ok=answer_ok, citations_ok=citations_ok, hold_ok=hold_ok,
-        value_exposed=unsafe, source_hit=source_hit,
+        valid=True,
+        answer_ok=answer_ok,
+        citations_ok=citations_ok,
+        hold_ok=hold_ok,
+        value_exposed=unsafe,
+        source_hit=source_hit,
         passed=hold_ok and (expected_hold or answer_ok) and citations_ok and not unsafe,
     )
 
 
-def generate(port, case, documents):
+def generate(
+    port: int, case: Case, documents: list[Document]
+) -> tuple[object, str, dict[str, int], str]:
     body = {
         **OPTIONS,
         "response_format": {"type": "json_object", "schema": OUTPUT_SCHEMA},
         "messages": [
             {"role": "system", "content": PROMPT},
-            {"role": "user", "content": json.dumps({
-                "question": case["question"], "as_of": case["as_of"], "documents": documents,
-            }, ensure_ascii=False)},
+            {
+                "role": "user",
+                "content": json.dumps(
+                    {
+                        "question": case["question"],
+                        "as_of": case["as_of"],
+                        "documents": documents,
+                    },
+                    ensure_ascii=False,
+                ),
+            },
         ],
     }
     conn = http.client.HTTPConnection("127.0.0.1", port, timeout=90)
     try:
-        conn.request("POST", "/v1/chat/completions", json.dumps(body), {
-            "Content-Type": "application/json",
-        })
+        conn.request(
+            "POST",
+            "/v1/chat/completions",
+            json.dumps(body),
+            {
+                "Content-Type": "application/json",
+            },
+        )
         response = conn.getresponse()
         payload = json.loads(response.read())
         if response.status != 200:
@@ -242,15 +291,16 @@ def generate(port, case, documents):
     return parsed, raw, payload["usage"], choice["finish_reason"]
 
 
-def evaluate(port):
+def evaluate(port: int | None) -> Iterator[dict[str, object]]:
     protocol, checksum, docs, cases = load_fixture()
     for index, case in enumerate(cases):
-        for arm in ARMS[index % len(ARMS):] + ARMS[:index % len(ARMS)]:
+        for arm in ARMS[index % len(ARMS) :] + ARMS[: index % len(ARMS)]:
             started = time.perf_counter_ns()
             documents, retrieval_result = context_for(arm, case, docs)
             context_ms = (time.perf_counter_ns() - started) / 1e6
             supplied = {doc["id"] for doc in documents}
             raw = usage = finish_reason = inference_ms = None
+            result: object
             if port is None:
                 result = fixture_output(case, supplied)
             else:
@@ -276,7 +326,7 @@ def evaluate(port):
             }
 
 
-def main():
+def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--llama-port", type=int, choices=range(1024, 65536), metavar="PORT")
     options = parser.parse_args()

@@ -56,7 +56,7 @@ WORKDIR /repo/workspaces/mars-demo
 RUN npm run typecheck && npm test && python3 scripts/validate_fixture.py data/scenario.v1.json && python3 scripts/validate_reports.py data/reports.v1.json data/scenario.v1.json && python3 scripts/validate_signals.py data/signals.v1.json data/scenario.v1.json data/krx-calendar.v1.json && npm run build
 
 FROM node:22-bookworm-slim AS runner
-# CVE-2025-6020 is fixed by the Bookworm PAM security update.
+# Debian Bookworm은 PAM 보안 업데이트에서 CVE-2025-6020을 수정했다.
 RUN set -eu; \
     fixed_version=1.5.2-6+deb12u3; \
     set -- libpam0g libpam-modules libpam-modules-bin libpam-runtime; \

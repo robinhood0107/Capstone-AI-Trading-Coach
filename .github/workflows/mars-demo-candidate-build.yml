@@ -87,9 +87,14 @@ jobs:
             --tag mars-demo-candidate:web .
           [[ $(docker image inspect mars-demo-candidate:web --format '{{index .Config.Labels "org.opencontainers.image.revision"}}') == "$SHA" ]]
           [[ $(docker image inspect mars-demo-candidate:web --format '{{index .Config.Labels "org.opencontainers.image.version"}}') == "${VERSION}-candidate" ]]
+      - name: Install pinned Trivy release asset
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: bash .github/scripts/install-candidate-trivy.sh
       - name: Scan standalone DEMO image before any registry credentials
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
+          skip-setup-trivy: true
           scan-type: image
           image-ref: mars-demo-candidate:web
           scanners: vuln,secret

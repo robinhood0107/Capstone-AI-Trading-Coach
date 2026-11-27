@@ -1194,7 +1194,7 @@ def test_restart_after_terminal_resumes_the_remaining_decision_times_once() -> N
         released.user_id, released.session_date, "sha256:" + "d" * 64
     )
 
-    assert (first, second) == (True, False)
+    assert (first, second) == ("DONE", None)
     assert len(runner.calls) == 1
 
 
@@ -1209,7 +1209,7 @@ def test_restart_without_a_released_claim_does_not_resume() -> None:
         service._resume_continuations(
             "usr_automation_runtime_0001", date(2026, 8, 28), "sha256:" + "d" * 64
         )
-        is False
+        is None
     )
     assert runner.calls == []
 
@@ -1958,3 +1958,114 @@ def test_environment_report_refresh_keeps_local_owner_default(
     refresh("usr_google_owner_0001")
 
     assert [call[2:] for call in calls] == [(), ("usr_google_owner_0001",)]
+
+
+def test_release_can_retry_if_db_drops_after_resume_lookup(monkeypatch: pytest.MonkeyPatch) -> None:
+    import psycopg
+
+    runner = _RecordingPortfolioRunner()
+    service = _continuation_service("SKIPPED_NO_ACTION", runner)
+    claim = _claim()
+    repository = service._repository
+    monkeypatch.setattr(repository, "resume_continuation", lambda *_: claim, raising=False)
+
+    def connection_lost(_claim: RuntimeClaim) -> dict[str, Any]:
+        raise psycopg.OperationalError("DB connection lost")
+
+    with monkeypatch.context() as outage:
+        outage.setattr(repository, "read_state", connection_lost)
+        with pytest.raises(psycopg.OperationalError):
+            service._resume_continuations(claim.user_id, claim.session_date, claim.claim_token_hash)
+    assert service._resume_continuations(
+        claim.user_id, claim.session_date, claim.claim_token_hash
+    ) == "DONE"
+    assert len(runner.calls) == 1
+
+
+def test_continuation_retry_exhaustion_leaves_resume_key_available(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import psycopg
+
+    from app.p1_owner.automation_runtime import _CONTINUATION_TRANSIENT_RETRIES
+
+    class Runner(_RecordingPortfolioRunner):
+        failures = 0
+        db_down = True
+
+        def continue_session(self, **kwargs: Any):
+            assert kwargs["allow_new_orders"] is False
+            if self.db_down:
+                self.failures += 1
+                raise psycopg.OperationalError("DB connection lost")
+            return super().continue_session(**kwargs)
+
+    runner = Runner()
+    service = _continuation_service("SKIPPED_NO_ACTION", runner)
+    claim = _claim()
+    monkeypatch.setattr(service._repository, "resume_continuation", lambda *_: claim, raising=False)
+    monkeypatch.setattr(service._stop, "wait", lambda _seconds: False)
+    resume = (claim.user_id, claim.session_date, claim.claim_token_hash)
+    key = (claim.user_id, claim.session_date)
+
+    assert service._resume_continuations(*resume) == "RETRY"
+    assert runner.failures == _CONTINUATION_TRANSIENT_RETRIES + 1
+    assert key not in service._resumed_continuations
+
+    runner.db_down = False
+    assert service._resume_continuations(*resume) == "DONE"
+    assert len(runner.calls) == 1
+    assert key in service._resumed_continuations
+
+
+def test_resume_without_order_reference_stops_owner_without_marking_done(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from app.p1_owner.automation_portfolio_runtime import PortfolioContinuationResult
+
+    runner = _RecordingPortfolioRunner()
+    service = _continuation_service("SKIPPED_NO_ACTION", runner)
+    claim = _claim()
+    stop_calls = []
+    monkeypatch.setattr(service._repository, "resume_continuation", lambda *_: claim, raising=False)
+    monkeypatch.setattr(
+        service._repository, "stop_full_owner_after_order_failure",
+        lambda _claim, reason: stop_calls.append(reason), raising=False,
+    )
+    monkeypatch.setattr(
+        runner, "continue_session",
+        lambda **kwargs: PortfolioContinuationResult("SUBMIT_RESPONSE_UNRESOLVED", 0, 0),
+    )
+
+    outcome = service._resume_continuations(claim.user_id, claim.session_date, claim.claim_token_hash)
+    assert outcome == "STOPPED"
+    assert stop_calls == ["KIS_ORDER_RESULT_UNCERTAIN"]
+    assert (claim.user_id, claim.session_date) not in service._resumed_continuations
+
+
+def test_preflight_retries_db_connection_before_serving(monkeypatch: pytest.MonkeyPatch) -> None:
+    import psycopg
+
+    service = _continuation_service("SKIPPED_NO_ACTION", _RecordingPortfolioRunner())
+    calls: list[str] = []
+
+    def preflight():
+        calls.append("preflight")
+        if len(calls) == 1:
+            raise psycopg.OperationalError("DB connection lost")
+
+    monkeypatch.setattr(service._repository, "preflight", preflight, raising=False)
+    monkeypatch.setattr(service._stop, "wait", lambda _delay: False)
+    class Inference:
+        def close(self) -> None:
+            calls.append("close")
+
+    monkeypatch.setattr(service, "_daily_inference", Inference())
+    monkeypatch.setattr(service, "_performance_report_refresh", lambda: None)
+    monkeypatch.setattr(service, "_recover_stranded_session", lambda: calls.append("recover"))
+    monkeypatch.setattr(service, "_serve_full_multiuser", lambda *_: calls.append("serve"))
+    monkeypatch.setenv("MARS_PUBLIC_SURFACE_MODE", "FULL")
+
+    service.serve()
+
+    assert calls == ["preflight", "preflight", "recover", "serve", "close"]

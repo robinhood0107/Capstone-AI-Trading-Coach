@@ -15,7 +15,7 @@ from dataclasses import dataclass, replace
 from datetime import UTC, date, datetime, time, timedelta
 from importlib.metadata import version
 from pathlib import Path
-from typing import Any, Protocol, cast
+from typing import Any, Literal, Protocol, cast
 from zoneinfo import ZoneInfo
 
 import pandas as pd
@@ -106,6 +106,7 @@ _LEGACY_AI_SETTINGS_SHA256 = hashlib.sha256(
 # tick 이 일시 실패했을 때의 재시도. 창(09:30~15:20)을 다 쓰지 않으면서도 몇 분간의 브리지
 # 장애는 넘길 수 있는 크기다. 이 한도를 넘으면 run 을 그 자리에 두고 물러난다.
 _TICK_RETRY_SECONDS = 20.0
+_PREFLIGHT_DB_RETRIES = 3
 _CONTINUATION_TRANSIENT_RETRIES = 10
 _CONTINUATION_TRANSIENT_WAIT_SECONDS = 60.0
 _MAX_TICK_FAILURES = 15
@@ -1421,7 +1422,7 @@ class AutomationRuntimeService:
         self._connectivity_check = connectivity_check
         self._performance_report_refresh = performance_report_refresh
         self._portfolio_runner = portfolio_runner
-        # 재기동 뒤 continuation 을 이어받은 (owner, session). 한 프로세스에서 한 번만 잇는다.
+        # 재개 절차를 끝낸 (owner, session)은 같은 프로세스에서 다시 처리하지 않는다.
         self._resumed_continuations: set[tuple[str, date]] = set()
         self._owner_user_id = os.environ.get("P1_AUTOMATION_OWNER_USER_ID", "").strip()
         self._stop = threading.Event()
@@ -1440,7 +1441,18 @@ class AutomationRuntimeService:
         self._stop.set()
 
     def serve(self) -> None:
-        self._repository.preflight()
+        for attempt in range(_PREFLIGHT_DB_RETRIES + 1):
+            try:
+                self._repository.preflight()
+                break
+            except psycopg.OperationalError as error:
+                if attempt == _PREFLIGHT_DB_RETRIES:
+                    raise
+                print(
+                    f"AUTOMATION_PREFLIGHT=RETRY error={type(error).__name__}", flush=True
+                )
+                if self._stop.wait(5.0):
+                    return
         daily_inference = self._daily_inference or DailyInferenceService.from_environment()
         report_refresh = (
             self._performance_report_refresh or _performance_report_refresh_from_environment()
@@ -1640,7 +1652,7 @@ class AutomationRuntimeService:
 
         prepared_session: date | None = None
         catchup_session: date | None = None
-        completed_owners: set[str] = set()
+        finished_owners: set[str] = set()
         next_attempt: dict[str, datetime] = {}
         active: dict[Future[tuple[str, datetime | None]], str] = {}
         workers = self._repository.automation_worker_count()
@@ -1683,7 +1695,7 @@ class AutomationRuntimeService:
                                 return
                             continue
                     prepared_session = session_date
-                    completed_owners.clear()
+                    finished_owners.clear()
                     next_attempt.clear()
                     catchup_session = None
                 if now.time() < _OPEN_BOUNDARY:
@@ -1714,8 +1726,8 @@ class AutomationRuntimeService:
                             flush=True,
                         )
                         outcome, retry_at = "RETRY", now + timedelta(seconds=60)
-                    if outcome == "DONE":
-                        completed_owners.add(owner_user_id)
+                    if outcome in {"DONE", "STOPPED"}:
+                        finished_owners.add(owner_user_id)
                         next_attempt.pop(owner_user_id, None)
                     else:
                         next_attempt[owner_user_id] = retry_at or now + timedelta(seconds=60)
@@ -1737,7 +1749,7 @@ class AutomationRuntimeService:
                         owner_user_id = candidate.claim.user_id
                         if (
                             owner_user_id in active_owners
-                            or owner_user_id in completed_owners
+                            or owner_user_id in finished_owners
                             or next_attempt.get(owner_user_id, now) > now
                         ):
                             continue
@@ -1745,9 +1757,16 @@ class AutomationRuntimeService:
                         active[future] = owner_user_id
                         active_owners.add(owner_user_id)
 
-                    owners = self._repository.armed_owner_user_ids()
+                    try:
+                        owners = self._repository.armed_owner_user_ids()
+                    except psycopg.OperationalError as error:
+                        owners = ()
+                        print(
+                            f"AUTOMATION_OWNER_SCAN=RETRY error={type(error).__name__}",
+                            flush=True,
+                        )
                     for owner_user_id in owners:
-                        if owner_user_id in active_owners or owner_user_id in completed_owners:
+                        if owner_user_id in active_owners or owner_user_id in finished_owners:
                             continue
                         if next_attempt.get(owner_user_id, now) > now:
                             continue
@@ -1835,8 +1854,9 @@ class AutomationRuntimeService:
                     return "RETRY", now + timedelta(seconds=60)
                 self._repository.resume_data_gap(owner_user_id, session_date)
                 return "RETRY", now + timedelta(seconds=1)
-            if self._resume_continuations(owner_user_id, session_date, claim_hash):
-                return "DONE", None
+            outcome = self._resume_continuations(owner_user_id, session_date, claim_hash)
+            if outcome is not None:
+                return outcome, None
             if self._advance_schedule_to(session_date, owner_user_id):
                 return "RETRY", now + timedelta(seconds=1)
             return "IDLE", now + timedelta(seconds=60)
@@ -1850,7 +1870,7 @@ class AutomationRuntimeService:
 
     def _resume_continuations(
         self, owner_user_id: str, session_date: date, claim_hash: str
-    ) -> bool:
+    ) -> Literal["DONE", "STOPPED", "RETRY"] | None:
         """terminal 뒤 continuation 도중 프로세스가 죽었으면 오늘 남은 결정 시점을 잇는다.
 
         run 이 terminal 이 되면 claim 이 RELEASED 되고 11:00·14:00 은 그 뒤에 돈다. 재기동한
@@ -1860,28 +1880,37 @@ class AutomationRuntimeService:
 
         key = (owner_user_id, session_date)
         if self._portfolio_runner is None or key in self._resumed_continuations:
-            return False
+            return None
         resumer = getattr(self._repository, "resume_continuation", None)
         if not callable(resumer):
-            return False
+            return None
         try:
             claim = resumer(owner_user_id, session_date, claim_hash)
+        except psycopg.OperationalError:
+            raise
         except (AutomationRuntimeError, psycopg.Error) as error:
             print(f"AUTOMATION_CONTINUATION_RESUME=FAILED error={type(error).__name__}", flush=True)
-            return False
+            return None
         if claim is None:
-            return False
-        self._resumed_continuations.add(key)
+            return None
         print(
-            f"AUTOMATION_CONTINUATION_RESUME=RESUMED session={session_date.isoformat()}", flush=True
+            f"AUTOMATION_CONTINUATION_RESUME=RESUMING session={session_date.isoformat()}", flush=True
         )
         state = self._repository.read_state(claim)
         port = self._port_factory.build(claim, state)
         try:
-            self._drive_continuations(claim=claim, state=state, port=port, resume=True)
+            outcome = self._drive_continuations(
+                claim=claim, state=state, port=port, resume=True
+            )
         finally:
             port.close()
-        return True
+        if outcome == "DONE":
+            self._resumed_continuations.add(key)
+        print(
+            f"AUTOMATION_CONTINUATION_RESUME={outcome} session={session_date.isoformat()}",
+            flush=True,
+        )
+        return outcome
 
     def _recover_stranded_session(self, owner_user_id: str | None = None) -> None:
         """마감을 못 끝내고 죽은 직전 세션을 이어받아 정산한다.
@@ -2064,8 +2093,8 @@ class AutomationRuntimeService:
 
     def _drive_continuations(
         self, *, claim: RuntimeClaim, state: dict[str, Any], port: Any, resume: bool = False
-    ) -> bool:
-        """결정 시점마다 남은 세션 예산으로 빈 슬롯을 채운다. 계속해도 되면 True.
+    ) -> Literal["DONE", "STOPPED", "RETRY"]:
+        """결정 시점마다 남은 세션 예산으로 빈 슬롯을 채운다.
 
         예전에는 단일 run 이 끝난 직후 한 번만 돌았고 신규 주문은 09:40 까지만 허용돼,
         개장 10분이 지나면 그날 자본이 그대로 굳었다. 시점을 늘려도 **시점당 주문 수는
@@ -2073,11 +2102,12 @@ class AutomationRuntimeService:
         그 판단은 이미 `plan_portfolio_orders` 가 한다.
 
         세션 총 주문 수는 DB(`max_orders_per_session`)와 ordinal 원장이 계속 쥔다.
+        재개 중 마지막 결정 시점의 일시 장애가 남으면 owner 스케줄러에서 재시도한다.
         """
 
         runner = self._portfolio_runner
         if runner is None:
-            return True
+            return "DONE"
         boundaries = _DECISION_TIMES
         if resume:
             now_kst = datetime.now(UTC).astimezone(_KST)
@@ -2090,7 +2120,7 @@ class AutomationRuntimeService:
         for boundary in boundaries:
             target = datetime.combine(claim.session_date, boundary, _KST)
             if datetime.now(UTC).astimezone(_KST) < target and self._wait_until(target):
-                return False
+                return "STOPPED"
             transient_failures = 0
             continuation = None
             account_synced = False
@@ -2149,7 +2179,7 @@ class AutomationRuntimeService:
                     # (roll_schedule)까지 버리던 문제. 같은 시점을 잠시 뒤 다시 시도하고, 끝내
                     # 안 되면 그 시점만 건너뛴다. 원인 모를 오류는 예전처럼 닫는다.
                     if not _transient_continuation_error(error):
-                        return False
+                        return "STOPPED"
                     transient_failures += 1
                     if transient_failures > _CONTINUATION_TRANSIENT_RETRIES:
                         print(
@@ -2157,9 +2187,11 @@ class AutomationRuntimeService:
                             f"decision={boundary.isoformat(timespec='minutes')}",
                             flush=True,
                         )
+                        if resume and boundary == boundaries[-1]:
+                            return "RETRY"
                         break
                     if self._stop.wait(_CONTINUATION_TRANSIENT_WAIT_SECONDS):
-                        return False
+                        return "STOPPED"
                     continue
                 print(
                     f"AUTOMATION_PORTFOLIO={continuation.status} "
@@ -2177,7 +2209,7 @@ class AutomationRuntimeService:
                 if continuation.status != "PENDING_RECONCILIATION":
                     break
                 if self._stop.wait(_TICK_RETRY_SECONDS):
-                    return False
+                    return "STOPPED"
             if continuation is None:
                 continue
             if continuation.status in {"SUBMIT_RESPONSE_UNRESOLVED", "EXECUTION_STATE_INVALID"}:
@@ -2207,11 +2239,11 @@ class AutomationRuntimeService:
                         f"AUTOMATION_ORDER_FAILURE_STOP=FAILED error={type(error).__name__}",
                         flush=True,
                     )
-                return False
+                return "STOPPED"
             # 예산이 다 찼으면 남은 시점을 기다릴 이유가 없다.
             if continuation.status == "ORDER_BUDGET_EXHAUSTED":
                 break
-        return True
+        return "DONE"
 
     def _record_portfolio_reason(self, claim: RuntimeClaim, boundary: time, status: str) -> None:
         """무주문으로 끝난 결정 시점의 사유를 퍼널에 남긴다."""
@@ -2292,7 +2324,8 @@ class AutomationRuntimeService:
                         self._portfolio_runner is not None
                         and next_state in _PORTFOLIO_CONTINUATION_STATES
                     ):
-                        if not self._drive_continuations(claim=claim, state=state, port=port):
+                        outcome = self._drive_continuations(claim=claim, state=state, port=port)
+                        if outcome != "DONE":
                             return
                     # HALTED 여도 다음 세션 스케줄은 만든다. 예전에는 만들지 않아서,
                     # control 이 잠긴 것과 스케줄이 없는 것이 겹쳐 사람이 두 곳을 다

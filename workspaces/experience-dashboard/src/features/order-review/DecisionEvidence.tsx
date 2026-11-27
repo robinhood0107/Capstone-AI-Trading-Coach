@@ -2,14 +2,24 @@ import type { ReactNode } from 'react';
 import { formatKstDateTime } from '@/shared/lib/format';
 import { DecisionBadge } from '@/shared/ui/Decision';
 import { Panel } from '@/shared/ui/Panel';
-import { decisionMetricName, displayDecisionInputMetric, type RiskResultView } from './viewModel';
+import {
+  decisionMetricName, displayDecisionInputMetric, type ReasonRow, type RiskResultView,
+} from '@/features/order-review/viewModel';
+
+type EvidenceView = Pick<RiskResultView, 'action' | 'detailUnavailableReason' | 'summaryReasons' | 'summaryRiskItems'> & {
+  detail: (Pick<NonNullable<RiskResultView['detail']>,
+    'principleVersion' | 'portfolioSource' | 'violatedPrinciples' | 'riskItems' | 'inputMetrics' | 'inputMetricsUnavailable'> & {
+    readinessPolicyVersion?: string;
+    reasons: (Pick<ReasonRow, 'id' | 'disposition' | 'code' | 'headline'> & { sources?: string[] })[];
+  }) | null;
+};
 
 const REASON_LABEL = { ISSUE: '필수 근거 없음', WARNING: '경고', ABSTENTION: '평가하지 않음' };
 const ACCOUNT_LABEL = { KIS_MOCK: 'KIS 모의계좌', INTERNAL_PAPER: '내부 가상원장' };
 
 export function DecisionEvidence({
   view, title = '당시 판정 근거', children,
-}: { view: RiskResultView; title?: string; children?: ReactNode }) {
+}: { view: EvidenceView; title?: string; children?: ReactNode }) {
   const { detail } = view;
   return (
     <Panel contract="decision-evidence" title={title} actions={<DecisionBadge status={view.action} />}>
@@ -17,7 +27,9 @@ export function DecisionEvidence({
         <>
           <dl className="grid gap-3 text-[13px] text-ink sm:grid-cols-3">
             <div><dt className="text-faint">당시 원칙 버전</dt><dd>v{detail.principleVersion}</dd></div>
-            <div><dt className="text-faint">평가 준비도 정책</dt><dd>{detail.readinessPolicyVersion}</dd></div>
+            {detail.readinessPolicyVersion ? (
+              <div><dt className="text-faint">평가 준비도 정책</dt><dd>{detail.readinessPolicyVersion}</dd></div>
+            ) : null}
             <div><dt className="text-faint">당시 평가 계좌</dt><dd>{ACCOUNT_LABEL[detail.portfolioSource]}</dd></div>
           </dl>
           {detail.violatedPrinciples.length > 0 ? (
@@ -51,7 +63,7 @@ export function DecisionEvidence({
                   {REASON_LABEL[reason.disposition]}{reason.headline !== reason.code ? ' · ' + reason.headline : ''}
                 </p>
                 <code className="break-all text-[11px] text-muted">{reason.code}</code>
-                {reason.sources.length > 0 ? <p className="break-all text-[12px] text-muted">출처 {reason.sources.join(', ')}</p> : null}
+                {reason.sources?.length ? <p className="break-all text-[12px] text-muted">출처 {reason.sources.join(', ')}</p> : null}
               </li>
             ))}
           </ul>

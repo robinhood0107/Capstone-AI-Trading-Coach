@@ -25,7 +25,7 @@ from app.rag.rag_v2_authorized_retrieval import (
     RagV2RrfFusion,
 )
 
-FIXTURE = Path(__file__).resolve().parents[5] / "capstone-rag/eval/issue-232-pilot.v1.json"
+FIXTURE = Path(__file__).resolve().parents[2] / "tests/fixtures/rag/issue-232-pilot.v1.json"
 ARMS = ("model_only", "direct", "official_lookup", "rag_v2")
 PROFILE = "bge_m3_local_1024_v1"
 SCOPE = RagV2BundleScope(

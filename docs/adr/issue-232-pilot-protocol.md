@@ -1,7 +1,7 @@
 # Issue #232 pilot protocol v1
 
 Refs #225, #232 and #243. Base `6b417050c540f440acca68810ee361c3a4bebd0f`.
-The [fixture](issue-232-pilot.v1.json) contains 12 invented documents and eight questions,
+The [fixture](../../workspaces/decision-platform/python-services/tests/fixtures/rag/issue-232-pilot.v1.json) contains 12 invented documents and eight questions,
 two per group. Every prompt and source is in English to keep this first run small.
 No source comes from an account, customer or external document. The corpus and gold
 are fixed before any run. Gold is used only by the scorer and the fixture oracle.

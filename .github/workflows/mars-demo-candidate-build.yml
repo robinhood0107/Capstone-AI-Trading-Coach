@@ -87,9 +87,14 @@ jobs:
             --tag mars-demo-candidate:web .
           [[ $(docker image inspect mars-demo-candidate:web --format '{{index .Config.Labels "org.opencontainers.image.revision"}}') == "$SHA" ]]
           [[ $(docker image inspect mars-demo-candidate:web --format '{{index .Config.Labels "org.opencontainers.image.version"}}') == "${VERSION}-candidate" ]]
+      - name: Install pinned Trivy release asset
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: bash .github/scripts/install-candidate-trivy.sh
       - name: Scan standalone DEMO image before any registry credentials
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
+          skip-setup-trivy: true
           scan-type: image
           image-ref: mars-demo-candidate:web
           scanners: vuln,secret
@@ -98,9 +103,33 @@ jobs:
           exit-code: '1'
       - name: Prepare candidate artifact directory
         run: mkdir -p mars-demo-candidate
+      - name: Install pinned Syft release asset
+        id: syft
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -Eeuo pipefail
+          version=1.33.0
+          asset="syft_${version}_linux_amd64.tar.gz"
+          archive="$RUNNER_TEMP/$asset"
+          gh release download "v$version" -R anchore/syft --pattern "$asset" --output "$archive"
+          unset GH_TOKEN
+          printf '%s  %s\n' 'adc1b944a827ed3432bcd9f1dbdbc8fa3c0dca7d3d449e7084c90248c2c6cb50' "$archive" |
+            sha256sum --check --strict
+
+          # SBOM action은 아래 캐시 경로와 .complete 파일을 확인한다.
+          cache_dir="$RUNNER_TOOL_CACHE/syft/$version/x64"
+          mkdir -p "$cache_dir"
+          tar -xzOf "$archive" syft > "$cache_dir/syft"
+          chmod 0755 "$cache_dir/syft"
+          SYFT_CHECK_FOR_APP_UPDATE=false "$cache_dir/syft" version -o json |
+            jq -e --arg version "$version" '.version == $version and .platform == "linux/amd64"'
+          touch "$cache_dir.complete"
+          echo "version=v$version" >> "$GITHUB_OUTPUT"
       - name: Generate DEMO SBOM
         uses: anchore/sbom-action@f8bdd1d8ac5e901a77a92f111440fdb1b593736b # v0.20.6
         with:
+          syft-version: ${{ steps.syft.outputs.version }}
           image: mars-demo-candidate:web
           format: spdx-json
           output-file: mars-demo-candidate/mars-demo-web.spdx.json

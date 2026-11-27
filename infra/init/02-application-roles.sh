@@ -2979,6 +2979,8 @@ BEGIN
         ('public.p1_resolve_or_bind_mock_account_identity_v218(text,text,text,text)','decision_app'),
         ('public.put_bound_mock_broker_credential_v2(text,text,text,bytea,bytea,bytea,bytea,bytea,bytea,text,text)','decision_app'),
         ('public.put_strong_llm_owner_settings_v2(text,text,text,text,text,text,text,text,integer,boolean,text)','decision_app'),
+        ('public.read_automation_risk_exclusions_authorized_v231(text,text,text,text,text)','decision_app'),
+        ('public.read_automation_risk_snapshot_authorized_v231(text,text,text)','decision_app'),
         ('public.read_bound_mock_balance_confirmation_v1(text)','decision_app'),
         ('public.read_bound_mock_broker_envelope_v3(text,text)','decision_app'),
         ('public.read_bound_mock_broker_summary_v3(text)','decision_app'),

@@ -1,6 +1,9 @@
 from __future__ import annotations
 
+import os
+import subprocess
 import unittest
+from tempfile import TemporaryDirectory
 from pathlib import Path
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
@@ -154,6 +157,42 @@ class P1ReleaseWorkflowSecurityTest(unittest.TestCase):
         self.assertIn("restore_demo_authority", restore)
         self.assertIn("restore_owner", restore)
         self.assertIn("VOLUME_PRESERVED=TRUE", restore)
+
+    def test_restore_discards_staged_dump_when_checksum_validation_fails(self) -> None:
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            state = root / "state"
+            staging = root / "tmp"
+            for directory in (state, state / "secrets", state / "backups", staging):
+                directory.mkdir(mode=0o700)
+            runtime = state / "runtime.env"
+            runtime.touch(mode=0o600)
+            dump = state / "backups" / "capstone-p1-20261128T000000Z.dump"
+            dump.touch(mode=0o600)
+            dump.write_bytes(b"synthetic backup")
+            checksum = dump.with_suffix(".dump.sha256")
+            checksum.touch(mode=0o600)
+            checksum.write_text(f"{'0' * 64}  {dump.name}\n", encoding="utf-8")
+
+            result = subprocess.run(
+                ["bash", str(RESTORE)],
+                env={
+                    **os.environ,
+                    "P1_STATE_DIR": str(state),
+                    "P1_PROJECT_NAME": "capstone-restore-regression",
+                    "P1_BACKUP_FILE": dump.name,
+                    "TMPDIR": str(staging),
+                },
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+
+            self.assertEqual(result.returncode, 1)
+            self.assertIn("P1_ERROR=backup_checksum_mismatch", result.stderr)
+            self.assertEqual(list(staging.iterdir()), [])
+            self.assertTrue(dump.is_file())
+            self.assertTrue(checksum.is_file())
 
     def test_existing_database_upgrade_bootstraps_auth_role_before_flyway(self) -> None:
         compose = (REPOSITORY_ROOT / "infra" / "docker-compose.infra.yml").read_text(

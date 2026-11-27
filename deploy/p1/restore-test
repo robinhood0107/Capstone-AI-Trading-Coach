@@ -26,6 +26,7 @@ fi
   exit 1
 }
 staging=$(mktemp -d)
+trap 'rm -rf -- "$staging"' EXIT
 backup=$staging/$backup_name
 checksum=$backup.sha256
 python3 "$RELEASE_GUARD" state-export "$STATE_DIR" "backups/$backup_name" "$backup" 0600

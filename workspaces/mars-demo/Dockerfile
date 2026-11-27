@@ -56,6 +56,19 @@ WORKDIR /repo/workspaces/mars-demo
 RUN npm run typecheck && npm test && python3 scripts/validate_fixture.py data/scenario.v1.json && python3 scripts/validate_reports.py data/reports.v1.json data/scenario.v1.json && python3 scripts/validate_signals.py data/signals.v1.json data/scenario.v1.json data/krx-calendar.v1.json && npm run build
 
 FROM node:22-bookworm-slim AS runner
+# Debian Bookworm은 PAM 보안 업데이트에서 CVE-2025-6020을 수정했다.
+RUN set -eu; \
+    fixed_version=1.5.2-6+deb12u3; \
+    set -- libpam0g libpam-modules libpam-modules-bin libpam-runtime; \
+    apt-get update; \
+    DEBIAN_FRONTEND=noninteractive apt-get install -y --only-upgrade --no-install-recommends --no-remove "$@"; \
+    for package in "$@"; do \
+      version="$(dpkg-query -W -f='${Version}' "$package")"; \
+      dpkg --compare-versions "$version" ge "$fixed_version" || { \
+        echo "$package must be at least $fixed_version (found $version)" >&2; exit 1; \
+      }; \
+    done; \
+    rm -rf /var/lib/apt/lists/*
 RUN rm -rf /usr/local/lib/node_modules/npm /usr/local/bin/npm /usr/local/bin/npx
 ENV NODE_ENV=production \
     NEXT_TELEMETRY_DISABLED=1 \

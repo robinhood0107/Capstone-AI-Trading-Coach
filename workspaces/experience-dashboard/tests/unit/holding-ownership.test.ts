@@ -9,3 +9,8 @@ test('ownership reflects current quantities, manual additions and closed lots', 
   assert.deepEqual(holdingOwnership(0, 0), { managed: 0, manual: 0, mismatch: false });
   assert.deepEqual(holdingOwnership(16, 18), { managed: 16, manual: 0, mismatch: true });
 });
+
+test('unavailable bot holdings leave ownership unknown, even if broker quantity is known', () => {
+  assert.equal(holdingOwnership(40, null), null);
+  assert.deepEqual(holdingOwnership(40, 0), { managed: 0, manual: 40, mismatch: false });
+});

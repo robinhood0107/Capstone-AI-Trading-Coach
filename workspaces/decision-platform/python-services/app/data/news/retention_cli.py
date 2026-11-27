@@ -21,6 +21,8 @@ import sys
 import time
 from datetime import UTC, datetime
 
+import psycopg
+
 from app.data.news.repository import PostgresWorldNewsRetention
 
 #: 한 번에 지우는 최대 버전 수. DB 함수의 상한(1000)과 같다. 한 트랜잭션을 길게 잡으면
@@ -69,7 +71,9 @@ def main(argv: list[str] | None = None) -> int:
         try:
             totals = _run_cycle(retention, apply=not args.dry_run)
             print(json.dumps({"worldNewsRetention": totals}, sort_keys=True), flush=True)
-        except (ValueError, OSError) as error:
+        except (ValueError, OSError, psycopg.OperationalError) as error:
+            if not args.loop and isinstance(error, psycopg.OperationalError):
+                raise
             # 보존은 운용을 막지 않는다. 사유만 남기고 다음 주기에 다시 시도한다.
             print(
                 f"WORLD_NEWS_RETENTION=FAILED error={type(error).__name__}",

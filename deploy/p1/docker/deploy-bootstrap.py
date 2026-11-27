@@ -17,9 +17,8 @@
 
 프로필이 없어도 돈다
 ------------------
-기본 프로필이 이미지에 구워져 있다. 그래서 새 서버는 `.env` 와 `google.json` 만으로도
-정책이 서고, 자동운용이 `POLICY_NOT_CONFIGURED` 로 막히지 않는다. 마운트된 프로필이
-있으면 그것이 이긴다 - 공유받은 설정으로 같은 상태를 재현하기 위해서다.
+이미지에 기본 프로필이 들어 있다. 마운트한 프로필이 있으면 그 값을 읽는다.
+자동운용 정책은 사용자가 활성 투자 원칙을 저장할 때까지 보류한다.
 
 기본값에는 개인정보가 없다. 담긴 것은 자본한도·손절·익절·ATR·보유기간, Vertex 상한,
 강한 LLM 설정뿐이다. 인증 영수증은 읽지 않는다 - 그것은 `.state-app/mock/` 에 있다.
@@ -132,7 +131,7 @@ def _put_policy(base: str, token: str, profile: dict[str, Any]) -> str:
     for optional in ("maxOpenPositions", "riskPerTradeBps"):
         if optional in policy:
             body[optional] = policy[optional]
-    status, _ = _call(
+    status, value = _call(
         base,
         "/api/v3/automation/policy",
         method="PUT",
@@ -140,6 +139,8 @@ def _put_policy(base: str, token: str, profile: dict[str, Any]) -> str:
         body=body,
         idempotency=_key("deploy-policy"),
     )
+    if status == 404 and (value.get("error") or {}).get("code") == "NOT_FOUND":
+        return "DEFERRED_NO_ACTIVE_PRINCIPLE"
     if status != 200:
         raise BootstrapError(f"P1_DEPLOY_BOOTSTRAP_POLICY_REJECTED:{status}")
     return "APPLIED"

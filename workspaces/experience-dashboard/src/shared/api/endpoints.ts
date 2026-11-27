@@ -1,4 +1,4 @@
-import { apiFetch, apiFetchBare, apiMode, newIdempotencyKey } from '@/shared/api/client';
+import { apiFetch, apiFetchBare, newIdempotencyKey } from '@/shared/api/client';
 import type { ApiResult } from './envelope';
 import type {
   ArmAutomationV2Request,
@@ -59,7 +59,6 @@ import type {
   SignalV3Runtime,
   SystemHealthResponse,
 } from './wire';
-import { findCachedRagAnswer } from '@/features/rag-source/cachedAnswers';
 
 /**
  * Dashboard가 호출하는 endpoint 목록.
@@ -383,37 +382,8 @@ export const api = {
     return apiFetchBare<void>('/api/v2/rag/consents', { method: 'POST', body: request });
   },
 
-  /**
-   * 저장 답변은 명시적 mock 모드에서 전송 실패를 메우는 시연용 대체다. 서버 응답의
-   * BLOCKED_ADVICE, RETRIEVAL_ONLY, GENERATION_UNAVAILABLE을 덮으면 차단을 우회하거나
-   * 현재 검색 인용을 잃으므로, 서버 응답은 본문이 비어도 그대로 반환한다.
-   */
-  async ragV2Ask(request: RagAskRequest): Promise<RagV2Answer> {
-    const cached = apiMode() === 'mock' ? findCachedRagAnswer(request.question) : undefined;
-    const fromCache = (requestId: string): RagV2Answer =>
-      ({
-        requestId,
-        answerId: null,
-        generationStatus: 'ANSWERED',
-        answer: cached!.answer,
-        citationCoverage: cached!.citationCoverage,
-        citations: cached!.citations,
-        retrievalFailure: false,
-        guardrailFlags: cached!.guardrailFlags,
-      }) as unknown as RagV2Answer;
-
-    try {
-      const answer = await apiFetchBare<RagV2Answer>('/api/v2/rag/ask', {
-        method: 'POST',
-        body: request,
-      });
-      return answer;
-    } catch (error) {
-      if (cached) {
-        return fromCache(newIdempotencyKey('rag-ask'));
-      }
-      throw error;
-    }
+  ragV2Ask(request: RagAskRequest): Promise<RagV2Answer> {
+    return apiFetchBare<RagV2Answer>('/api/v2/rag/ask', { method: 'POST', body: request });
   },
 
   ragV2WorldNews(query = '', limit = 20): Promise<WorldNewsPage> {

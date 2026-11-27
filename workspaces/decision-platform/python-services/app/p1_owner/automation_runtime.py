@@ -15,6 +15,7 @@ from dataclasses import dataclass, replace
 from datetime import UTC, date, datetime, time, timedelta
 from importlib.metadata import version
 from pathlib import Path
+from time import monotonic
 from typing import Any, Literal, Protocol, cast
 from zoneinfo import ZoneInfo
 
@@ -1610,22 +1611,30 @@ class AutomationRuntimeService:
         finally:
             daily_inference.close()
 
-    def _refresh_full_owner_reports(self, report_refresh: Callable[..., object]) -> None:
+    def _refresh_full_owner_reports(
+        self, report_refresh: Callable[..., object], session_date: date
+    ) -> None:
         """FULL 은 무장한 owner 마다 백테스트·모델 평가·성과 리포트를 만든다.
 
         대시보드는 호출자 본인의 행만 읽으므로 demo-user 한 명분만 만들면 나머지는 비어 있다.
         한 owner 의 실패가 다른 owner 의 갱신이나 주문 경계를 막지 않는다.
         """
 
+        print(f"AUTOMATION_PERFORMANCE_REPORT_BATCH=STARTED session={session_date}", flush=True)
         try:
             owners = self._repository.armed_owner_user_ids()
         except (AutomationRuntimeError, psycopg.Error) as error:
             print(
-                f"AUTOMATION_PERFORMANCE_REPORT=FAILED error={type(error).__name__}",
+                f"AUTOMATION_PERFORMANCE_REPORT=FAILED session={session_date} "
+                f"error={type(error).__name__}",
                 flush=True,
             )
             return
-        for owner_user_id in owners:
+        for owner_index, owner_user_id in enumerate(owners, start=1):
+            if self._stop.is_set():
+                return
+            started = monotonic()
+            detail = ""
             try:
                 report = report_refresh(owner_user_id)
                 status = (
@@ -1633,15 +1642,17 @@ class AutomationRuntimeService:
                     if isinstance(report, dict)
                     else "UNKNOWN"
                 )
-                print(f"AUTOMATION_PERFORMANCE_REPORT={status}", flush=True)
-            except (OSError, RuntimeError, ValueError) as error:
+            except Exception as error:
                 if _is_already_published(error):
-                    print("AUTOMATION_PERFORMANCE_REPORT=ALREADY_CURRENT", flush=True)
+                    status = "ALREADY_CURRENT"
                 else:
-                    print(
-                        f"AUTOMATION_PERFORMANCE_REPORT=FAILED error={type(error).__name__}",
-                        flush=True,
-                    )
+                    status = "FAILED"
+                    detail = f" error={type(error).__name__}"
+            print(
+                f"AUTOMATION_PERFORMANCE_REPORT={status} session={session_date} "
+                f"owner_index={owner_index} elapsed_seconds={monotonic() - started:.3f}{detail}",
+                flush=True,
+            )
 
     def _serve_full_multiuser(
         self,
@@ -1652,6 +1663,9 @@ class AutomationRuntimeService:
 
         prepared_session: date | None = None
         catchup_session: date | None = None
+        # Keep one report batch in flight and only retry dispatch for the current session.
+        report_worker: threading.Thread | None = None
+        report_pending = False
         finished_owners: set[str] = set()
         next_attempt: dict[str, datetime] = {}
         active: dict[Future[tuple[str, datetime | None]], str] = {}
@@ -1665,6 +1679,7 @@ class AutomationRuntimeService:
                 now = datetime.now(UTC).astimezone(_KST)
                 session_date = self._planner.current_or_next_session(now)
                 if prepared_session != session_date:
+                    report_pending = False
                     if self._connectivity_check is not None and not self._connectivity_check():
                         print(
                             "AUTOMATION_CONNECTIVITY=UNAVAILABLE SESSION_NOT_CONSUMED", flush=True
@@ -1676,15 +1691,20 @@ class AutomationRuntimeService:
                         prepared = daily_inference.ensure_daily_signals(session_date)
                         if getattr(prepared, "outcome", None) not in {"REPLAYED", "IMPORTED"}:
                             raise DailyInferenceError("DAILY_PREPARATION_NOT_COMPLETE")
+                        finished = datetime.now(UTC).astimezone(_KST)
+                        timing = (
+                            "ON_TIME"
+                            if finished.date() == session_date
+                            and finished.time() <= _PREPARATION_DEADLINE
+                            else "LATE"
+                        )
                         print(
                             "AUTOMATION_PREPARATION_ATTEMPT="
-                            f"{'ON_TIME' if now.time() <= _PREPARATION_DEADLINE else 'LATE'} "
+                            f"{timing} "
                             f"session={session_date.isoformat()} "
                             f"outcome={getattr(prepared, 'outcome', 'UNKNOWN')}",
                             flush=True,
                         )
-                        if report_refresh is not None:
-                            self._refresh_full_owner_reports(report_refresh)
                     except DailyInferenceError as error:
                         print(
                             f"AUTOMATION_DAILY_INFERENCE=UNAVAILABLE error={type(error).__name__}",
@@ -1694,10 +1714,36 @@ class AutomationRuntimeService:
                             if self._stop.wait(60.0):
                                 return
                             continue
+                    else:
+                        report_pending = report_refresh is not None
+                        if report_pending and report_worker is not None and report_worker.is_alive():
+                            print(
+                                f"AUTOMATION_PERFORMANCE_REPORT_BATCH=DEFERRED session={session_date}",
+                                flush=True,
+                            )
                     prepared_session = session_date
                     finished_owners.clear()
                     next_attempt.clear()
                     catchup_session = None
+                if report_refresh is not None and report_pending and (
+                    report_worker is None or not report_worker.is_alive()
+                ):
+                    report_pending = False
+                    # Report publication owns its DB transaction. Shutdown can end this optional work.
+                    report_worker = threading.Thread(
+                        target=self._refresh_full_owner_reports,
+                        args=(report_refresh, session_date),
+                        name="mars-owner-reports",
+                        daemon=True,
+                    )
+                    try:
+                        report_worker.start()
+                    except RuntimeError as error:
+                        print(
+                            f"AUTOMATION_PERFORMANCE_REPORT_BATCH=FAILED session={session_date} "
+                            f"error={type(error).__name__}",
+                            flush=True,
+                        )
                 if now.time() < _OPEN_BOUNDARY:
                     if self._wait_until(datetime.combine(session_date, _OPEN_BOUNDARY, _KST)):
                         return

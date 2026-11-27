@@ -35,8 +35,8 @@ ARG RELEASE_VERSION=0.0.0
 
 # Pin the Alpine 3.24 security revisions available for this release build.
 RUN apk add --no-cache --upgrade \
-    libcrypto3=3.5.9-r0 \
-    libssl3=3.5.9-r0 \
+    libcrypto3=3.5.9-r1 \
+    libssl3=3.5.9-r1 \
     libuuid=2.42.3-r1 \
     krb5-libs=1.22.3-r0 \
     libxslt=1.1.43-r4 \

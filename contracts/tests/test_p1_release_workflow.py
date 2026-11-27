@@ -177,8 +177,8 @@ class P1ReleaseWorkflowSecurityTest(unittest.TestCase):
             dockerfile,
         )
         self.assertIn("postgres:16.14-alpine3.24@sha256:", dockerfile)
-        self.assertIn("libcrypto3=3.5.9-r0", dockerfile)
-        self.assertIn("libssl3=3.5.9-r0", dockerfile)
+        self.assertIn("libcrypto3=3.5.9-r1", dockerfile)
+        self.assertIn("libssl3=3.5.9-r1", dockerfile)
         self.assertIn("libuuid=2.42.3-r1", dockerfile)
         self.assertIn("krb5-libs=1.22.3-r0", dockerfile)
         self.assertIn("libxslt=1.1.43-r4", dockerfile)

@@ -32,6 +32,7 @@ export interface ReasonRow {
   count: number;
   ruleNames: string[];
   rawMessages: string[];
+  sources: string[];
 }
 
 interface ReasonInput {
@@ -40,6 +41,7 @@ interface ReasonInput {
   ruleId?: string;
   message: string;
   metricDetail?: string;
+  source?: string;
 }
 
 export function groupDecisionReasons(inputs: ReasonInput[]): ReasonRow[] {
@@ -71,6 +73,7 @@ export function groupDecisionReasons(inputs: ReasonInput[]): ReasonRow[] {
       count: items.length,
       ruleNames,
       rawMessages: [...new Set(items.map((item) => item.message).filter(Boolean))],
+      sources: [...new Set(items.flatMap((item) => item.source ? [item.source] : []))],
     };
   });
 }
@@ -106,7 +109,9 @@ export interface RiskResultView {
     canSubmitOrder: boolean;
     mode: 'GUIDE' | 'STRICT';
     portfolioSource: 'KIS_MOCK' | 'INTERNAL_PAPER';
+    principleId: string;
     principleVersion: number;
+    readinessPolicyVersion: string;
     validUntil: string;
     expired: boolean;
     reasons: ReasonRow[];
@@ -147,7 +152,7 @@ function buildDetail(
       code: violation.ruleId,
       ruleId: violation.ruleId,
       message: violation.message,
-      metricDetail: `현재 ${formatMetric(metricOf(violation.ruleId), violation.metricValue)} · 기준 ${formatMetric(
+      metricDetail: `당시 값 ${formatMetric(metricOf(violation.ruleId), violation.metricValue)} · 당시 기준 ${formatMetric(
         metricOf(violation.ruleId),
         violation.threshold,
       )}`,
@@ -157,12 +162,14 @@ function buildDetail(
       code: issue.code,
       ruleId: issue.ruleId,
       message: issue.message,
+      source: issue.source,
     })),
     ...risk.warnings.map<ReasonInput>((warning) => ({
       disposition: 'WARNING',
       code: warning.code,
       ruleId: warning.ruleId,
       message: warning.message,
+      source: warning.source,
     })),
     ...risk.abstentions.map<ReasonInput>((abstention) => ({
       disposition: 'ABSTENTION',
@@ -176,7 +183,9 @@ function buildDetail(
     canSubmitOrder: risk.canSubmitOrder,
     mode: projection.mode,
     portfolioSource: projection.portfolioSource,
+    principleId: projection.principleId,
     principleVersion: projection.principleVersion,
+    readinessPolicyVersion: risk.readinessPolicyVersion,
     validUntil: projection.validUntil,
     expired: Date.parse(projection.validUntil) <= Date.now(),
     reasons,
@@ -250,7 +259,7 @@ export async function loadRiskResultView(decisionId: string): Promise<ViewState<
     );
   } catch {
     detailUnavailableReason =
-      '판정 상세(위반 값과 근거)를 불러오지 못했습니다. 요약 사유는 아래에 그대로 표시됩니다.';
+      '판정 상세를 불러오지 못했습니다. 서버에 저장된 요약 사유를 확인하세요.';
   }
 
   return fromDashboard<DashboardRiskResultView, RiskResultView>(

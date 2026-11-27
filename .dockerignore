@@ -5,6 +5,8 @@
 !.env.example
 deploy/p1/.state
 deploy/p1/.state/**
+deploy/p1/.state-app
+deploy/p1/.state-app/**
 **/.state
 private?reference
 private-reference/

@@ -7,9 +7,9 @@ ENV PATH=/app/.venv/bin:$PATH
 ENV MPLCONFIGDIR=/tmp/matplotlib
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
-        libssl3t64=3.5.7-1~deb13u2 \
-        openssl=3.5.7-1~deb13u2 \
-        openssl-provider-legacy=3.5.7-1~deb13u2 \
+        libssl3t64=3.5.9-1~deb13u1 \
+        openssl=3.5.9-1~deb13u1 \
+        openssl-provider-legacy=3.5.9-1~deb13u1 \
     && rm -rf /var/lib/apt/lists/*
 RUN python -m pip install --no-cache-dir uv==0.11.26
 COPY pyproject.toml uv.lock ./

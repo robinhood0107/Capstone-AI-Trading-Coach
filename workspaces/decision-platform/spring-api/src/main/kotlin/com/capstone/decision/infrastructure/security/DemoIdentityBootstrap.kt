@@ -53,8 +53,8 @@ object DemoIdentityBootstrap {
             PostgreSqlCredentialLoggingPolicy.requireSafe(connection)
             val existing = readDemoRows(connection)
             if (existing.isEmpty()) {
-                insertIdentity(connection, config.userBundle)
-                insertIdentity(connection, config.adminBundle)
+                // 빈 DB에서는 운영자 계정을 만들기 전에 V213이 실행된다.
+                insertOperator(connection, config.userBundle)
                 insertAudit(connection, config)
             } else {
                 // V213 이후 demo-admin은 삭제되어 운영자 demo-user 한 행만 남을 수 있다.
@@ -117,7 +117,7 @@ object DemoIdentityBootstrap {
                 }
             }
 
-    private fun insertIdentity(
+    private fun insertOperator(
         connection: Connection,
         bundle: VerifiedDemoCredentialBundle,
     ) {
@@ -136,7 +136,7 @@ object DemoIdentityBootstrap {
                     statement.queryTimeout = STATEMENT_TIMEOUT_SECONDS
                     statement.setString(1, bundle.identity.userId)
                     statement.setString(2, bundle.identity.username)
-                    statement.setString(3, bundle.identity.role.name)
+                    statement.setString(3, DemoRole.ADMIN.name)
                     statement.setString(4, bundle.passwordHash)
                     statement.setBytes(5, reuseTag)
                     statement.setBytes(6, bundleMac)
@@ -164,7 +164,7 @@ object DemoIdentityBootstrap {
             ).use { statement ->
                 statement.queryTimeout = STATEMENT_TIMEOUT_SECONDS
                 statement.setString(1, "aud_p1_bootstrap_${config.bundleDigest.take(32)}")
-                statement.setString(2, DemoAccounts.identities[1].userId)
+                statement.setString(2, config.userBundle.identity.userId)
                 statement.setString(3, config.bundleDigest)
                 check(statement.executeUpdate() == 1)
             }

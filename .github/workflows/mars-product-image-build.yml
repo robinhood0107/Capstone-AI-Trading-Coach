@@ -105,9 +105,14 @@ jobs:
             --tag mars-full-candidate:web workspaces/experience-dashboard
           [[ $(docker image inspect mars-full-candidate:web --format '{{index .Config.Labels "org.opencontainers.image.revision"}}') == "$SHA" ]]
           [[ $(docker image inspect mars-full-candidate:web --format '{{index .Config.Env}}') == *"NEXT_PUBLIC_MARS_PRODUCT=full"* ]]
+      - name: Install pinned Trivy release asset
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: bash .github/scripts/install-candidate-trivy.sh
       - name: Scan FULL API candidate image
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
+          skip-setup-trivy: true
           scan-type: image
           image-ref: mars-full-candidate:api
           scanners: vuln,secret
@@ -117,6 +122,7 @@ jobs:
       - name: Scan FULL PostgreSQL candidate image
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
+          skip-setup-trivy: true
           scan-type: image
           image-ref: mars-full-candidate:postgres
           scanners: vuln,secret
@@ -126,6 +132,7 @@ jobs:
       - name: Scan FULL Redis candidate image
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
+          skip-setup-trivy: true
           scan-type: image
           image-ref: mars-full-candidate:redis
           scanners: vuln,secret
@@ -135,6 +142,7 @@ jobs:
       - name: Scan FULL web candidate image
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
+          skip-setup-trivy: true
           scan-type: image
           image-ref: mars-full-candidate:web
           scanners: vuln,secret

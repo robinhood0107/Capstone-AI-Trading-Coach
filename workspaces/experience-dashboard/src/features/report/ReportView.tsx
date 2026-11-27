@@ -6,6 +6,7 @@ import { Numeric } from '@/shared/ui/Numeric';
 import { DecisionRail } from '@/shared/ui/Decision';
 import { useResource } from '@/shared/lib/useResource';
 import { api } from '@/shared/api/endpoints';
+import { ApiFailure } from '@/shared/api/envelope';
 import { empty, ready } from '@/shared/lib/viewState';
 import type { OwnerPerformanceReport } from '@/shared/api/wire';
 import { useLatestRun } from '@/shared/api/latestRun';
@@ -13,10 +14,11 @@ import { LatestRunFallback } from '@/shared/ui/LatestRunFallback';
 import { formatDecimal, formatKstDateTime, formatRatio, formatSignedRatio } from '@/shared/lib/format';
 import { derivedCardFormatter, loadBacktestReportView } from '@/features/backtest-report/viewModel';
 import { loadRiskResultView, type RiskResultView } from '@/features/order-review/viewModel';
+import { DecisionEvidence } from '@/features/order-review/DecisionEvidence';
 import { FillsPanel } from '@/features/order-review/FillsPanel';
 
 const CAPTURE_LIST = [
-  { figure: '그림 4', title: 'RiskEngine 판단 흐름', where: '아래 판정 레일과 위반 목록' },
+  { figure: '그림 4', title: 'RiskEngine 판단 흐름', where: '위 판정 근거와 위반 목록' },
   { figure: '표 6', title: 'Baseline/Guide/Strict 검증 시나리오', where: '아래 시나리오 비교표' },
   { figure: '표 5', title: '모델별 역할 비교', where: '모델 비교 화면의 모델별 성과 표' },
   { figure: '그림 6', title: '화면 와이어프레임', where: '원칙 설정 / 주문 검토 / 금융 가이드 화면' },
@@ -38,12 +40,27 @@ export function ReportView() {
     runId !== null,
   );
   const performance = useResource<OwnerPerformanceReport>(async () => {
-    const { data } = await api.dashboardPerformanceReport();
-    return ready(data, data.report.generatedAt);
+    try {
+      const { data } = await api.dashboardPerformanceReport();
+      return ready(data, data.report.generatedAt);
+    } catch (error) {
+      if (error instanceof ApiFailure && error.code === 'NOT_FOUND') {
+        return empty('생성된 누적 성과 보고서가 없습니다', '첫 보고서가 생성되면 여기에 표시됩니다.');
+      }
+      throw error;
+    }
   }, []);
 
   return (
     <div className="space-y-6">
+      <AsyncBoundary state={decision.state} onRetry={decision.reload}>
+        {(view) => (
+          <DecisionEvidence view={view}>
+            <div className="w-full"><DecisionRail status={view.action} /></div>
+          </DecisionEvidence>
+        )}
+      </AsyncBoundary>
+
       <Panel
         contract="report/capture-guide"
         title="캡처 목록"
@@ -124,41 +141,6 @@ export function ReportView() {
 
       <FillsPanel />
 
-      <AsyncBoundary state={decision.state} onRetry={decision.reload}>
-          {(view) => (
-            <Panel
-              contract="report/decision-capture"
-              title="안전장치가 실제로 동작한 화면"
-              hint="판정 레일과 넘어선 원칙을 한 장에 담습니다."
-            >
-              <DecisionRail status={view.action} />
-              {view.detail && view.detail.violatedPrinciples.length > 0 ? (
-                <ul className="mt-5 space-y-2">
-                  {view.detail.violatedPrinciples.map((item) => (
-                    <li
-                      key={item.ruleId}
-                      className="flex items-baseline justify-between border-b border-line/60 pb-2 text-[13px]"
-                    >
-                      <span className="text-ink">{item.name}</span>
-                      <span className="tnum font-mono text-muted">
-                        현재 <span className="text-block">{item.observed}</span> · 기준 {item.limit}
-                      </span>
-                    </li>
-                  ))}
-                </ul>
-              ) : (
-                <ul className="mt-5 space-y-2">
-                  {view.summaryReasons.map((reason) => (
-                    <li key={reason} className="text-[13px] leading-6 text-ink">
-                      · {reason}
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </Panel>
-          )}
-      </AsyncBoundary>
-
       {runId !== null ? (
         <AsyncBoundary state={backtest.state} onRetry={backtest.reload}>
           {(view) => (
@@ -166,7 +148,7 @@ export function ReportView() {
               <Panel
                 contract="report/metric-capture"
                 title="원칙과 안전장치의 효과"
-                hint="시장 상황과 무관하게 원칙의 효과를 보여주는 지표입니다."
+                hint="이 검증 결과에서 시나리오별 원칙 적용 차이를 보여줍니다."
               >
                 <div className="grid gap-px overflow-hidden rounded-card border border-line bg-line sm:grid-cols-2 xl:grid-cols-4">
                   {view.derivedCards.map((card) => (

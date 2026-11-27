@@ -1,11 +1,13 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import Link from 'next/link';
 import { orderStatusLabel } from '@/shared/lib/labels';
 import { api } from '@/shared/api/endpoints';
 import { newIdempotencyKey } from '@/shared/api/client';
 import { toErrorState, useResource } from '@/shared/lib/useResource';
 import { ready } from '@/shared/lib/viewState';
+import { EmptyState } from '@/shared/ui/State';
 import { formatKrw, formatKstDateTime } from '@/shared/lib/format';
 import { AsyncBoundary } from '@/shared/ui/AsyncBoundary';
 import { Panel } from '@/shared/ui/Panel';
@@ -46,7 +48,7 @@ interface TicketContext {
  * **쓰기는 자동으로 다시 보내지 않는다.** 실패는 그 자리에 적고 사용자가 다시 누른다
  * (`envelope.ts` 의 `RETRYABLE` 에 `CONFLICT` 가 빠진 것은 의도된 설계다).
  */
-export function OrderTicket() {
+export function OrderTicket({ onEvaluated }: { onEvaluated: (decisionId: string) => void }) {
   const { state, reload } = useResource(async () => {
     const [status, principles, control] = await Promise.all([
       api.automationStatusV2(),
@@ -55,9 +57,7 @@ export function OrderTicket() {
     ]);
     const principle =
       principles.data.items.find((item) => item.status === 'ACTIVE') ?? principles.data.items[0];
-    if (!principle) {
-      throw new Error('활성 원칙이 없습니다. 먼저 내 원칙 화면에서 원칙을 만드세요.');
-    }
+    if (!principle) return ready<TicketContext | null>(null);
     // Kill Switch 는 곁다리다. 못 읽어도 화면은 뜨고, 관문이 "아직 모른다"로 남는다.
     const killSwitch = await api
       .killSwitch()
@@ -73,12 +73,18 @@ export function OrderTicket() {
 
   return (
     <AsyncBoundary state={state} onRetry={reload}>
-      {(context) => <Ticket context={context} />}
+      {(context) => context ? <Ticket context={context} onEvaluated={onEvaluated} /> : (
+        <EmptyState
+          title="저장된 원칙이 없습니다."
+          description="원칙을 등록하면 주문을 평가할 수 있습니다."
+          action={<Link href="/principles" className="text-[13px] font-medium text-navy underline">원칙 만들기</Link>}
+        />
+      )}
     </AsyncBoundary>
   );
 }
 
-function Ticket({ context }: { context: TicketContext }) {
+function Ticket({ context, onEvaluated }: { context: TicketContext; onEvaluated: (decisionId: string) => void }) {
   const { status, principle, strategyId, killSwitchActive } = context;
 
   const [symbol, setSymbol] = useState('');
@@ -169,6 +175,7 @@ function Ticket({ context }: { context: TicketContext }) {
         orderIntent: intent,
       });
       setDecision(result.data);
+      onEvaluated(result.data.decisionId);
     } catch (cause) {
       const state = toErrorState<never>(cause);
       setError(state.kind === 'error' ? state.message : '평가하지 못했습니다.');
@@ -324,6 +331,7 @@ function Ticket({ context }: { context: TicketContext }) {
               <span className="tnum text-[12px] text-faint">
                 유효 {formatKstDateTime(decision.validUntil) ?? '미상'}
               </span>
+              <a href="#decision-evidence" className="text-[13px] font-medium text-navy underline">판정 근거 보기</a>
             </div>
           ) : null}
 

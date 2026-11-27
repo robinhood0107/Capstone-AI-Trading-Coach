@@ -16,7 +16,7 @@ const KEY = 'p1.journalHandoff';
 export interface JournalHandoff {
   title: string;
   content: string;
-  /** 지금은 금융 Agent 답변만 넘긴다. 다른 화면이 붙으면 여기에 더한다. */
+  decisionId?: string;
   ragAnswerId?: string;
 }
 
@@ -43,6 +43,7 @@ export function takeJournalHandoff(): JournalHandoff | null {
     return {
       title: value.title,
       content: value.content,
+      decisionId: typeof value.decisionId === 'string' ? value.decisionId : undefined,
       ragAnswerId: typeof value.ragAnswerId === 'string' ? value.ragAnswerId : undefined,
     };
   } catch {

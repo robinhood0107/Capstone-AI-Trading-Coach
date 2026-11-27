@@ -188,55 +188,65 @@ flowchart LR
 
 ## 빠른 시작
 
-아래 실행 명령은 이번에 재검증하지 않았습니다.
-
 ### 설치절차 및 실행 방법
 
 #### 준비 사항
 
 | 항목 | 내용 |
 |---|---|
-| OS | Linux `amd64` 또는 Windows WSL2(Ubuntu). 레포와 데이터는 Linux 홈 아래에 둠 |
-| 필수 도구 | Docker Engine(또는 WSL 통합이 켜진 Docker Desktop), Docker Compose v2, Git, Python 3, OpenSSL |
-| 외부 키 | KIS 모의투자 App Key, Secret, 계좌번호, (선택) OpenDART, Google, Kakao OAuth |
+| OS | Linux `amd64` 또는 Windows WSL2(Ubuntu). 저장소와 상태 파일은 Linux 홈에 둡니다. |
+| 필수 도구 | Docker Engine(또는 WSL 통합을 켠 Docker Desktop), Docker Compose v2 이상, Git, Python 3, OpenSSL |
+| 선택 도구 | Team A 인수 테스트를 실행할 때는 Node.js, npm, Playwright Chromium이 필요합니다. |
 
-#### 환경 변수 설정
+#### 최초 실행
 
 ```bash
 git clone https://github.com/robinhood0107/Capstone-AI-Trading-Coach.git
 cd Capstone-AI-Trading-Coach
-install -m 600 .env.example .env   # 값 입력 후에도 권한 0600 유지
+./capstone doctor
+./capstone up
+./capstone smoke
 ```
 
-| `.env` 키 | 용도 |
-|---|---|
-| `KIS_MOCK_APP_KEY`, `KIS_MOCK_APP_SECRET`, `KIS_MOCK_ACCOUNT_NO` | KIS 모의투자 계좌 |
-| `OPENDART_API_KEY` | 공시 수집(선택) |
-| `MARS_PUBLIC_ORIGIN`, `GOOGLE_OIDC_CLIENT_ID`, `GOOGLE_OIDC_CLIENT_SECRET`, `KAKAO_OAUTH_CLIENT_ID`, `KAKAO_OAUTH_CLIENT_SECRET` | Google, Kakao 로그인(선택). 공개 HTTPS 주소와 두 제공자가 모두 있을 때만 켜짐 |
-
-Google, Kakao 콘솔에는 `<MARS_PUBLIC_ORIGIN>/api/v1/auth/oidc/callback/google`, `<MARS_PUBLIC_ORIGIN>/api/v1/auth/oidc/callback/kakao`를 리디렉션 URI로 등록합니다.
-
-#### 실행
-
-```bash
-./capstone up --mock
-```
-
-- 첫 실행 때 비밀값을 생성하고 이미지를 빌드한 뒤 DB 마이그레이션까지 적용합니다. `--mock`을 빼면 자동매매가 꺼진 채로 뜹니다.
-- 출력에 `CAPSTONE_UP=PASS`와 `CAPSTONE_AUTOMATION_RECONCILED=ARMED`가 모두 보이면 기동이 끝난 것입니다.
-- FULL 내장 계정은 배포 운영자가 host-only secret 절차로 발급, 회전합니다. 실제 아이디, 비밀번호나 secret 경로를 공개 문서에 적지 않습니다. 공개 DEMO는 원클릭 방문자 세션을 쓰며 FULL 계정에 연결하지 않습니다.
-- 이메일로 가입한 계정은 **설정 → 로그인 방법 → 비밀번호 변경**에서 현재 비밀번호를 확인하고 바꿉니다. 바꾸면 다른 기기의 로그인은 모두 해제됩니다.
+기본 실행에는 `.env`나 KIS 모의투자 계좌가 필요 없습니다. 첫 `up`에서 이미지를 빌드하고 DB 마이그레이션과 운영자 초기화를 마칩니다. `CAPSTONE_UP=PASS`와 `KIS_BROKERAGE_MODE=PROVIDER_FREE`를 확인한 뒤 웹 화면을 엽니다. 자동운용은 대기 상태이며, 활성 투자 원칙이 없으면 `policy=DEFERRED_NO_ACTIVE_PRINCIPLE`이 표시됩니다. 원칙을 활성화한 뒤 정책을 설정할 수 있습니다.
 
 | 주소 | 설명 |
 |---|---|
 | http://127.0.0.1:3000 | 웹 화면 |
 | http://127.0.0.1:18080/swagger-ui.html | API 문서 |
 
+로컬 운영자는 `demo-user` 한 계정이며 역할은 `ADMIN`입니다. 첫 실행에서 출력한 `P1_LOGIN_PASSWORD_FILES`의 첫 파일(`secrets/demo-user.password`)을 읽어 로그인합니다. 각 스택의 암호와 상태는 비공개로 관리합니다. 공개 FULL의 운영자는 배포용 비밀 파일을 별도로 관리하며 공개 DEMO는 원클릭 방문자 세션을 사용합니다.
+
 ```bash
-./capstone status    # 컨테이너 상태
-./capstone logs      # 로그
-./capstone down      # 종료 (데이터 볼륨은 유지)
+./capstone status
+./capstone logs
+./capstone down  # 컨테이너를 종료하고 볼륨을 보존합니다.
 ```
+
+#### 별도 로컬 스택과 사용자 지정 포트
+
+스택마다 Compose 프로젝트 이름과 절대 상태 디렉터리를 다르게 정합니다. 새 스택은 아직 존재하지 않는 상태 경로에서 시작합니다. 같은 스택을 재기동하거나 종료할 때는 아래 네 값을 그대로 사용합니다.
+
+```bash
+install -d -m 700 "$HOME/.local/state"
+export P1_PROJECT_NAME=mars-local-alt
+export P1_STATE_DIR="$HOME/.local/state/mars-local-alt"
+export P1_DASHBOARD_PORT=13000
+export P1_API_PORT=28080
+./capstone doctor
+./capstone up
+./capstone smoke
+```
+
+이 예에서는 웹이 `http://127.0.0.1:13000`, API가 `http://127.0.0.1:28080`으로 열립니다. 로그인에는 이 스택의 `$P1_STATE_DIR/secrets/demo-user.password`를 사용합니다. 프로젝트별 DB·Redis 볼륨과 상태 디렉터리를 함께 보존하면 재기동 때 기존 암호와 데이터가 유지됩니다.
+
+Team A 인수 테스트는 외부 제공자 연결이 없는 검증용 스택에서 실행합니다. 대시보드 의존성과 Playwright Chromium을 준비한 뒤 같은 프로젝트·상태·포트 값으로 `./capstone team-a acceptance`를 실행합니다. 이 명령은 합성 데이터를 넣어 API를 검사하고 시험 전 상태를 복원합니다.
+
+#### 외부 서비스 연결 (선택)
+
+`install -m 600 .env.example .env`로 설정 파일을 만들고 필요한 값만 입력합니다. KIS 모의 자동운용은 `KIS_MOCK_APP_KEY`, `KIS_MOCK_APP_SECRET`, `KIS_MOCK_ACCOUNT_NO`를 준비하고 모의계좌 인증을 마친 뒤 `./capstone up --mock`으로 시작합니다. 기본 실행에서는 OpenDART 공시와 yfinance 일봉 수집을 건너뜁니다.
+
+Google·Kakao 로그인에는 공개 HTTPS 주소(`MARS_PUBLIC_ORIGIN`)와 두 제공자의 클라이언트 ID·비밀값이 필요합니다. 각 제공자 콘솔에 `<MARS_PUBLIC_ORIGIN>/api/v1/auth/oidc/callback/google` 또는 `<MARS_PUBLIC_ORIGIN>/api/v1/auth/oidc/callback/kakao`를 등록합니다. 이메일 가입자는 **설정 → 로그인 방법 → 비밀번호 변경**에서 현재 비밀번호를 확인하고 바꿀 수 있습니다. 변경하면 다른 기기의 로그인도 해제됩니다.
 
 #### 개인 서버로 옮기기
 

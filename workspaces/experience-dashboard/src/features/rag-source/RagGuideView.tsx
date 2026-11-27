@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { renderAnswerText } from './answerText';
 import { useRouter } from 'next/navigation';
 import { AsyncBoundary } from '@/shared/ui/AsyncBoundary';
@@ -57,7 +57,9 @@ export function RagGuideView() {
   const [agentUsage, setAgentUsage] = useState<RagV2CorpusStatus['agentUsage']>();
   const [consentPending, setConsentPending] = useState(false);
   const [consentError, setConsentError] = useState<string | null>(null);
-  const [retryWithExampleFallback, setRetryWithExampleFallback] = useState(false);
+  const consentRevision = useRef(0);
+  const lastSubmission = useRef<{ text: string; showExample: boolean; mode: typeof answerMode } | null>(null);
+  const canSubmit = consentGranted === true && !consentPending && !pending;
   const registry = useResource(loadRegistry, []);
   const history = useResource(loadRecentQuestions, []);
   const worldNews = useResource(() => loadWorldNews(), []);
@@ -87,10 +89,15 @@ export function RagGuideView() {
     if (consentPending) return;
     setConsentPending(true);
     setConsentError(null);
+    if (action === 'REVOKE') {
+      consentRevision.current += 1;
+      lastSubmission.current = null;
+      setPending(false);
+      setAnswerState(null);
+    }
     try {
       await recordConsent(action, consentCopy);
       setConsentGranted(action === 'GRANT');
-      if (action === 'REVOKE') setAnswerState(null);
     } catch (cause) {
       const state = toErrorState<never>(cause);
       setConsentError(
@@ -103,21 +110,38 @@ export function RagGuideView() {
     }
   }
 
-  async function submit(text: string, allowExampleFallback = false) {
+  async function submit(text: string, showExample = false, mode = answerMode) {
     const trimmed = text.trim();
-    if (trimmed.length === 0 || pending) return;
-    setRetryWithExampleFallback(allowExampleFallback);
+    if (!canSubmit || trimmed.length === 0) return;
+    const revision = consentRevision.current;
+    lastSubmission.current = { text: trimmed, showExample, mode };
     setPending(true);
     setAnswerState({ kind: 'loading' });
     try {
-      setAnswerState(await askRag(trimmed, answerMode, allowExampleFallback));
+      const result = await askRag(trimmed, mode, showExample);
+      if (revision !== consentRevision.current) return;
+      setAnswerState(result);
       history.reload();
     } catch (cause) {
-      setAnswerState(toErrorState<RagAnswerView>(cause));
+      if (revision !== consentRevision.current) return;
+      const error = toErrorState<RagAnswerView>(cause);
+      if (error.kind === 'error' && error.code === 'EXTERNAL_AI_CONSENT_REQUIRED') setConsentGranted(false);
+      setAnswerState(error.kind === 'error' && error.code === 'RATE_LIMITED'
+        ? { ...error, message: '질문 사용량 제한에 걸렸습니다. 잠시 후 다시 질문해 주세요.' }
+        : error);
     } finally {
-      setPending(false);
-      void loadConsentProfile().then((profile) => setAgentUsage(profile.agentUsage));
+      if (revision === consentRevision.current) {
+        setPending(false);
+        void loadConsentProfile().then((profile) => {
+          if (revision === consentRevision.current) setAgentUsage(profile.agentUsage);
+        });
+      }
     }
+  }
+
+  function retry() {
+    const last = lastSubmission.current;
+    if (last) void submit(last.text, last.showExample, last.mode);
   }
 
   return (
@@ -188,7 +212,10 @@ export function RagGuideView() {
             value={question}
             onChange={(event) => setQuestion(event.target.value.slice(0, 1000))}
             onKeyDown={(event) => {
-              if (event.key === 'Enter' && (event.metaKey || event.ctrlKey)) void submit(question);
+              if (event.key === 'Enter' && (event.metaKey || event.ctrlKey) && !event.nativeEvent.isComposing) {
+                event.preventDefault();
+                void submit(question);
+              }
             }}
             rows={3}
             placeholder="예: 금 ETF의 롤오버 위험은 무엇인가요?"
@@ -214,7 +241,7 @@ export function RagGuideView() {
             </div>
             <Button
               onClick={() => void submit(question)}
-              disabled={pending || consentGranted !== true || question.trim().length === 0}
+              disabled={!canSubmit || question.trim().length === 0}
               variant="primary"
             >
               {pending ? '찾는 중' : '물어보기'}
@@ -226,7 +253,7 @@ export function RagGuideView() {
                 key={example.question}
                 variant="secondary"
                 size="sm"
-                disabled={consentPending || consentGranted !== true}
+                disabled={!canSubmit}
                 onClick={() => {
                   setQuestion(example.question);
                   void submit(example.question, true);
@@ -241,32 +268,28 @@ export function RagGuideView() {
       </Panel>
 
       {answerState ? (
-        // 재시도가 없으면 503 하나에 "불러오기 실패"만 남고 사용자가 할 수 있는 행동이 없다.
-        // 마지막으로 보낸 질문을 그대로 다시 보낸다.
-          <AsyncBoundary state={answerState} onRetry={() => void submit(question, retryWithExampleFallback)}>
+        <AsyncBoundary state={answerState} onRetry={canSubmit ? retry : undefined}>
           {(view) => (
             <Panel
               contract="rag-v2-answer.v1"
               title={view.statusHeadline}
               hint={view.statusDetail}
             >
-              <article
-                aria-label="생성된 설명"
-                className={`border-l-2 ${STATUS_TONE[view.generationStatus] ?? 'border-line'} pl-4`}
-              >
-                {view.answer ? (
-                  <p className="whitespace-pre-line text-[14px] leading-7 text-ink">{renderAnswerText(view.answer)}</p>
-                ) : (
-                  <p className="text-[13px] leading-6 text-muted">
-                    잠시 후 다시 질문할 수 있습니다. 확인 가능한 근거가 있으면 아래에 표시합니다.
-                  </p>
-                )}
-                {view.usage ? (
-                  <p className="mt-3 text-[11px] text-faint">
-                    {view.usage.modelVersion} · 입력 {view.usage.inputTokens} / 출력 {view.usage.outputTokens} tokens · 비용 추정 ${view.usage.estimatedCostUsd.toFixed(6)}
-                  </p>
-                ) : null}
-              </article>
+              {view.answer || view.usage ? (
+                <article
+                  aria-label="생성된 설명"
+                  className={`border-l-2 ${STATUS_TONE[view.generationStatus] ?? 'border-line'} pl-4`}
+                >
+                  {view.answer ? (
+                    <p className="whitespace-pre-line text-[14px] leading-7 text-ink">{renderAnswerText(view.answer)}</p>
+                  ) : null}
+                  {view.usage ? (
+                    <p className="mt-3 text-[11px] text-faint">
+                      {view.usage.modelVersion} · 입력 {view.usage.inputTokens} / 출력 {view.usage.outputTokens} tokens · 비용 추정 ${view.usage.estimatedCostUsd.toFixed(6)}
+                    </p>
+                  ) : null}
+                </article>
+              ) : null}
 
               {view.topSources.length > 0 || view.expandableSources.length > 0 ? (
               <details open className="mt-5 border-t border-line pt-4">
@@ -302,6 +325,25 @@ export function RagGuideView() {
               </details>
               ) : view.sourcesUnavailableReason ? (
                 <p className="mt-4 text-[12px] leading-5 text-muted">{view.sourcesUnavailableReason}</p>
+              ) : null}
+
+              {view.example ? (
+                <section className="mt-5 space-y-3 border-t border-line pt-4">
+                  <h3 className="text-[14px] font-semibold text-ink">저장된 예시 답변</h3>
+                  <p className="text-[12px] text-muted">이전에 같은 질문에 답한 내용입니다.</p>
+                  <p className="whitespace-pre-line text-[14px] leading-7 text-ink">{renderAnswerText(view.example.answer)}</p>
+                  {view.example.citationCoverage !== null ? (
+                    <div className="flex items-center gap-2">
+                      <span className="text-eyebrow font-semibold text-faint">예시 출처 연결률</span>
+                      <Numeric value={view.example.citationCoverage} format={(v) => formatRatio(v, 0)} />
+                    </div>
+                  ) : null}
+                  {view.example.source ? (
+                    <ul><SourceRow source={view.example.source} /></ul>
+                  ) : (
+                    <p className="text-[12px] text-muted">이 예시에는 외부 문헌 인용이 없습니다.</p>
+                  )}
+                </section>
               ) : null}
             </Panel>
           )}

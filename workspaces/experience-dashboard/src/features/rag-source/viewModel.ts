@@ -13,12 +13,10 @@
  * RAG는 설명 기능이다. 매수·매도 지시를 하지 않으며 주문 판단에 영향을 주지 않는다.
  */
 import { api } from '@/shared/api/endpoints';
-import { ApiFailure } from '@/shared/api/envelope';
 import { safeExternalUrl } from '@/shared/api/session';
 import type {
   RagGenerationStatus,
   RagSourceResponse,
-  RagV2Answer,
   RagV2Citation,
   RagV2CorpusStatus,
   RagV2HistoryDetail,
@@ -70,8 +68,7 @@ export interface RagAnswerView {
   topSources: SourceItem[];
   expandableSources: SourceItem[];
   sourcesUnavailableReason: string | null;
-  /** True only when a preset button used its locally stored source-backed answer. */
-  fallbackUsed: boolean;
+  example: (typeof RAG_EXAMPLES)[number] | null;
 }
 
 const TOP_SOURCE_COUNT = 3;
@@ -167,7 +164,7 @@ const STATUS_COPY: Record<
   },
   GENERATION_UNAVAILABLE: {
     headline: '설명 생성이 지금은 불가능합니다',
-    detail: '출처 목록은 계속 확인할 수 있습니다.',
+    detail: '잠시 후 다시 질문해 주세요.',
   },
 };
 
@@ -265,43 +262,20 @@ export async function recordConsent(
 export async function askRag(
   question: string,
   answerMode: 'CONCISE' | 'DETAILED',
-  allowExampleFallback = false,
+  showExample = false,
 ): Promise<ViewState<RagAnswerView>> {
-  const example = allowExampleFallback ? RAG_EXAMPLES.find((item) => item.question === question.trim()) : null;
-  const fallback = example ? exampleFallbackView(example) : null;
-  const request: Parameters<typeof api.ragV2Ask>[0] = {
+  const answer = await api.ragV2Ask({
     question,
     answerMode,
     // 서버는 1~6개의 허용 주제를 요구한다. 이 화면은 개념·위험 설명이 목적이다.
     topics: ['DATA', 'FINANCIAL_ENGINEERING', 'RISK', 'METHODOLOGY', 'PRODUCT_RISK'],
-  };
-  let answer: RagV2Answer;
-  try {
-    answer = await api.ragV2Ask(request);
-    // 예시 버튼은 이전 성공 답변이 있으므로 생성 불가를 확인한 뒤 두 번째 비용을 쓰지 않는다.
-    // 자유 질문만 무응답이 명시된 경우 한 번 재시도하며, 애매한 HTTP 실패는 재전송하지 않는다.
-    if (!fallback && answer.generationStatus === 'GENERATION_UNAVAILABLE' && answer.answer === null) {
-      answer = await api.ragV2Ask(request);
-    }
-  } catch (cause) {
-    if (canUseVertexUnavailableFallbackForError(cause)) {
-      return ready(fallback ?? vertexUnavailableView([]));
-    }
-    throw cause;
-  }
-
-  // 예시 버튼의 질문에만 이전에 성공한 답변을 보관한다. 자유 질문과 민감정보 차단은
-  // 언제나 live API 결과를 유지하며, 저장 답변에 없던 출처를 붙이지 않는다.
-  if (fallback && canUseExampleFallbackForAnswer(answer)) return ready(fallback);
-  if (canUseVertexUnavailableFallbackForAnswer(answer)) return ready(vertexUnavailableView(answer.citations));
+  });
 
   // 출처 registry는 기관명 보강용이다. 실패해도 인용 자체는 그대로 보여준다.
   const registry = new Map<string, RagSourceResponse>();
-  try {
-    const list = await api.ragSources();
-    for (const card of list.data.items) registry.set(card.sourceId, card);
-  } catch {
-    /* 기관명 없이 진행한다 */
+  if (answer.citations.length > 0) {
+    const list = await api.ragSources().catch(() => null);
+    for (const card of list?.data.items ?? []) registry.set(card.sourceId, card);
   }
 
   const items = toSourceItems(answer.citations, registry);
@@ -310,6 +284,8 @@ export async function askRag(
     answered && items.length === 0
       ? STATUS_COPY.ANSWERED_WITHOUT_SOURCES
       : STATUS_COPY[answer.generationStatus];
+  const canShowExample = showExample && answer.answer === null && items.length === 0 &&
+    (answer.generationStatus === 'RETRIEVAL_FAILURE' || answer.generationStatus === 'GENERATION_UNAVAILABLE');
 
   return ready<RagAnswerView>({
     answerId: answer.answerId,
@@ -330,72 +306,8 @@ export async function askRag(
           ? '생성 모델: Google Vertex AI Gemini. 외부 문헌 인용은 연결되지 않았습니다.'
           : '이 질문에 연결된 출처가 없습니다.'
         : null,
-    fallbackUsed: false,
+    example: canShowExample ? RAG_EXAMPLES.find((item) => item.question === question.trim()) ?? null : null,
   });
-}
-
-function vertexUnavailableView(citations: RagV2Citation[]): RagAnswerView {
-  const sources = toSourceItems(citations, new Map());
-  return {
-    answerId: null,
-    generationStatus: 'GENERATION_UNAVAILABLE',
-    statusHeadline: 'Vertex AI 응답을 가져오지 못했습니다',
-    statusDetail: 'Vertex AI가 답변을 생성하지 못해 고정 안내를 표시합니다. 잠시 후 다시 질문해 주세요.',
-    answer: 'Vertex AI 응답 생성이 일시적으로 불가능합니다. 잠시 후 다시 질문해 주세요.',
-    citationCoverage: null,
-    retrievalFailure: true,
-    guardrailFlags: ['VERTEX_UNAVAILABLE'],
-    topSources: sources.slice(0, TOP_SOURCE_COUNT),
-    expandableSources: sources.slice(TOP_SOURCE_COUNT),
-    sourcesUnavailableReason:
-      sources.length === 0 ? 'Vertex AI가 복구되면 다시 질문해 주세요.' : null,
-    fallbackUsed: true,
-  };
-}
-
-function exampleFallbackView(example: (typeof RAG_EXAMPLES)[number]): RagAnswerView {
-  return {
-    answerId: null,
-    generationStatus: 'ANSWERED',
-    statusHeadline: '저장된 예시 답변',
-    statusDetail: '실시간 생성에 실패해 이전에 성공한 같은 질문의 답변을 표시합니다.',
-    answer: example.answer,
-    citationCoverage: example.citationCoverage,
-    retrievalFailure: false,
-    guardrailFlags: [],
-    topSources: example.source ? [example.source] : [],
-    expandableSources: [],
-    sourcesUnavailableReason: example.source ? null : '이 저장된 답변에는 외부 문헌 인용이 연결되지 않았습니다.',
-    fallbackUsed: true,
-  };
-}
-
-function canUseExampleFallbackForAnswer(answer: RagV2Answer): boolean {
-  if (answer.generationStatus === 'BLOCKED_ADVICE' || answer.generationStatus === 'BLOCKED_SENSITIVE') {
-    return false;
-  }
-  return answer.answer === null;
-}
-
-function canUseVertexUnavailableFallbackForAnswer(answer: RagV2Answer): boolean {
-  if (answer.answer !== null) return false;
-  if (answer.generationStatus === 'BLOCKED_ADVICE' || answer.generationStatus === 'BLOCKED_SENSITIVE') {
-    return false;
-  }
-  return ['GENERATION_UNAVAILABLE', 'RETRIEVAL_FAILURE', 'RETRIEVAL_ONLY'].includes(answer.generationStatus);
-}
-
-function canUseVertexUnavailableFallbackForError(cause: unknown): boolean {
-  if (!(cause instanceof ApiFailure)) return false;
-  return [
-    'INTERNAL_ERROR',
-    'NETWORK_UNAVAILABLE',
-    'RAG_HISTORY_PERSIST_FAILED',
-    'RAG_UNAVAILABLE',
-    'PYTHON_SERVICE_UNAVAILABLE',
-    'RATE_LIMITED',
-    'RESPONSE_CONTRACT_MISMATCH',
-  ].includes(cause.code);
 }
 
 export async function loadWorldNews(query = ''): Promise<ViewState<WorldNewsPage>> {

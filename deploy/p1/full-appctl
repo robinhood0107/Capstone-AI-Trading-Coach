@@ -66,7 +66,6 @@ compose() {
   enable_strong_llm_by_default
   select_social_login_profile
   export P1_OPERATOR_UID=${P1_OPERATOR_UID:-$(id -u)}
-  export P1_KIS_MOCK_RUNTIME_DIR=${P1_KIS_MOCK_RUNTIME_DIR:-$STATE_DIR/mock}
   local args=("$DOCKER_BIN" compose --project-name "$PROJECT_NAME")
   if [[ -e $REPO_ROOT/.env ]]; then
     [[ -f $REPO_ROOT/.env && ! -L $REPO_ROOT/.env && $(stat -c '%a' "$REPO_ROOT/.env") == 600 ]] || die root_env_boundary
@@ -77,6 +76,7 @@ compose() {
   else
     export P1_SECRET_GID=${P1_SECRET_GID:-$(id -g)}
     export P1_SECRETS_DIR=${P1_SECRETS_DIR:-$SECRETS_DIR}
+    export P1_KIS_MOCK_RUNTIME_DIR=${P1_KIS_MOCK_RUNTIME_DIR:-$STATE_DIR/mock}
     export P1_SPRING_IMAGE=${P1_SPRING_IMAGE:-capstone-decision-platform:p1-local}
     export P1_PYTHON_IMAGE=${P1_PYTHON_IMAGE:-capstone-decision-platform:p1-local}
   fi
@@ -406,13 +406,27 @@ DECISION_RISK_WRITER_DATABASE_DSN=postgresql://decision_risk_writer:%s@postgres:
   fi
   # RAG v2 로컬 루트는 비어 있어도 된다. 마운트만 항상 성립하게 두고, 실제 leaf가 없으면
   # RAG v2를 켰을 때 entrypoint가 닫는다. 운영자가 다른 경로를 쓰려면 이 값을 바꾼다.
-  install -d -m 0700 "$STATE_DIR/rag-v2-root"
+  local rag_runtime_root=$STATE_DIR/rag-v2-root
+  [[ ! -L $rag_runtime_root ]] || die RAG_RUNTIME_DIR_BOUNDARY
+  if [[ ! -d $rag_runtime_root ]]; then
+    install -d -m 0700 "$rag_runtime_root"
+  fi
   if ! grep -q '^P1_RAG_RUNTIME_DIR=' "$RUNTIME_ENV"; then
     printf 'P1_RAG_RUNTIME_DIR=%s\n' "$STATE_DIR/rag-v2-root" | append_state runtime.env 0600
   fi
-  local approval_files=0 approval_file
+  local approval_files=0 approval_file approval_path
   for approval_file in kis-mock-approval-private.pem kis-mock-approval-public.pem kis-mock-approval-trust-policy.json p1-provider-claim.dsn; do
-    [[ ! -e $SECRETS_DIR/$approval_file ]] || approval_files=$((approval_files + 1))
+    approval_path=$SECRETS_DIR/$approval_file
+    [[ ! -e $approval_path ]] || approval_files=$((approval_files + 1))
+    case $approval_file in
+      kis-mock-approval-private.pem|p1-provider-claim.dsn)
+        # Repair only files from the older initializer, without rotating either secret.
+        if [[ ! -L $approval_path && -f $approval_path && -O $approval_path &&
+              $(stat -c '%a:%h' "$approval_path") == 640:1 ]]; then
+          chmod 0600 -- "$approval_path"
+        fi
+        ;;
+    esac
   done
   [[ $approval_files == 0 || $approval_files == 4 ]] || die KIS_MOCK_APPROVAL_STATE_PARTIAL
   if [[ $approval_files == 0 ]]; then
@@ -472,11 +486,13 @@ load_active_mode() {
 }
 
 remove_old_preview_containers() {
+  [[ $PROJECT_NAME == capstone-p1 && $STATE_DIR == "$SCRIPT_DIR/.state-app" ]] || return 0
   "$DOCKER_BIN" compose --project-name capstone-p1-preview -f "$COMPOSE_FILE" \
     --profile preview --profile models --profile automation down --remove-orphans >/dev/null 2>&1 || true
 }
 
 stop_old_preview_containers() {
+  [[ $PROJECT_NAME == capstone-p1 && $STATE_DIR == "$SCRIPT_DIR/.state-app" ]] || return 0
   local ids=()
   mapfile -t ids < <("$DOCKER_BIN" ps --quiet --filter label=com.docker.compose.project=capstone-p1-preview)
   if ((${#ids[@]})); then
@@ -704,22 +720,22 @@ up_app() {
     printf 'CAPSTONE_RAG_SOURCE_REGISTRY=UNAVAILABLE\n'
   fi
   unset rag_sources_seed
-  # 뉴스 거부권의 근거 코퍼스를 채운다. 이것이 비어 있으면 근거가 0개가 되고 거부권이
-  # 조용히 ABSTAIN 한다 - 그 상태가 2026-09-04 에 거부권을 자문으로 격하시킨 원인이다.
-  # provider 호출이 있는 유일한 up 단계이므로 결과를 표식으로 남기고 실패해도 up 을
-  # 멈추지 않는다. 근거가 없으면 자동운용은 거부권 없이 도는 것이 아니라 ABSTAIN 한다.
-  local disclosure_events
-  disclosure_events=$(compose --profile owner run --rm --no-deps disclosure-collector 2>&1 \
-    | grep -E '^P1_DISCLOSURE_EVENTS=' | tail -1) || true  # 캡처한 표식을 지우지 않는다. 사유가 사라진다
-  printf '%s\n' "${disclosure_events:-P1_DISCLOSURE_EVENTS=NO_OUTPUT}"
-  case $disclosure_events in
-    P1_DISCLOSURE_EVENTS=ADOPTED*) printf 'CAPSTONE_DISCLOSURE_CORPUS=COLLECTED\n' ;;
-    P1_DISCLOSURE_EVENTS=SKIPPED*) printf 'CAPSTONE_DISCLOSURE_CORPUS=OFFLINE\n' ;;
-    *) printf 'CAPSTONE_DISCLOSURE_CORPUS=UNAVAILABLE\n' ;;
-  esac
-  unset disclosure_events
-  # 설정 주입은 이미지 안에 있다 - 레포 없는 서버에도 이 단계가 있어야 자동운용이
-  # POLICY_NOT_CONFIGURED 로 막히지 않는다. 프로필이 없으면 건너뛴다(운영자가 화면에서 넣는다).
+  if ((mock)); then
+    # 공시 수집은 OpenDART 키가 있을 때만 외부에 요청한다.
+    local disclosure_events
+    disclosure_events=$(compose --profile owner run --rm --no-deps disclosure-collector 2>&1 \
+      | grep -E '^P1_DISCLOSURE_EVENTS=' | tail -1) || true  # 캡처한 표식을 지우지 않는다. 사유가 사라진다
+    printf '%s\n' "${disclosure_events:-P1_DISCLOSURE_EVENTS=NO_OUTPUT}"
+    case $disclosure_events in
+      P1_DISCLOSURE_EVENTS=ADOPTED*) printf 'CAPSTONE_DISCLOSURE_CORPUS=COLLECTED\n' ;;
+      P1_DISCLOSURE_EVENTS=SKIPPED*) printf 'CAPSTONE_DISCLOSURE_CORPUS=OFFLINE\n' ;;
+      *) printf 'CAPSTONE_DISCLOSURE_CORPUS=UNAVAILABLE\n' ;;
+    esac
+    unset disclosure_events
+  else
+    printf 'CAPSTONE_DISCLOSURE_CORPUS=OFFLINE\n'
+  fi
+  # 설정을 주입하고 활성 투자 원칙이 없으면 정책 적용을 보류한다.
   local deploy_bootstrap
   deploy_bootstrap=$(compose --profile owner run --rm --no-deps deploy-bootstrap 2>&1 \
     | grep -E '^P1_DEPLOY_BOOTSTRAP=' | tail -1) || true  # 캡처한 표식을 지우지 않는다. 사유가 사라진다
@@ -727,19 +743,23 @@ up_app() {
   unset deploy_bootstrap
   replay_history
   demo_history seed
-  # A failed public-price refresh is recorded as stale and never calls KIS orders.
-  local daily_refresh
-  daily_refresh=$(compose --profile owner run --rm --no-deps market-data-cli \
-    python -m app.data.market_data.yfinance_daily_cli 2>&1 \
-    | grep -E '^P1_MARKET_DATA_YF_REFRESH=' | tail -1) || true  # 캡처한 표식을 지우지 않는다. 사유가 사라진다
-  printf '%s\n' "${daily_refresh:-P1_MARKET_DATA_YF_REFRESH=NO_OUTPUT}"
-  case $daily_refresh in
-    P1_MARKET_DATA_YF_REFRESH=ADOPTED*|P1_MARKET_DATA_YF_REFRESH=UP_TO_DATE*)
-      printf 'CAPSTONE_MARKET_DATA_DAILY=FRESH\n' ;;
-    *)
-      printf 'CAPSTONE_MARKET_DATA_DAILY=STALE\n' ;;
-  esac
-  unset daily_refresh
+  if ((mock)); then
+    # A failed public-price refresh is recorded as stale and never calls KIS orders.
+    local daily_refresh
+    daily_refresh=$(compose --profile owner run --rm --no-deps market-data-cli \
+      python -m app.data.market_data.yfinance_daily_cli 2>&1 \
+      | grep -E '^P1_MARKET_DATA_YF_REFRESH=' | tail -1) || true  # 캡처한 표식을 지우지 않는다. 사유가 사라진다
+    printf '%s\n' "${daily_refresh:-P1_MARKET_DATA_YF_REFRESH=NO_OUTPUT}"
+    case $daily_refresh in
+      P1_MARKET_DATA_YF_REFRESH=ADOPTED*|P1_MARKET_DATA_YF_REFRESH=UP_TO_DATE*)
+        printf 'CAPSTONE_MARKET_DATA_DAILY=FRESH\n' ;;
+      *)
+        printf 'CAPSTONE_MARKET_DATA_DAILY=STALE\n' ;;
+    esac
+    unset daily_refresh
+  else
+    printf 'CAPSTONE_MARKET_DATA_DAILY=SKIPPED_PROVIDER_FREE\n'
+  fi
   local scenario_materialization
   scenario_materialization=$(compose --profile owner run --rm --no-deps owner-scenario-materializer 2>&1 \
     | tail -1) || true  # 캡처한 표식을 지우지 않는다. 사유가 사라진다
@@ -776,7 +796,7 @@ up_app() {
   remove_old_preview_containers
   printf 'CAPSTONE_UP=PASS\nCAPSTONE_PERSISTENT_CONTAINERS=%s\n' "$running"
   printf 'CAPSTONE_DASHBOARD_URL=http://127.0.0.1:%s\n' "${P1_DASHBOARD_PORT:-3000}"
-  printf 'CAPSTONE_API_URL=http://127.0.0.1:%s\n' "${P1_API_PORT:-18080}"
+  printf 'CAPSTONE_API_URL=http://127.0.0.1:%s\n' "$(api_port)"
   if ((mock)); then
     printf 'KIS_BROKERAGE_MODE=KIS_MOCK\n'
   else
@@ -814,7 +834,7 @@ reconcile_automation_intent() {
 # 배포를 세우는 쪽이 훨씬 나쁘다. 대신 무슨 일이 있었는지는 마커로 남긴다.
 reconcile_ai_judgement() {
   local base enabled
-  base="http://127.0.0.1:$(sed -n 's/^P1_API_PORT=//p' "$RUNTIME_ENV")"
+  base="http://127.0.0.1:$(api_port)"
   enabled=$(compose exec -T postgres psql -U postgres -d capstone_p1 -At \
     -c "select ai_judgement_enabled from strong_llm_owner_settings where owner_user_id='usr_demo_user'" \
     2>/dev/null | tr -d '\r') || {
@@ -892,10 +912,18 @@ logs() {
     -e 's/(password|secret|token|account|credential|bundle|hmac|jwt|private[_-]?key|kek|dsn)([=:][^ ,}]*)/\1=[REDACTED]/Ig'
 }
 
+api_port() {
+  local port=${P1_API_PORT:-}
+  if [[ -z $port ]]; then
+    port=$(sed -n 's/^P1_API_PORT=//p' "$RUNTIME_ENV")
+  fi
+  printf '%s\n' "${port:-18080}"
+}
+
 smoke() {
   state_ready || die NOT_INITIALIZED
   require_command python3
-  local base="http://127.0.0.1:$(sed -n 's/^P1_API_PORT=//p' "$RUNTIME_ENV")"
+  local base="http://127.0.0.1:$(api_port)"
   P1_BASE_URL=$base P1_USER_PASSWORD_FILE=$SECRETS_DIR/demo-user.password python3 - <<'PY'
 import json, os, urllib.request
 with urllib.request.urlopen(os.environ["P1_BASE_URL"] + "/actuator/health", timeout=5) as response:
@@ -909,7 +937,8 @@ request = urllib.request.Request(
 )
 with urllib.request.urlopen(request, timeout=5) as response:
     body = json.load(response)
-if response.status != 200 or body.get("data", {}).get("user", {}).get("userId") != "usr_demo_user":
+user = body.get("data", {}).get("user", {})
+if response.status != 200 or user.get("userId") != "usr_demo_user" or user.get("role") != "ADMIN":
     raise SystemExit("CAPSTONE_ERROR=LOGIN_SMOKE")
 PY
   compose --profile smoke run --rm --no-deps -e P1_SMOKE_MODE=DB synthetic-async-smoke
@@ -967,7 +996,6 @@ team_a_acceptance() {
   fi
   if [[ $result == 0 ]] && ! P1_DASHBOARD_URL="http://127.0.0.1:${P1_DASHBOARD_PORT:-3000}" \
     P1_USER_PASSWORD_FILE="$SECRETS_DIR/demo-user.password" \
-    P1_ADMIN_PASSWORD_FILE="$SECRETS_DIR/demo-admin.password" \
     npm --prefix "$REPO_ROOT/workspaces/experience-dashboard" run test:e2e:owner-acceptance; then
     result=$?
     [[ $result != 0 ]] || result=1

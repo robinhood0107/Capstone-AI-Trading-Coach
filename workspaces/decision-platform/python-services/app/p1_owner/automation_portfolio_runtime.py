@@ -24,7 +24,7 @@ from app.p1_owner.automation_portfolio_repository import (
     PortfolioSessionBinding,
     PostgresAutomationPortfolioRepository,
 )
-from app.p1_owner.automation_runtime import RuntimeClaim
+from app.p1_owner.automation_runtime import RuntimeClaim, _transient_continuation_error
 
 
 class PortfolioRuntimePort(Protocol):
@@ -66,10 +66,10 @@ class PortfolioContinuationRunner:
         port: PortfolioRuntimePort,
         allow_new_orders: bool = True,
     ) -> PortfolioContinuationResult:
-        """``allow_new_orders`` 가 False 면 새 주문 계획만 막고 대사는 계속한다.
+        """``allow_new_orders`` 가 False 면 새 주문을 막고 기존 주문 대사는 계속한다.
 
         매수 마감(09:40) 뒤에도 이미 제출된 주문은 반드시 대사해야 하므로
-        시간 제한을 호출 전체가 아니라 계획 단계에만 건다.
+        시간 제한은 계획과 아직 제출하지 않은 주문에 적용한다.
         """
 
         sources = self._repository.load_sources(claim=claim)
@@ -111,6 +111,10 @@ class PortfolioContinuationRunner:
             execution_state = str(current["state"])
             intent = _intent(cast(dict[str, object], current["exactIntent"]))
             if execution_state == "PLANNED":
+                if not allow_new_orders:
+                    return PortfolioContinuationResult(
+                        "BUY_WINDOW_CLOSED", planned_count, completed
+                    )
                 decision_id = port.portfolio_evaluate(intent, ordinal)
                 if decision_id is None:
                     if self._repository.begin(
@@ -186,6 +190,9 @@ class PortfolioContinuationRunner:
             try:
                 snapshot = port.portfolio_reconcile(order_id)
             except Exception as error:
+                # Repeating this read cannot submit the order again.
+                if _transient_continuation_error(error):
+                    raise
                 return PortfolioContinuationResult(
                     "SUBMIT_RESPONSE_UNRESOLVED",
                     planned_count,

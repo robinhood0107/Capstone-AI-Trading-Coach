@@ -1,5 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { test, expect, type Response } from '@playwright/test';
+import type { DashboardBacktestView, DashboardEnvelope } from '../../src/shared/api/wire';
 
 const passwordFile = process.env.P1_USER_PASSWORD_FILE;
 
@@ -52,8 +53,24 @@ test('live Compose login and primary screens use the Spring API', async ({ page 
   await page.getByRole('tab', { name: '백테스트 리포트' }).click();
   await expect(page.getByRole('heading', { name: '백테스트 리포트' })).toBeVisible();
   await expect(page.getByRole('heading', { name: 'Baseline / Guide / Strict 비교' })).toBeVisible();
-  await expect(page.getByText('이 기간 최고 관측값')).toBeVisible();
-  await expect(page.getByText(/비용 반영 수익률입니다. 세 시나리오를 같은 DB 입력과 조건으로 계산했습니다./)).toBeVisible();
+  const backtest = apiResponses.find((response) => {
+    const path = new URL(response.url()).pathname;
+    return path.startsWith('/api/v1/dashboard/backtests/') && !path.endsWith('/latest');
+  });
+  expect(backtest?.status()).toBe(200);
+  const { data } = await backtest!.json() as { data: DashboardEnvelope<DashboardBacktestView> };
+  expect(data.view).not.toBeNull();
+  const netReturnPresent = data.view?.metricCards.some(
+    ({ metric, value }) => /^(Baseline|Guide|Strict)\.netReturn$/.test(metric) && Number.isFinite(value),
+  );
+  const bestNetReturn = page.getByText('이 기간 최고 관측값');
+  if (netReturnPresent) {
+    await expect(bestNetReturn).toBeVisible();
+    await expect(page.getByText(/비용 반영 수익률입니다. 세 시나리오를 같은 DB 입력과 조건으로 계산했습니다./)).toBeVisible();
+  } else {
+    await expect(bestNetReturn).toHaveCount(0);
+    await expect(page.getByRole('row', { name: /^Baseline · 원칙 없음/ })).toBeVisible();
+  }
   await expect(page.getByText('demo_s8_fake_e2e_0001')).toHaveCount(0);
 
   await navRail.getByRole('link', { name: /^자동운용/ }).click();
@@ -68,7 +85,8 @@ test('live Compose login and primary screens use the Spring API', async ({ page 
   await tools.getByRole('link', { name: '보고서' }).click();
   await expect(page.getByRole('heading', { name: '보고서 캡처' })).toBeVisible();
   await tools.getByRole('link', { name: '설정' }).click();
-  await expect(page.getByRole('heading', { name: 'Strong LLM' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: '설정', exact: true })).toBeVisible();
+  await expect(page.getByRole('heading', { name: '로그인 방법' })).toBeVisible();
 
   await page.setViewportSize({ width: 390, height: 844 });
   expect(

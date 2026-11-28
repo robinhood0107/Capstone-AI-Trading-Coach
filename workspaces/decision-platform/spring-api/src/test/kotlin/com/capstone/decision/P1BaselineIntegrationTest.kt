@@ -191,7 +191,7 @@ class P1BaselineIntegrationTest {
         val separationKey = ByteArray(32) { index -> (index + 17).toByte() }
         val userBundle = prepareBundle(0, "p1-synthetic-user-password", separationKey)
         val adminBundle = prepareBundle(1, "p1-synthetic-admin-password", separationKey)
-        val rotatedAdminBundle = prepareBundle(1, "p1-rotated-admin-password", separationKey)
+        val rotatedUserBundle = prepareBundle(0, "p1-rotated-user-password", separationKey)
         val directory = Files.createTempDirectory("p1-bootstrap-test")
         val environment =
             mapOf(
@@ -212,7 +212,8 @@ class P1BaselineIntegrationTest {
         try {
             DemoIdentityBootstrap.bootstrap(environment)
             DemoIdentityBootstrap.bootstrap(environment)
-            assertEquals(2L, count(BOOTSTRAP_DB, "users"))
+            assertEquals(1L, count(BOOTSTRAP_DB, "users"))
+            assertEquals(1L, countWhere(BOOTSTRAP_DB, "users", "username='demo-user' and role='ADMIN'"))
             assertEquals(1L, countWhere(BOOTSTRAP_DB, "audit_logs", "action='DEMO_IDENTITY_BOOTSTRAPPED'"))
             assertEquals(1L, countWhere(BOOTSTRAP_DB, "p1_offline_demo_authority", "active"))
 
@@ -222,20 +223,20 @@ class P1BaselineIntegrationTest {
                     "POSTGRES_PORT" to postgres.getMappedPort(5432).toString(),
                     "POSTGRES_DB" to BOOTSTRAP_DB,
                     "POSTGRES_MIGRATION_PASSWORD" to FLYWAY_PASSWORD,
-                    "DEMO_CREDENTIAL_USER_ID" to DemoAccounts.identities[1].userId,
+                    "DEMO_CREDENTIAL_USER_ID" to DemoAccounts.identities[0].userId,
                     "DEMO_CREDENTIAL_ROTATION_ACTOR" to "p1-baseline-parity-test",
                     "DEMO_CREDENTIAL_BUNDLE" to
-                        rotatedAdminBundle,
+                        rotatedUserBundle,
                     "DEMO_CREDENTIAL_SEPARATION_KEY" to
                         Base64.getUrlEncoder().withoutPadding().encodeToString(separationKey),
                 ),
                 auditId = "aud_p1_baseline_rotation_test",
             )
             assertEquals(1L, countWhere(BOOTSTRAP_DB, "users", "role='ADMIN' and security_version=2"))
-            Files.writeString(Path.of(environment.getValue("DEMO_ADMIN_CREDENTIAL_BUNDLE_FILE")), rotatedAdminBundle)
+            Files.writeString(Path.of(environment.getValue("DEMO_USER_CREDENTIAL_BUNDLE_FILE")), rotatedUserBundle)
             DemoIdentityBootstrap.bootstrap(environment)
             DemoIdentityBootstrap.bootstrap(environment)
-            assertEquals(2L, count(BOOTSTRAP_DB, "users"))
+            assertEquals(1L, count(BOOTSTRAP_DB, "users"))
             assertEquals(1L, countWhere(BOOTSTRAP_DB, "audit_logs", "action='DEMO_IDENTITY_BOOTSTRAPPED'"))
             assertEquals(1L, countWhere(BOOTSTRAP_DB, "p1_offline_demo_authority", "active"))
         } finally {

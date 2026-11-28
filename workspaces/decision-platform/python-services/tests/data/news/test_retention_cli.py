@@ -85,3 +85,39 @@ def test_a_failing_cycle_does_not_kill_the_process(monkeypatch: pytest.MonkeyPat
     monkeypatch.setattr(retention_cli, "_run_cycle", _boom)
 
     assert retention_cli.main([]) == 0
+
+
+def test_db_connection_loss_is_retried_in_loop_only(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    import psycopg
+
+    monkeypatch.setenv("ASYNC_WORKER_DATABASE_DSN", "postgresql://decision_worker:x@db/p1")
+    receipts = iter((psycopg.OperationalError("DB connection lost"), {"deleted": 0}))
+
+    def cycle(*_args: object, **_kwargs: object) -> dict[str, int]:
+        result = next(receipts)
+        if isinstance(result, Exception):
+            raise result
+        return result
+
+    waits = []
+
+    def sleep(interval: int) -> None:
+        waits.append(interval)
+        if len(waits) == 2:
+            raise KeyboardInterrupt
+
+    monkeypatch.setattr(retention_cli, "_run_cycle", cycle)
+    monkeypatch.setattr(retention_cli.time, "sleep", sleep)
+    with pytest.raises(KeyboardInterrupt):
+        retention_cli.main(["--loop"])
+    captured = capsys.readouterr()
+    assert "WORLD_NEWS_RETENTION=FAILED error=OperationalError" in captured.err
+    assert '"worldNewsRetention": {"deleted": 0}' in captured.out
+    assert waits == [retention_cli._IDLE_INTERVAL_SECONDS] * 2
+
+    receipts = iter((psycopg.OperationalError("DB connection lost"),))
+    with pytest.raises(psycopg.OperationalError):
+        retention_cli.main([])

@@ -1,0 +1,67 @@
+{
+  "protocol": "issue-232-agent-v1",
+  "documents": [
+    ["atlas_notice","ATLAS-NOTICE","2026-05-01","official","The training-unit cap is published separately in the applicable exception bulletin. The briefing describes registration."],
+    ["atlas_exception","ATLAS-EXCEPTION","2026-05-06","official","The current cap is 12 training units per session."],
+    ["atlas_brief","ATLAS-BRIEF","2026-05-04","official","Registration opens on Monday. This briefing does not set a training-unit cap."],
+    ["iris_notice","IRIS-NOTICE","2026-05-01","official","The initial certified count was 23. A subsequent correction may replace that figure. The related schedule only gives the release date."],
+    ["iris_correction","IRIS-CORRECTION","2026-05-06","official","The corrected certified count is 29. This replaces the initial count of 23."],
+    ["iris_schedule","IRIS-SCHEDULE","2026-05-03","official","The results session starts at 10:00. This schedule does not give a certified count."],
+    ["ocean_notice","OCEAN-NOTICE","2026-05-01","official","The auction result is pending until May 9. The opening-hours bulletin is separate."],
+    ["ocean_result","OCEAN-RESULT","2026-05-09","official","The cleared price is 72 credits."],
+    ["ocean_hours","OCEAN-HOURS","2026-05-02","official","The venue opens at 09:00. This bulletin does not contain auction results."]
+  ],
+  "links_by_document": {
+    "atlas_notice": {
+      "briefing": "ATLAS-BRIEF",
+      "exception": "ATLAS-EXCEPTION"
+    },
+    "iris_notice": {
+      "correction": "IRIS-CORRECTION",
+      "schedule": "IRIS-SCHEDULE"
+    },
+    "ocean_notice": {
+      "hours": "OCEAN-HOURS",
+      "result": "OCEAN-RESULT"
+    }
+  },
+  "cases": [
+    {
+      "id": "A1",
+      "group": "linked_exception",
+      "question": "For ATLAS-NOTICE, what is the cap set by the applicable exception on May 8, 2026? Give the number only.",
+      "as_of": "2026-05-08",
+      "direct": [],
+      "lookup": "ATLAS-NOTICE",
+      "answer": "12",
+      "citations": [
+        "atlas_exception"
+      ],
+      "relation": "exception"
+    },
+    {
+      "id": "A2",
+      "group": "linked_correction",
+      "question": "For IRIS-NOTICE, what is the corrected certified count on May 8, 2026? Give the number only.",
+      "as_of": "2026-05-08",
+      "direct": [],
+      "lookup": "IRIS-NOTICE",
+      "answer": "29",
+      "citations": [
+        "iris_correction"
+      ],
+      "relation": "correction"
+    },
+    {
+      "id": "A3",
+      "group": "linked_future_hold",
+      "question": "For OCEAN-NOTICE, what was the official auction clearing price on May 8, 2026? Give the number only.",
+      "as_of": "2026-05-08",
+      "direct": [],
+      "lookup": "OCEAN-NOTICE",
+      "answer": null,
+      "citations": [],
+      "relation": "result"
+    }
+  ]
+}

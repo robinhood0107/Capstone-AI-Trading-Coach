@@ -1194,7 +1194,7 @@ def test_restart_after_terminal_resumes_the_remaining_decision_times_once() -> N
         released.user_id, released.session_date, "sha256:" + "d" * 64
     )
 
-    assert (first, second) == (True, False)
+    assert (first, second) == ("DONE", None)
     assert len(runner.calls) == 1
 
 
@@ -1209,7 +1209,7 @@ def test_restart_without_a_released_claim_does_not_resume() -> None:
         service._resume_continuations(
             "usr_automation_runtime_0001", date(2026, 8, 28), "sha256:" + "d" * 64
         )
-        is False
+        is None
     )
     assert runner.calls == []
 
@@ -1909,6 +1909,202 @@ def test_advancing_stops_once_the_cursor_reaches_the_target() -> None:
     assert armed is False
 
 
+@pytest.mark.parametrize("resume_reports", [False, True])
+def test_full_order_schedule_advances_while_a_report_is_blocked(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    resume_reports: bool,
+) -> None:
+    from concurrent.futures import Future
+    from dataclasses import replace
+    from threading import Event, Thread, current_thread
+
+    import psycopg
+
+    from app.p1_owner import automation_runtime as runtime
+    from app.p1_owner.daily_inference import DailyInferenceResult
+
+    friday = date(2026, 8, 14)
+    tuesday = date(2026, 8, 18)
+    now = datetime(2026, 8, 14, 8, 30, tzinfo=_KST)
+    owners = ("usr_synthetic_slow", "usr_synthetic_other")
+    schedules = {(owner, friday) for owner in owners}
+    completed: set[tuple[str, date]] = set()
+    claims: list[tuple[str, date, datetime, str]] = []
+    rolls: list[tuple[str, date, date]] = []
+    signals: list[date] = []
+    report_started = Event()
+    release_report = Event()
+    next_report_started = Event()
+    report_threads: list[Thread] = []
+
+    class Clock(datetime):
+        @staticmethod
+        def now(tz: Any) -> datetime:
+            return now.astimezone(tz)
+
+    class InlineOwnerPool:
+        def __init__(self, **_kwargs: Any) -> None:
+            pass
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args: Any) -> None:
+            pass
+
+        def submit(self, run, *args):
+            future = Future()
+            try:
+                future.set_result(run(*args))
+            except Exception as error:
+                future.set_exception(error)
+            return future
+
+    class Repository:
+        def preflight(self) -> None:
+            pass
+
+        def automation_worker_count(self) -> int:
+            return len(owners)
+
+        def armed_owner_user_ids(self) -> tuple[str, ...]:
+            return owners
+
+        def recoverable_account_sync_halts(self) -> tuple[()]:
+            return ()
+
+        def last_completed_session(self, owner: str) -> date | None:
+            return max((day for user, day in completed if user == owner), default=None)
+
+        def settle_missed_schedules(self, _owner: str, _session: date) -> int:
+            return 0
+
+        def claim_for_owner(self, owner: str, session: date, token: str) -> RuntimeClaim:
+            claims.append((owner, session, now, token))
+            if len(claims) == 1:
+                raise psycopg.OperationalError("synthetic claim connection failure")
+            assert (owner, session) in schedules and (owner, session) not in completed
+            return replace(_claim(), user_id=owner, session_date=session, claim_token_hash=token)
+
+        def read_state(self, claim: RuntimeClaim) -> dict[str, Any]:
+            state = "COMPLETED" if (claim.user_id, claim.session_date) in completed else "SCHEDULED"
+            return _state(state)
+
+        def roll_schedule(self, owner: str, prior: date, following: date, _version: int) -> None:
+            assert (owner, prior) in completed and (owner, following) not in schedules
+            rolls.append((owner, prior, following))
+            schedules.add((owner, following))
+
+    class Daily:
+        def ensure_daily_signals(self, session: date) -> DailyInferenceResult:
+            nonlocal now
+            signals.append(session)
+            status = "MODEL_OR_MARKET_DATA_UNAVAILABLE" if len(signals) == 1 else "IMPORTED"
+            if session == friday and status == "IMPORTED":
+                now = now.replace(minute=51)
+            return DailyInferenceResult(status, session)
+
+        def close(self) -> None:
+            pass
+
+    class Port:
+        def close(self) -> None:
+            pass
+
+    class Ports:
+        def build(self, _claim: RuntimeClaim, _state: dict[str, Any]) -> Port:
+            return Port()
+
+    def refresh(owner: str) -> dict[str, str]:
+        if owner == owners[0]:
+            report_threads.append(current_thread())
+            if len(report_threads) == 1:
+                report_started.set()
+                assert release_report.wait(5), "report blocked the order scheduler"
+            else:
+                next_report_started.set()
+        return {"performanceReport": "INSERTED"}
+
+    service = AutomationRuntimeService(
+        cast(Any, Repository()),
+        cast(Any, Ports()),
+        "x" * 32,
+        daily_inference=cast(Any, Daily()),
+        performance_report_refresh=refresh,
+    )
+
+    def wait_until(boundary: datetime) -> bool:
+        nonlocal now
+        if boundary > now:
+            assert report_started.wait(3) and not release_report.is_set()
+            if boundary.hour == 9:
+                assert all(session != boundary.date() for _, session, _, _ in claims)
+            else:
+                assert boundary == datetime(2026, 8, 18, 8, 30, tzinfo=_KST)
+                assert all((owner, tuesday) in schedules for owner in owners)
+            now = boundary
+        return False
+
+    def wait(seconds: float) -> bool:
+        nonlocal now
+        if seconds == 60:
+            assert not claims and not report_started.is_set()
+        if (owners[-1], tuesday) in completed:
+            if not resume_reports:
+                return True
+            if release_report.is_set():
+                assert next_report_started.wait(5)
+                return True
+            release_report.set()
+            report_threads[0].join(5)
+            assert not report_threads[0].is_alive()
+        now += timedelta(seconds=seconds)
+        if now.date() == friday and now.hour == 9 and now.minute == 32:
+            now = now.replace(hour=15, minute=20)
+        return False
+
+    def run_tick(*, claim: RuntimeClaim, **_kwargs: Any) -> dict[str, Any]:
+        completed.add((claim.user_id, claim.session_date))
+        return _state("COMPLETED")
+
+    monkeypatch.setenv("MARS_PUBLIC_SURFACE_MODE", "FULL")
+    monkeypatch.delenv("P1_AUTOMATION_OWNER_USER_ID", raising=False)
+    monkeypatch.setattr(runtime, "datetime", Clock)
+    monkeypatch.setattr(runtime, "ThreadPoolExecutor", InlineOwnerPool)
+    monkeypatch.setattr(runtime, "_catch_up_sessions", lambda _session: [])
+    monkeypatch.setattr(service, "_wait_until", wait_until)
+    monkeypatch.setattr(service._stop, "wait", wait)
+    monkeypatch.setattr(service._runner, "run_tick", run_tick)
+
+    try:
+        service.serve()
+        assert signals == [friday, friday, tuesday]
+        claim_times = [(owner, day, timestamp.strftime("%H:%M:%S")) for owner, day, timestamp, _ in claims]
+        assert claim_times == [
+            (owners[0], friday, "09:30:00"),
+            (owners[1], friday, "09:30:00"),
+            (owners[0], friday, "09:31:05"),
+            (owners[0], tuesday, "09:30:00"),
+            (owners[1], tuesday, "09:30:00"),
+        ]
+        assert claims[0][3] == claims[2][3]
+        assert len({claims[0][3], claims[1][3], claims[3][3]}) == 3
+        assert rolls[:2] == [(owners[1], friday, tuesday), (owners[0], friday, tuesday)]
+        output = capsys.readouterr().out
+        assert "AUTOMATION_PREPARATION_ATTEMPT=LATE session=2026-08-14 outcome=IMPORTED" in output
+        assert output.count("AUTOMATION_PERFORMANCE_REPORT_BATCH=STARTED") == (
+            2 if resume_reports else 1
+        )
+        assert "AUTOMATION_PERFORMANCE_REPORT_BATCH=DEFERRED session=2026-08-18" in output
+    finally:
+        service.stop()
+        release_report.set()
+        for thread in report_threads:
+            if thread is not current_thread():
+                thread.join(3)
+
+
 def test_full_report_refresh_materializes_every_armed_owner(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
@@ -1928,7 +2124,7 @@ def test_full_report_refresh_materializes_every_armed_owner(
         return {"performanceReport": "INSERTED"}
 
     service = AutomationRuntimeService(cast(Any, Repository()), cast(Any, None), "x" * 32)
-    service._refresh_full_owner_reports(refresh)
+    service._refresh_full_owner_reports(refresh, date(2026, 8, 14))
 
     assert refreshed == [
         "usr_google_owner_0001",
@@ -1938,6 +2134,7 @@ def test_full_report_refresh_materializes_every_armed_owner(
     output = capsys.readouterr().out
     assert output.count("AUTOMATION_PERFORMANCE_REPORT=INSERTED") == 2
     assert output.count("AUTOMATION_PERFORMANCE_REPORT=FAILED") == 1
+    assert "FAILED session=2026-08-14 owner_index=2 elapsed_seconds=" in output
 
 
 def test_environment_report_refresh_keeps_local_owner_default(
@@ -1958,3 +2155,114 @@ def test_environment_report_refresh_keeps_local_owner_default(
     refresh("usr_google_owner_0001")
 
     assert [call[2:] for call in calls] == [(), ("usr_google_owner_0001",)]
+
+
+def test_release_can_retry_if_db_drops_after_resume_lookup(monkeypatch: pytest.MonkeyPatch) -> None:
+    import psycopg
+
+    runner = _RecordingPortfolioRunner()
+    service = _continuation_service("SKIPPED_NO_ACTION", runner)
+    claim = _claim()
+    repository = service._repository
+    monkeypatch.setattr(repository, "resume_continuation", lambda *_: claim, raising=False)
+
+    def connection_lost(_claim: RuntimeClaim) -> dict[str, Any]:
+        raise psycopg.OperationalError("DB connection lost")
+
+    with monkeypatch.context() as outage:
+        outage.setattr(repository, "read_state", connection_lost)
+        with pytest.raises(psycopg.OperationalError):
+            service._resume_continuations(claim.user_id, claim.session_date, claim.claim_token_hash)
+    assert service._resume_continuations(
+        claim.user_id, claim.session_date, claim.claim_token_hash
+    ) == "DONE"
+    assert len(runner.calls) == 1
+
+
+def test_continuation_retry_exhaustion_leaves_resume_key_available(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import psycopg
+
+    from app.p1_owner.automation_runtime import _CONTINUATION_TRANSIENT_RETRIES
+
+    class Runner(_RecordingPortfolioRunner):
+        failures = 0
+        db_down = True
+
+        def continue_session(self, **kwargs: Any):
+            assert kwargs["allow_new_orders"] is False
+            if self.db_down:
+                self.failures += 1
+                raise psycopg.OperationalError("DB connection lost")
+            return super().continue_session(**kwargs)
+
+    runner = Runner()
+    service = _continuation_service("SKIPPED_NO_ACTION", runner)
+    claim = _claim()
+    monkeypatch.setattr(service._repository, "resume_continuation", lambda *_: claim, raising=False)
+    monkeypatch.setattr(service._stop, "wait", lambda _seconds: False)
+    resume = (claim.user_id, claim.session_date, claim.claim_token_hash)
+    key = (claim.user_id, claim.session_date)
+
+    assert service._resume_continuations(*resume) == "RETRY"
+    assert runner.failures == _CONTINUATION_TRANSIENT_RETRIES + 1
+    assert key not in service._resumed_continuations
+
+    runner.db_down = False
+    assert service._resume_continuations(*resume) == "DONE"
+    assert len(runner.calls) == 1
+    assert key in service._resumed_continuations
+
+
+def test_resume_without_order_reference_stops_owner_without_marking_done(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from app.p1_owner.automation_portfolio_runtime import PortfolioContinuationResult
+
+    runner = _RecordingPortfolioRunner()
+    service = _continuation_service("SKIPPED_NO_ACTION", runner)
+    claim = _claim()
+    stop_calls = []
+    monkeypatch.setattr(service._repository, "resume_continuation", lambda *_: claim, raising=False)
+    monkeypatch.setattr(
+        service._repository, "stop_full_owner_after_order_failure",
+        lambda _claim, reason: stop_calls.append(reason), raising=False,
+    )
+    monkeypatch.setattr(
+        runner, "continue_session",
+        lambda **kwargs: PortfolioContinuationResult("SUBMIT_RESPONSE_UNRESOLVED", 0, 0),
+    )
+
+    outcome = service._resume_continuations(claim.user_id, claim.session_date, claim.claim_token_hash)
+    assert outcome == "STOPPED"
+    assert stop_calls == ["KIS_ORDER_RESULT_UNCERTAIN"]
+    assert (claim.user_id, claim.session_date) not in service._resumed_continuations
+
+
+def test_preflight_retries_db_connection_before_serving(monkeypatch: pytest.MonkeyPatch) -> None:
+    import psycopg
+
+    service = _continuation_service("SKIPPED_NO_ACTION", _RecordingPortfolioRunner())
+    calls: list[str] = []
+
+    def preflight():
+        calls.append("preflight")
+        if len(calls) == 1:
+            raise psycopg.OperationalError("DB connection lost")
+
+    monkeypatch.setattr(service._repository, "preflight", preflight, raising=False)
+    monkeypatch.setattr(service._stop, "wait", lambda _delay: False)
+    class Inference:
+        def close(self) -> None:
+            calls.append("close")
+
+    monkeypatch.setattr(service, "_daily_inference", Inference())
+    monkeypatch.setattr(service, "_performance_report_refresh", lambda: None)
+    monkeypatch.setattr(service, "_recover_stranded_session", lambda: calls.append("recover"))
+    monkeypatch.setattr(service, "_serve_full_multiuser", lambda *_: calls.append("serve"))
+    monkeypatch.setenv("MARS_PUBLIC_SURFACE_MODE", "FULL")
+
+    service.serve()
+
+    assert calls == ["preflight", "preflight", "recover", "serve", "close"]

@@ -11,6 +11,7 @@ import { ready, type ViewState } from '@/shared/lib/viewState';
 import { RULE_LABELS } from '@/shared/lib/ruleLabels';
 import { formatCount, formatKrw, formatKstDateTime, formatRatio } from '@/shared/lib/format';
 import { matchesPreset } from './preset';
+import { PRINCIPLE_EDIT_ANCHOR, reviewedPrinciple } from '@/shared/lib/principleReview';
 import type {
   PrincipleCurrent,
   PrincipleHistoryData,
@@ -26,18 +27,33 @@ interface PrinciplesData {
   summaries: PrincipleSummary[];
   current: PrincipleCurrent | null;
   history: PrincipleHistoryData | null;
+  historicalVersion: number | null;
+  reviewedPrincipleUnavailable: boolean;
   /** 자동운용이 무장 중인가. v3 status 에 원칙 버전 필드는 없으므로 상태만 본다. */
   automationArmed: boolean;
 }
 
 async function load(): Promise<ViewState<PrinciplesData>> {
   const [presets, list] = await Promise.all([api.principlePresets(), api.principles()]);
-  const active = list.data.items.find((item) => item.status === 'ACTIVE') ?? list.data.items[0];
-  const current = active ? (await api.principle(active.principleId)).data : null;
+  const context = reviewedPrinciple();
+  const matchesOwnerList = context && list.data.items.some((item) => item.principleId === context.principleId);
+  const linked = matchesOwnerList
+    ? await api.principle(context.principleId).then(({ data }) => data).catch(() => null)
+    : null;
+  const reviewedPrincipleUnavailable = context !== null && linked === null;
+  const candidates = list.data.items.filter((item) => item.principleId !== context?.principleId);
+  const fallback = candidates.find((item) => item.status === 'ACTIVE') ?? candidates[0];
+  const current = linked ?? (fallback ? await api.principle(fallback.principleId)
+    .then(({ data }) => data)
+    .catch((error: unknown) => {
+      if (reviewedPrincipleUnavailable) return null;
+      throw error;
+    }) : null);
+  const principleId = current?.principleId;
   // 이력은 곁다리다. 못 받아 와도 원칙 화면 자체는 떠야 하므로 실패를 여기서 흡수한다.
-  const history = active
+  const history = principleId
     ? await api
-        .principleVersions(active.principleId)
+        .principleVersions(principleId)
         .then((result) => result.data)
         .catch(() => null)
     : null;
@@ -55,6 +71,8 @@ async function load(): Promise<ViewState<PrinciplesData>> {
       summaries: list.data.items,
       current,
       history,
+      historicalVersion: linked ? context?.version ?? null : null,
+      reviewedPrincipleUnavailable,
       automationArmed: status?.controlState === 'ARMED',
     },
     current?.updatedAt ?? null,
@@ -65,7 +83,7 @@ export function PrinciplesView() {
   const { state, reload } = useResource(load, []);
   return (
     <AsyncBoundary state={state} onRetry={reload}>
-      {(data) => <PrinciplesBody data={data} onSaved={reload} />}
+      {(data) => <PrinciplesBody key={data.current?.principleId ?? 'new'} data={data} onSaved={reload} />}
     </AsyncBoundary>
   );
 }
@@ -132,6 +150,16 @@ function PrinciplesBody({ data, onSaved }: { data: PrinciplesData; onSaved: () =
 
   return (
     <div className="space-y-6">
+      {data.reviewedPrincipleUnavailable ? (
+        <div id={PRINCIPLE_EDIT_ANCHOR} role="status" className="scroll-mt-4 rounded-tile border border-warn/40 px-4 py-3 text-[13px] text-ink">
+          <p>판정에 쓰인 원칙을 확인하지 못했습니다.</p>
+          {data.summaries.length > 0 ? (
+            <ul className="mt-2 list-inside list-disc">
+              {data.summaries.map((item) => <li key={item.principleId}>{item.title} · v{item.version}</li>)}
+            </ul>
+          ) : null}
+        </div>
+      ) : null}
       {data.automationArmed ? (
         <p
           role="status"
@@ -163,14 +191,17 @@ function PrinciplesBody({ data, onSaved }: { data: PrinciplesData; onSaved: () =
 
       {data.current ? (
         <>
+          <div id={data.reviewedPrincipleUnavailable ? undefined : PRINCIPLE_EDIT_ANCHOR} className="scroll-mt-4">
           <Panel
             contract="GET /api/v1/principles"
-            title="현재 적용 중인 원칙"
-            hint="주문 검토와 다음 자동운용 준비도는 저장된 원칙 버전을 기준으로 확인합니다."
+            title={data.current.title}
+            hint={data.historicalVersion !== null
+              ? `당시 원칙 v${data.historicalVersion}은 판정 기록에 남습니다. 여기서 저장하면 새 버전이 생깁니다.`
+              : '주문 검토와 다음 자동운용 준비도는 저장된 원칙 버전을 기준으로 확인합니다.'}
           >
             <div className="grid gap-3 text-[13px] sm:grid-cols-3">
               <StatusItem label="저장된 설정" value={savedPreset?.nameKo ?? '사용자 설정'} />
-              <StatusItem label="현재 버전" value={`v${data.current.version}`} />
+              <StatusItem label="편집 중인 버전" value={`v${data.current.version}`} />
               <StatusItem
                 label="수정 상태"
                 value={dirty ? `${draftPreset?.nameKo ?? '사용자 설정'} · 저장 전` : '저장된 설정과 일치'}
@@ -178,6 +209,7 @@ function PrinciplesBody({ data, onSaved }: { data: PrinciplesData; onSaved: () =
               />
             </div>
           </Panel>
+          </div>
 
           <Panel
             contract="PUT /api/v1/principles/{principleId}"
@@ -237,9 +269,9 @@ function PrinciplesBody({ data, onSaved }: { data: PrinciplesData; onSaved: () =
 
           <VersionHistory history={data.history} currentVersion={data.current.version} />
         </>
-      ) : (
+      ) : data.summaries.length === 0 ? (
         <CreatePrinciple presets={data.presets} draftPreset={draftPreset} onCreated={onSaved} />
-      )}
+      ) : null}
     </div>
   );
 }

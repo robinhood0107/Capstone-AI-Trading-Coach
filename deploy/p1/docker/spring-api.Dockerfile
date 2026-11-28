@@ -23,7 +23,7 @@ LABEL org.opencontainers.image.title="Capstone Decision Platform API" \
       org.opencontainers.image.revision="$SOURCE_REVISION" \
       org.opencontainers.image.version="$RELEASE_VERSION" \
       org.opencontainers.image.licenses="AGPL-3.0-only"
-RUN apk add --no-cache openjdk-25-jre=25.0.4.1-r0
+RUN apk add --no-cache openjdk-25-jre=25.0.5.1-r0
 ENV JAVA_HOME=/usr/lib/jvm/java-25-openjdk \
     PATH=/usr/lib/jvm/java-25-openjdk/bin:$PATH
 WORKDIR /app

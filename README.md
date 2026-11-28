@@ -322,6 +322,8 @@ docker compose --env-file /absolute/path/mars-full.env -f mars-public-full.compo
 
 NAS의 Portainer 스택과 기존 PC 데이터를 옮기는 절차는 [FULL 운영 가이드](deploy/p1/portainer/README.md)를 참조합니다. DB와 자격증명 암호화 키는 한 세트로 옮깁니다. 공개 DEMO 운영자는 [DEMO v2.1.2 릴리스](https://github.com/robinhood0107/Capstone-AI-Trading-Coach/releases/tag/mars-demo-v2.1.2)와 [DEMO 운영 가이드](deploy/p1/portainer/README-demo.md)를 따릅니다.
 
+새 이미지 버전을 공개할 때는 [버전과 릴리스 절차](CONTRIBUTING.md#버전과-릴리스)를 따릅니다.
+
 ### 실행이 막힐 때
 
 | 증상 | 확인할 곳 |

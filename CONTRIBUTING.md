@@ -66,24 +66,24 @@ git config core.hooksPath .githooks
 
 ## 버전과 릴리스
 
-- 버전은 유의적 버전(`MAJOR.MINOR.PATCH`)이며 단일 출처는 `deploy/p1/mars-release-gate.json`의 `version`이다.
-- `develop → main` 병합 한 번이 릴리스 한 번이다. 병합되면 GitHub Release `vX.Y.Z`와 Docker Hub `pjjpjj111/mars-{demo,full}:vX.Y.Z-{api,web,postgres,redis}`가 자동 발행된다.
-- 승격 PR 전에 버전을 올리고 `CHANGELOG.md`에 `## [X.Y.Z] - YYYY-MM-DD` 항목을 쓴다. 이미 발행된 버전이거나 항목이 없으면 `MARS product image build` 체크가 병합을 막는다.
-- 호환이 깨지는 계약·DB 변경은 MAJOR, 기능 추가는 MINOR, 버그·문서 수정은 PATCH를 올린다.
-- 발행된 태그와 Release는 수정하거나 다시 만들지 않는다. 고칠 것이 있으면 다음 PATCH로 낸다.
+FULL과 DEMO는 각각 유의적 버전(`MAJOR.MINOR.PATCH`)을 사용합니다. 호환성이 깨지면 MAJOR, 호환되는 기능을 추가하면 MINOR, 버그를 고치면 PATCH를 올립니다.
+
+| 제품 | 버전 설정 | Docker Hub 태그 | GitHub Release 태그 |
+|---|---|---|---|
+| FULL | [mars-release-gate.json](deploy/p1/mars-release-gate.json)의 `version` | [pjjpjj111/mars-full](https://hub.docker.com/r/pjjpjj111/mars-full/tags)의 `vX.Y.Z-{api,web,postgres,redis}` | `vX.Y.Z` |
+| DEMO | [mars-demo-release.json](deploy/p1/mars-demo-release.json)의 `version` | [pjjpjj111/mars-demo](https://hub.docker.com/r/pjjpjj111/mars-demo/tags)의 `vX.Y.Z-web` | `mars-demo-vX.Y.Z` |
+
+1. 승격 전에 [변경 분류](deploy/p1/classify_product_changes.py)를 확인하고 공개 대상 제품의 버전만 올립니다. FULL을 공개한다면 [CHANGELOG](CHANGELOG.md)에 `## [X.Y.Z] - YYYY-MM-DD` 항목을 넣습니다. 예정 버전의 Git 태그, GitHub Release와 Docker Hub 태그가 이미 쓰였는지도 확인합니다.
+2. `develop → main` 승격 PR에서 필수 검사와 대상 제품의 후보 빌드·스캔을 확인합니다. 같은 저장소의 승격 PR이 병합되면 [FULL 공개](.github/workflows/mars-dockerhub-release.yml)와 [DEMO 공개](.github/workflows/mars-demo-sync.yml)가 각자 맡은 제품을 공개할지 판정합니다. README·로컬 실행 안내처럼 공개 이미지에 영향이 없는 변경은 새 이미지를 게시하지 않습니다.
+3. 공개 후 GitHub Release에서 병합 커밋, 이미지 digest, digest가 고정된 Compose, SBOM을 확인하고 승격 PR에 결과 링크를 남깁니다. 하네스를 쓰는 작업 공간에서는 같은 링크와 남은 확인 사항을 `.work/roadmap.md`에도 기록합니다. 로드맵은 로컬 작업 기록입니다. 다른 작업 공간에서 찾아볼 기록은 GitHub Release와 승격 PR에 남깁니다.
+
+발행된 버전을 수정해야 할 때는 다음 버전으로 공개합니다. 운영 배포에서는 해당 GitHub Release의 digest 고정 Compose를 사용합니다.
 
 ## CI
 
-현재 워크플로는 네 개다.
+`develop`에서 필수인 검사는 `Repo hygiene`와 `MARS develop gate`입니다. `Repo hygiene`는 게시 전 민감정보와 저장소 정책을 확인합니다. `MARS develop gate`는 변경 경로에 맞춰 Python 잠금 파일, 백업·복원, 제품 이미지 검사 결과를 확인합니다.
 
-| 워크플로 | 내용 |
-|---|---|
-| `repo-hygiene.yml` | 필수 경로, compose 검증, ignore 규칙, secret scan, 커밋 위생 검사 |
-| `contracts-ci.yml` | 계약 schema와 positive/negative fixture, OpenAPI 생성물 일치 |
-| `kotlin-build.yml` | JDK 25에서 `./gradlew ktlintCheck build` (Testcontainers 포함) |
-| `python-ci.yml` | `uv lock --check` → `uv sync --frozen` → ruff → mypy → pytest |
-
-세션 DoD에 CI job 추가가 포함되면 각 job을 별도 워크플로 파일로 늘린다. hygiene은 항상 유지한다.
+`main` 승격 때는 Kotlin·Python·계약·OpenAPI·정적 분석·보안 검사도 실행합니다. 제품 이미지를 공개하는 승격에서는 대상 제품 후보 빌드도 확인합니다. Docker Hub 게시와 릴리스 생성은 `main` 병합 후 공개 워크플로에서 실행합니다.
 
 ## 기준 스택
 

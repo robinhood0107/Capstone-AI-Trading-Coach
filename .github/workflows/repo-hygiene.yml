@@ -215,6 +215,7 @@ jobs:
           # hook 파일이 사라지면 로컬 방어선이 조용히 없어진다.
           test -f .githooks/commit-msg
           test -x .githooks/commit-msg
+          test -x .githooks/pre-commit
           # hook 이 실제로 거부하는지 확인한다. 파일만 있고 동작하지 않으면 의미가 없다.
           tmp=$(mktemp)
           printf 'fix: x\n\nCo-Authored-By: Helper Service <noreply@example.com>\n' > "${tmp}"
@@ -292,6 +293,8 @@ jobs:
           else
             log_range="$GITHUB_SHA"
           fi
+          python3 .github/scripts/check-publication-paths.py --range "$log_range"
+          GITLEAKS_BIN="$tool_root/gitleaks" python3 .github/scripts/test-publication-protection.py
           "$tool_root/gitleaks" detect \
-            --source . --config .gitleaks.toml --redact --exit-code 1 \
+            --source . --config .gitleaks.toml --redact=100 --exit-code 1 \
             --log-opts="$log_range"

@@ -13,6 +13,7 @@ FULL_CANDIDATE = ROOT / ".github/workflows/mars-product-image-build.yml"
 DEMO_SYNC = ROOT / ".github/workflows/mars-demo-sync.yml"
 DEMO_CANDIDATE = ROOT / ".github/workflows/mars-demo-candidate-build.yml"
 IMPACT = ROOT / ".github/workflows/mars-product-impact.yml"
+FULL_IMAGE_ACTION = ROOT / ".github/actions/build-full-images/action.yml"
 FULL_GATE = ROOT / "deploy/p1/mars-release-gate.json"
 DEMO_GATE = ROOT / "deploy/p1/mars-demo-release.json"
 
@@ -35,8 +36,9 @@ class MarsDockerHubReleaseWorkflowTest(unittest.TestCase):
         candidate = FULL_CANDIDATE.read_text(encoding="utf-8")
         self.assertIn("full_publish_noop:", full)
         self.assertIn("full_image_required", full)
-        self.assertIn("if: steps.impact.outputs.full_image_required == 'true'", candidate)
-        self.assertIn("if: needs.classify.outputs.full_image_required == 'true'", candidate)
+        self.assertIn("steps.impact.outputs.full_image_required == 'true'", candidate)
+        self.assertIn("needs.classify.outputs.full_required == 'true'", IMPACT.read_text(encoding="utf-8"))
+        self.assertIn("needs.classify.outputs.full_image_required == 'true'", candidate)
         self.assertIn("FULL_PUBLISH_NOOP=true", full)
         self.assertIn("FULL_PUBLISH_NOOP", full)
         with tempfile.NamedTemporaryFile(mode="w", encoding="utf-8") as paths:
@@ -58,6 +60,8 @@ class MarsDockerHubReleaseWorkflowTest(unittest.TestCase):
         release_build = workflow.split("  build-scan-push-full:\n", 1)[1].split("  publish-full-release:\n", 1)[0]
         for image in ("mars-full-build:api", "mars-full-build:postgres", "mars-full-build:redis", "mars-full-build:web"):
             self.assertIn(image, release_build)
+        self.assertLess(release_build.index("Smoke-test the built FULL images"), release_build.index("Login to Docker Hub"))
+        self.assertLess(release_build.index("Verify SBOMs"), release_build.index("Login to Docker Hub"))
         self.assertNotIn("repo=pjjpjj111/mars-demo", release_build)
         self.assertNotIn('images[f"demo-', release_build)
         self.assertIn('images[f"full-{part}"]', release_build)
@@ -100,14 +104,15 @@ class MarsDockerHubReleaseWorkflowTest(unittest.TestCase):
         self.assertNotIn("portainer", candidate.lower())
         self.assertNotIn("docker manifest rm", candidate.lower())
         self.assertIn("RegistryPublished", candidate) if "RegistryPublished" in candidate else self.assertIn("REGISTRY_PUBLISHED", candidate)
+        self.assertLess(candidate.index("Verify DEMO identity and health"), candidate.index("Login to Docker Hub"))
         self.assertIn("DOCKERHUB_TOKEN", candidate)
         self.assertNotIn("DOCKERHUB_TOKEN", DEMO_CANDIDATE.read_text(encoding="utf-8"))
 
     def test_product_versions_are_independent_and_full_baseline_is_preserved(self) -> None:
         full = json.loads(FULL_GATE.read_text(encoding="utf-8"))
         demo = json.loads(DEMO_GATE.read_text(encoding="utf-8"))
-        self.assertEqual(full["version"], "1.0.21")
-        self.assertEqual(demo["version"], "2.1.1")
+        self.assertEqual(full["version"], "1.0.22")
+        self.assertEqual(demo["version"], "2.1.2")
         self.assertEqual(demo["imageParts"], ["web"])
         self.assertTrue(full["imagePublicationReady"])
         self.assertFalse(demo["serviceReady"])
@@ -126,14 +131,24 @@ class MarsDockerHubReleaseWorkflowTest(unittest.TestCase):
     def test_release_candidate_builds_are_scoped_and_scan_before_registry_credentials(self) -> None:
         full = FULL_CANDIDATE.read_text(encoding="utf-8")
         demo = DEMO_CANDIDATE.read_text(encoding="utf-8")
-        self.assertIn("branches: [develop, main]", full)
+        impact = IMPACT.read_text(encoding="utf-8")
+        self.assertIn("branches: [develop, main]", impact)
+        for candidate, name in ((full, FULL_CANDIDATE.name), (demo, DEMO_CANDIDATE.name)):
+            self.assertIn("branches: [main]", candidate)
+            self.assertIn("workflow_call:", candidate)
+            self.assertIn(f"uses: ./.github/workflows/{name}", impact)
         self.assertIn("head.repo.full_name == github.repository", full)
         self.assertNotIn("head.ref == 'develop'", full)
-        self.assertIn("--file workspaces/experience-dashboard/Dockerfile", full)
-        self.assertIn("--build-arg MARS_PRODUCT=full", full)
+        image_action = FULL_IMAGE_ACTION.read_text(encoding="utf-8")
+        self.assertIn("uses: ./.github/actions/build-full-images", full)
+        self.assertIn("file: workspaces/experience-dashboard/Dockerfile", image_action)
+        self.assertIn("MARS_PRODUCT=full", image_action)
+        for part in ("api", "postgres", "redis", "web"):
+            self.assertIn(f"cache-from: type=gha,scope=mars-full-{part},", image_action)
+        self.assertNotIn("DOCKERHUB_TOKEN", full)
         self.assertNotIn("Build both product web images", full)
         self.assertIn("demo_candidate_required", demo)
-        self.assertIn("--file workspaces/mars-demo/Dockerfile", demo)
+        self.assertIn("file: workspaces/mars-demo/Dockerfile", demo)
         self.assertIn("astral-sh/setup-uv@d31148d669074a8d0a63714ba94f3201e7020bc3", demo)
         demo_sync = DEMO_SYNC.read_text(encoding="utf-8")
         self.assertIn("astral-sh/setup-uv@d31148d669074a8d0a63714ba94f3201e7020bc3", demo_sync)
@@ -147,7 +162,9 @@ class MarsDockerHubReleaseWorkflowTest(unittest.TestCase):
         classifier = (ROOT / "deploy/p1/classify_product_changes.py").read_text(encoding="utf-8")
         self.assertIn("Product Impact Classification", workflow)
         self.assertIn("unclassified changed path(s)", classifier)
-        self.assertIn("if: steps.impact.outputs.full_image_required == 'true'", FULL_CANDIDATE.read_text(encoding="utf-8"))
+        self.assertIn("python3 .github/scripts/develop-checks.py verify", workflow)
+        self.assertIn("needs: [classify, locks, backup, full-candidate, demo-candidate]", workflow)
+        self.assertIn('classify true "$CLASSIFY"', workflow)
 
 
 if __name__ == "__main__":

@@ -9,13 +9,15 @@ import subprocess
 import sys
 import time
 import urllib.request
+from pathlib import Path
 
 
 _STOP_TIMEOUT_SECONDS = 15
+_RETENTION_RUNNING = Path("/tmp/decision-platform-retention-running")
 
 
 def _terminate(processes: tuple[subprocess.Popen[bytes], ...]) -> None:
-    """하위 프로세스 하나가 끝나면 나머지도 종료해 부분 정상 상태를 만들지 않는다."""
+    """남은 자식에 TERM을 보내고 종료 시한을 넘기면 KILL한다."""
 
     for process in processes:
         if process.poll() is None:
@@ -82,9 +84,14 @@ def main() -> int:
         # account capabilities even if the HTTP gate rejected their routes.
         _validate_demo_runtime(dict(os.environ))
     async_worker_enabled = os.environ.get("ASYNC_WORKER_ENABLED", "true").lower() == "true"
-    worker = subprocess.Popen(
-        ["python", "-m", "app.async_worker.grpc_server"], close_fds=True,
-    ) if not demo and async_worker_enabled else None
+    worker = (
+        subprocess.Popen(
+            ["python", "-m", "app.async_worker.grpc_server"],
+            close_fds=True,
+        )
+        if not demo and async_worker_enabled
+        else None
+    )
     spring = subprocess.Popen(
         [
             "java",
@@ -95,16 +102,19 @@ def main() -> int:
         ],
         close_fds=True,
     )
-    inference = None if demo else subprocess.Popen(
-        ["python", "-m", "app.p1_owner.inference_grpc_server"], close_fds=True,
+    inference = (
+        None
+        if demo
+        else subprocess.Popen(
+            ["python", "-m", "app.p1_owner.inference_grpc_server"],
+            close_fds=True,
+        )
     )
     brokerage: subprocess.Popen[bytes] | None = None
     brokerage_enabled = (
         os.environ.get("KIS_MOCK_BROKERAGE_ONLINE_ENABLED", "false").lower() == "true"
     )
-    automation_enabled = (
-        os.environ.get("P1_AUTOMATION_RUNTIME_ENABLED", "false").lower() == "true"
-    )
+    automation_enabled = os.environ.get("P1_AUTOMATION_RUNTIME_ENABLED", "false").lower() == "true"
     if automation_enabled and not brokerage_enabled:
         raise RuntimeError("automation runtime requires explicit KIS_MOCK online mode")
     if brokerage_enabled:
@@ -112,8 +122,7 @@ def main() -> int:
             ["python", "-m", "app.brokerage.brokerage_grpc_server"],
             close_fds=True,
         )
-    # RAG v2 실검색 프로세스. 켜져 있는데 로컬 루트나 credential이 없으면 스스로 기동에서
-    # 닫히고, 그 실패가 컨테이너 실패로 올라온다. 조용히 fixture로 되돌아가지 않는다.
+    # RAG v2는 자체 설정 오류로 종료할 수 있다. 조회 실패는 RAG 경로에 남긴다.
     rag_v2: subprocess.Popen[bytes] | None = None
     if os.environ.get("RAG_V2_GRPC_ENABLED", "false").lower() == "true":
         rag_v2 = subprocess.Popen(
@@ -131,12 +140,14 @@ def main() -> int:
     # 30일이 지나 더 쓰이지 않는 세계 뉴스 버전을 실제로 지운다. DB 함수와 어댑터는
     # V157 부터 있었지만 부르는 곳이 없어 코퍼스가 무한히 자랐다(2026-09-14 하루 15만 행).
     # `decision_worker` DSN 은 이미 이 컨테이너에 있으므로 새 권한이 생기지 않는다.
+    _RETENTION_RUNNING.unlink(missing_ok=True)
     retention: subprocess.Popen[bytes] | None = None
     if os.environ.get("WORLD_NEWS_RETENTION_ENABLED", "false").lower() == "true":
         retention = subprocess.Popen(
             ["python", "-m", "app.data.news.retention_cli", "--loop"],
             close_fds=True,
         )
+        _RETENTION_RUNNING.touch()
     # Start automation after Spring is ready to avoid restart loops during an overdue claim.
     automation: subprocess.Popen[bytes] | None = None
     if automation_enabled:
@@ -156,6 +167,7 @@ def main() -> int:
                     if process is not None
                 )
             )
+            _RETENTION_RUNNING.unlink(missing_ok=True)
             print(
                 "decision-platform: spring did not become ready for automation",
                 file=sys.stderr,
@@ -173,12 +185,16 @@ def main() -> int:
             spring,
             brokerage,
             automation,
-            rag_v2,
             strong_llm,
-            retention,
         )
         if process is not None
     )
+    optional = {
+        name: process
+        for name, process in (("rag-v2", rag_v2), ("world-news-retention", retention))
+        if process is not None
+    }
+    all_processes = processes + tuple(optional.values())
     stopping = False
 
     def stop(_signal: int, _frame: object) -> None:
@@ -193,10 +209,22 @@ def main() -> int:
                 status = process.poll()
                 if status is not None:
                     return status if status != 0 else 1
+            for name, process in tuple(optional.items()):
+                status = process.poll()
+                if status is not None:
+                    del optional[name]
+                    if name == "world-news-retention":
+                        _RETENTION_RUNNING.unlink(missing_ok=True)
+                    print(
+                        f"decision-platform: {name}=DEGRADED exit={status}",
+                        file=sys.stderr,
+                        flush=True,
+                    )
             time.sleep(0.2)
         return 0
     finally:
-        _terminate(processes)
+        _RETENTION_RUNNING.unlink(missing_ok=True)
+        _terminate(all_processes)
 
 
 if __name__ == "__main__":

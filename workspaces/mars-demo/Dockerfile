@@ -56,6 +56,13 @@ WORKDIR /repo/workspaces/mars-demo
 RUN npm run typecheck && npm test && python3 scripts/validate_fixture.py data/scenario.v1.json && python3 scripts/validate_reports.py data/reports.v1.json data/scenario.v1.json && python3 scripts/validate_signals.py data/signals.v1.json data/scenario.v1.json data/krx-calendar.v1.json && npm run build
 
 FROM node:22-bookworm-slim AS runner
+# Debian Bookworm의 PAM 및 Zstandard 보안 수정을 적용한다.
+RUN apt-get update \
+ && DEBIAN_FRONTEND=noninteractive apt-get install -y --only-upgrade --no-install-recommends --no-remove \
+      libpam0g=1.5.2-6+deb12u3 libpam-modules=1.5.2-6+deb12u3 \
+      libpam-modules-bin=1.5.2-6+deb12u3 libpam-runtime=1.5.2-6+deb12u3 \
+      libzstd1=1.5.4+dfsg2-5+deb12u1 \
+ && rm -rf /var/lib/apt/lists/*
 RUN rm -rf /usr/local/lib/node_modules/npm /usr/local/bin/npm /usr/local/bin/npx
 ENV NODE_ENV=production \
     NEXT_TELEMETRY_DISABLED=1 \

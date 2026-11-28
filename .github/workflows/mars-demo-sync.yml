@@ -200,18 +200,37 @@ jobs:
           uv run --frozen python -m unittest discover -s contracts/tests -p 'test_mars_release_compose.py' -v
       - name: Build standalone DEMO image
         if: steps.identity.outputs.already_released != 'true'
+        uses: docker/build-push-action@263435318d21b8e681c14492fe198d362a7d2c83 # v6.18.0
+        with:
+          context: .
+          file: workspaces/mars-demo/Dockerfile
+          platforms: linux/amd64
+          load: true
+          tags: mars-demo-build:web
+          build-args: |
+            SOURCE_REVISION=${{ steps.identity.outputs.sha }}
+            RELEASE_VERSION=${{ steps.identity.outputs.version }}
+          cache-from: type=gha,scope=mars-demo-web,timeout=1m
+          cache-to: type=gha,scope=mars-demo-web,mode=max,ignore-error=true,timeout=1m
+      - name: Verify DEMO identity and health
+        if: steps.identity.outputs.already_released != 'true'
         env:
           SHA: ${{ steps.identity.outputs.sha }}
           VERSION: ${{ steps.identity.outputs.version }}
         run: |
           set -Eeuo pipefail
-          docker buildx build --platform linux/amd64 --load \
-            --file workspaces/mars-demo/Dockerfile \
-            --build-arg SOURCE_REVISION="$SHA" \
-            --build-arg RELEASE_VERSION="$VERSION" \
-            --tag "mars-demo-build:web" .
           [[ $(docker image inspect mars-demo-build:web --format '{{index .Config.Labels "org.opencontainers.image.revision"}}') == "$SHA" ]]
           [[ $(docker image inspect mars-demo-build:web --format '{{index .Config.Labels "org.opencontainers.image.version"}}') == "$VERSION" ]]
+          container=$(docker run --detach --rm --pull never --network none --health-interval=2s mars-demo-build:web)
+          trap 'docker stop "$container" >/dev/null 2>&1 || true' EXIT
+          for _ in {1..20}; do
+            status=$(docker inspect --format '{{.State.Health.Status}}' "$container")
+            if [[ $status == healthy ]]; then exit 0; fi
+            if [[ $status == unhealthy ]]; then break; fi
+            sleep 2
+          done
+          echo "DEMO health check failed: $status" >&2
+          exit 1
       - name: Scan DEMO image before registry credentials
         if: steps.identity.outputs.already_released != 'true'
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
@@ -233,6 +252,9 @@ jobs:
           format: spdx-json
           output-file: release-assets/mars-demo-web.spdx.json
           upload-artifact: false
+      - name: Verify the DEMO SBOM before registry access
+        if: steps.identity.outputs.already_released != 'true'
+        run: jq -e '(.spdxVersion | startswith("SPDX-")) and (.packages | length > 0)' release-assets/mars-demo-web.spdx.json >/dev/null
       - name: Login to Docker Hub after scoped verification
         if: steps.identity.outputs.already_released != 'true'
         uses: docker/login-action@184bdaa0721073962dff0199f1fb9940f07167d1 # v3.5.0

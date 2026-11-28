@@ -1,6 +1,8 @@
 'use client';
 
 import { useState } from 'react';
+import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { riskCodeLabel, severityLabel } from '@/shared/lib/labels';
 import { AsyncBoundary } from '@/shared/ui/AsyncBoundary';
 import { Disclosure } from '@/shared/ui/Disclosure';
@@ -10,8 +12,12 @@ import { DecisionBadge, DecisionRail, decisionGloss } from '@/shared/ui/Decision
 import { useResource } from '@/shared/lib/useResource';
 import { ID_PATTERN } from '@/shared/api/endpoints';
 import { formatKstDateTime, formatRatio } from '@/shared/lib/format';
-import { decisionMetricName, displayDecisionInputMetric, loadRiskResultView, type ReasonDisposition } from './viewModel';
+import { decisionMetricName, loadRiskResultView, type ReasonDisposition } from './viewModel';
 import { OrderTicket } from './OrderTicket';
+import { DecisionEvidence } from './DecisionEvidence';
+import { Button } from '@/shared/ui/Button';
+import { putJournalHandoff } from '@/shared/lib/journalHandoff';
+import { PRINCIPLE_EDIT_ANCHOR, rememberReviewedPrinciple } from '@/shared/lib/principleReview';
 import { FillsPanel } from './FillsPanel';
 import type { DecisionRiskItemProjection } from '@/shared/api/wire';
 import { api } from '@/shared/api/endpoints';
@@ -38,6 +44,7 @@ const SEVERITY_TONE: Record<string, string> = {
 };
 
 export function OrderReviewView() {
+  const router = useRouter();
   const catalog = useResource(async () => {
     const { data } = await api.instrumentDisplayCatalog();
     return { kind: 'ready' as const, data, asOf: null };
@@ -62,9 +69,6 @@ export function OrderReviewView() {
 
   return (
     <div className="space-y-6">
-      <OrderTicket />
-      <FillsPanel />
-
       <AsyncBoundary state={recent.state} onRetry={recent.reload}>
         {(items) =>
           items.length > 0 ? (
@@ -95,13 +99,10 @@ export function OrderReviewView() {
         }
       </AsyncBoundary>
 
-      {!valid ? (
-        <p className="rounded-tile border border-dashed border-rule px-4 py-6 text-[13px] leading-6 text-muted">
-          표시할 주문 판정이 아직 없습니다.
-        </p>
-      ) : (
+      <div id="decision-evidence" className="scroll-mt-4">
+      {valid ? (
         <AsyncBoundary state={state} onRetry={reload}>
-          {(view) => (
+          {(view) => view.decisionId === decisionId ? (
             <div className="space-y-6">
               <Panel
                 contract="dashboard-risk-result.v1"
@@ -148,14 +149,39 @@ export function OrderReviewView() {
                     />
                   </dl>
                 ) : null}
-
-                {view.detailUnavailableReason ? (
-                  <p className="mt-5 border-l-2 border-warn bg-warn/5 px-3 py-2 text-[13px] leading-6 text-ink">
-                    {view.detailUnavailableReason}
-                  </p>
-                ) : null}
-
               </Panel>
+
+              <DecisionEvidence view={view}>
+                {view.detail && view.detail.violatedPrinciples.length > 0 ? (
+                  <Link
+                    href={'/principles#' + PRINCIPLE_EDIT_ANCHOR}
+                    onClick={() => rememberReviewedPrinciple(view.detail!.principleId, view.detail!.principleVersion)}
+                    className="text-[13px] font-medium text-navy underline"
+                  >
+                    현재 원칙 수정
+                  </Link>
+                ) : null}
+                <Button
+                  variant="secondary"
+                  onClick={() => {
+                    const detail = view.detail;
+                    const facts = detail ? [
+                      `당시 원칙 v${detail.principleVersion} · 평가 준비도 정책 ${detail.readinessPolicyVersion}`,
+                      ...detail.violatedPrinciples.map((item) => `${item.ruleId} · 당시 값 ${item.observed} · 당시 기준 ${item.limit}`),
+                      ...detail.reasons.filter((reason) => reason.disposition !== 'VIOLATION')
+                        .map((reason) => [reason.code, reason.headline, ...reason.sources].join(' · ')),
+                    ] : [view.detailUnavailableReason, ...view.summaryReasons];
+                    putJournalHandoff({
+                      title: `주문 판정 ${view.action}`,
+                      content: facts.filter(Boolean).join('\n').slice(0, 8192),
+                      decisionId: view.decisionId,
+                    });
+                    router.push('/journal');
+                  }}
+                >
+                  학습일지로 남기기
+                </Button>
+              </DecisionEvidence>
 
               <Panel
                 contract="dashboard-risk-result.v1 · reasons / principles"
@@ -222,7 +248,7 @@ export function OrderReviewView() {
               {view.detail ? (
                 <Disclosure
                   label="판정 근거 자세히 보기"
-                  hint="네 종류의 사유, 넘어선 원칙, 판정에 쓰인 값, 해시를 모두 펼칩니다."
+                  hint="서버의 사유 원문, 별도 위험 항목과 입력값 해시를 확인합니다."
                 >
                   <div className="space-y-6">
                   <Panel
@@ -273,65 +299,6 @@ export function OrderReviewView() {
                   </Panel>
 
                   <Panel
-                    contract="decision input snapshot"
-                    title="판정에 실제로 쓰인 입력값"
-                    hint="저장된 당시 값과 관측 시각입니다. 현재 잔고나 현재가로 읽지 마세요."
-                  >
-                    {view.detail.inputMetricsUnavailable ? (
-                      <p className="text-[13px] text-muted">입력값을 불러오지 못했습니다. 다시 조회해 주세요.</p>
-                    ) : view.detail.inputMetrics.length === 0 ? (
-                      <p className="text-[13px] text-muted">이 판정에 저장된 입력값이 없습니다.</p>
-                    ) : (
-                      <dl className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-                        {view.detail.inputMetrics.map((item) => {
-                          const display = displayDecisionInputMetric(item);
-                          return <div key={item.metric} className="border-t border-line pt-2">
-                            <dt className="text-[12px] text-muted">{display.name}</dt>
-                            <dd className="tnum mt-1 text-[14px] font-medium text-ink">{display.value}</dd>
-                            {item.observedAt ? (
-                              <p className="mt-1 text-[11px] text-faint">관측 {formatKstDateTime(item.observedAt) ?? '시각 미상'}</p>
-                            ) : null}
-                          </div>;
-                        })}
-                      </dl>
-                    )}
-                  </Panel>
-
-                  <div className="grid gap-6 lg:grid-cols-2">
-                    <Panel contract="riskDecision.violations" title="넘어선 내 원칙">
-                      {view.detail.violatedPrinciples.length === 0 ? (
-                        <p className="text-[13px] text-muted">이번 주문에서 넘어선 원칙은 없습니다.</p>
-                      ) : (
-                        <table className="w-full text-[13px]">
-                          <thead>
-                            <tr className="border-b border-line text-left text-eyebrow font-semibold uppercase text-faint">
-                              <th className="pb-2 font-normal">원칙</th>
-                              <th className="pb-2 text-right font-normal">현재</th>
-                              <th className="pb-2 text-right font-normal">내 기준</th>
-                              <th className="pb-2 text-right font-normal">등급</th>
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {view.detail.violatedPrinciples.map((item, index) => (
-                              <tr key={`${index}:${item.ruleId}`} className="border-b border-line/60 last:border-0">
-                                <td className="py-2.5 pr-3 text-ink">{item.name}</td>
-                                <td className="tnum py-2.5 text-right font-mono text-block">
-                                  {item.observed}
-                                </td>
-                                <td className="tnum py-2.5 text-right font-mono text-muted">
-                                  {item.limit}
-                                </td>
-                                <td className="py-2.5 text-right">
-                                  <DecisionBadge status={item.severity} size="sm" />
-                                </td>
-                              </tr>
-                            ))}
-                          </tbody>
-                        </table>
-                      )}
-                    </Panel>
-
-                    <Panel
                       contract="riskDecision.riskItems"
                       title="별도 위험 항목"
                       hint="위험 항목 기록이며 위의 판정 입력값과 별개입니다."
@@ -346,7 +313,6 @@ export function OrderReviewView() {
                         </ul>
                       )}
                     </Panel>
-                  </div>
 
                   <p className="font-mono text-[11px] leading-5 text-faint">
                     semanticInputHash {view.detail.semanticInputHash.slice(0, 16)}… ·
@@ -356,9 +322,17 @@ export function OrderReviewView() {
                 </Disclosure>
               ) : null}
             </div>
-          )}
+          ) : null}
         </AsyncBoundary>
-      )}
+      ) : null}
+      </div>
+
+      <OrderTicket onEvaluated={(id) => {
+        setSelectedDecisionId(id);
+        if (id === decisionId) reload();
+        recent.reload();
+      }} />
+      <FillsPanel />
     </div>
   );
 }

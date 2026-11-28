@@ -45,7 +45,7 @@ services:
       - /tmp:size=64m,mode=1777,uid=70,gid=70
       - /var/run/postgresql:size=16m,mode=0770,uid=70,gid=70
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres -d capstone_p1"]
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -U postgres -d capstone_p1"]
       interval: 3s
       timeout: 3s
       retries: 30
@@ -664,7 +664,7 @@ services:
       P1_USER_PASSWORD_FILE: /run/secrets/demo_user_password
     secrets: [demo_user_password]
     volumes:
-      - ${P1_DEPLOY_PROFILE_DIR:-./.state-app/deploy}:/run/deploy:ro
+      - ${P1_DEPLOY_PROFILE_DIR:-${P1_STATE_DIR:-./.state-app}/deploy}:/run/deploy:ro
     <<: *app-security
     restart: "no"
     networks: [p1-app]

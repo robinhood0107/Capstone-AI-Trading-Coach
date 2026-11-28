@@ -83,13 +83,13 @@ state_write_file() {
 write_line() {
   printf '%s=%s\n' "$1" "$2" | python3 "$RELEASE_GUARD" state-append "$STATE_DIR" "$(state_relative "$3")" 0640
 }
-# compose 에 넘기는 호스트 경로는 프로젝트 디렉터리 기준 상대 경로로 고정한다.
-# compose 가 플랫폼마다 알아서 해석하므로 리눅스, WSL, macOS 에서 같은 파일이 그대로
-# 동작한다. 예전에는 Docker Desktop 의 socket 존재와 npipe context 를 보고 경로 표기를
-# 분기했는데, 그러면 compose 파일이 특정 데스크톱 제품 상태에 묶이고 그 상태가 어긋나면
-# 실제로 존재하는 파일에 대해 "bind source path does not exist" 가 난다.
-COMPOSE_SECRETS_DIR='./.state-app/secrets'
-COMPOSE_MOCK_RUNTIME_DIR='./.state-app/mock'
+# Compose resolves relative bind sources from deploy/p1.
+COMPOSE_STATE_DIR=$STATE_DIR
+if [[ $STATE_DIR == "$SCRIPT_DIR/"* ]]; then
+  COMPOSE_STATE_DIR=./${STATE_DIR#"$SCRIPT_DIR"/}
+fi
+COMPOSE_SECRETS_DIR=$COMPOSE_STATE_DIR/secrets
+COMPOSE_MOCK_RUNTIME_DIR=$COMPOSE_STATE_DIR/mock
 PROJECT_NAME=${P1_PROJECT_NAME:-capstone-p1-offline-demo}
 [[ $PROJECT_NAME =~ ^[a-z0-9][a-z0-9_-]{2,62}$ ]] || die invalid_project_name
 
@@ -480,14 +480,14 @@ init_state() {
   approval_key_tmp=$(mktemp -d)
   openssl genpkey -algorithm ED25519 -out "$approval_key_tmp/private.pem" >/dev/null 2>&1
   openssl pkey -in "$approval_key_tmp/private.pem" -pubout -out "$approval_key_tmp/public.pem" >/dev/null 2>&1
-  state_write_file "$SECRETS_DIR/kis-mock-approval-private.pem" 0640 < "$approval_key_tmp/private.pem"
+  state_write_file "$SECRETS_DIR/kis-mock-approval-private.pem" 0600 < "$approval_key_tmp/private.pem"
   state_write_file "$SECRETS_DIR/kis-mock-approval-public.pem" 0640 < "$approval_key_tmp/public.pem"
   approval_public_digest=$(sha256sum "$approval_key_tmp/public.pem" | awk '{print $1}')
   printf '{"contractId":"p1-approval-trust-root.v1","issuerKeyId":"CAPSTONE.KISMOCK.V1","publicKeyPath":"/run/secrets/kis_mock_approval_public","publicKeySha256":"%s"}' "$approval_public_digest" \
     | state_write_file "$SECRETS_DIR/kis-mock-approval-trust-policy.json" 0640
   rm -rf -- "$approval_key_tmp"
   printf 'postgresql://decision_replay:%s@postgres:5432/capstone_p1?sslmode=disable' "${db[REPLAY]}" \
-    | state_write_file "$SECRETS_DIR/p1-provider-claim.dsn" 0640
+    | state_write_file "$SECRETS_DIR/p1-provider-claim.dsn" 0600
   printf '' | state_write_file "$SECRETS_DIR/kafka-publisher.env" 0640
   write_line OUTBOX_PUBLISHER_DATABASE_DSN "postgresql://decision_outbox_publisher:${db[OUTBOX_PUBLISHER]}@postgres:5432/capstone_p1?sslmode=disable" "$SECRETS_DIR/kafka-publisher.env"
   write_line KAFKA_SASL_USERNAME p1_outbox_publisher "$SECRETS_DIR/kafka-publisher.env"
@@ -535,7 +535,6 @@ init_state() {
     "P1_POSTGRES_IMAGE=${P1_POSTGRES_IMAGE:-capstone-postgres-pgvector:p1-local}" \
     "P1_KAFKA_IMAGE=${P1_KAFKA_IMAGE:-capstone-kafka:p1-local}" \
     | state_write_file "$RUNTIME_ENV" 0600
-  chmod 640 "$SECRETS_DIR"/*
   accept_release
   printf 'P1_INITIALIZED=TRUE\nP1_LOGIN_PASSWORD_FILES=%s,%s\n' \
     "$SECRETS_DIR/demo-user.password" "$SECRETS_DIR/demo-admin.password"

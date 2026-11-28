@@ -36,27 +36,24 @@ export function OverviewView() {
     // 화면이 성립하는 최소 조건은 위험 요약과 자동운용 상태 둘이고, 나머지는 없으면
     // 그 조각만 "확인하지 못했습니다"로 남긴다.
     const [risk, status] = await Promise.all([api.riskPortfolio(), api.automationStatusV3()]);
-    const [managedPositions, latestRisk, instruments, runs] = await Promise.all([
+    const [managedPositions, latestRisk, instruments, runs, balance] = await Promise.all([
       api.automationPositionsV3().catch(() => null),
       api.dashboardLatestRiskResult().catch(() => null),
       api.instrumentDisplayCatalog().catch(() => null),
       // 오늘 낸 주문이 어디까지 왔는지. 이것이 없어서 45주 중 27주가 체결된 날에도
       // 첫 화면에는 어제까지의 보유 종목만 있었다.
       api.automationRunsV3(5).catch(() => null),
+      status.data.accountId ? api.mockBalance(status.data.accountId).catch(() => null) : null,
     ]);
-    const balance = status.data.accountId
-      ? await api.mockBalance(status.data.accountId).then((result) => result.data).catch(() => null)
-      : null;
     return withFreshness<OverviewData>(
       {
         risk: risk.data,
         status: status.data,
-        // 종목명이 없으면 코드로 표시된다. 빈 목록이 화면을 죽이지는 않는다.
-        managedPositions: managedPositions?.data ?? { items: [] },
+        managedPositions: managedPositions?.data ?? null,
         latestRisk: latestRisk?.data ?? null,
-        balance,
+        balance: balance?.data ?? null,
         instruments: instruments?.data ?? { items: [] },
-        runs: runs?.data ?? { items: [], nextCursor: null },
+        runs: runs?.data ?? null,
       },
       risk.data.asOf,
       15,
@@ -81,9 +78,14 @@ export function OverviewView() {
                       {finite(data.balance?.portfolioEquityKrw ?? data.risk.portfolioValue) ? (
                         formatKrw(data.balance?.portfolioEquityKrw ?? data.risk.portfolioValue!)
                       ) : (
-                        <span className="text-[18px] font-medium text-white/65">KIS 계좌 연결 필요</span>
+                        <span className="text-[18px] font-medium text-white/65">
+                          {data.status.accountId ? '평가금액 확인 불가' : 'KIS 계좌 연결 필요'}
+                        </span>
                       )}
                     </p>
+                    {!data.balance && finite(data.risk.portfolioValue) ? (
+                      <p className="mt-2 text-[12px] text-white/70">위험 요약에 저장된 평가금액입니다.</p>
+                    ) : null}
                     {finite(data.risk.dailyPnlRate) ? (
                       <div className="mt-3 flex flex-wrap items-center gap-2">
                         <HeroDelta value={data.risk.dailyPnlRate} />
@@ -281,11 +283,11 @@ function AutomationHeroTile({ status }: { status: AutomationStatusV3 }) {
 interface OverviewData {
   risk: PortfolioRisk;
   status: AutomationStatusV3;
-  managedPositions: AutomationPositionPageV3;
+  managedPositions: AutomationPositionPageV3 | null;
   latestRisk: RecentRiskResult | null;
   balance: MockBalance | null;
   instruments: InstrumentDisplayCatalog;
-  runs: AutomationRunPageV3;
+  runs: AutomationRunPageV3 | null;
 }
 
 function LiveSummary({ data }: { data: OverviewData }) {
@@ -295,13 +297,13 @@ function LiveSummary({ data }: { data: OverviewData }) {
    * 첫 화면에는 어제까지의 보유 종목만 있었다.
    */
   const pendingRun =
-    data.runs.items.find(
+    data.runs?.items.find(
       (run) => run.state === 'ORDER_SUBMITTED' || run.state === 'PENDING_RECONCILIATION',
     ) ?? null;
   const latest = data.latestRisk;
   const balance = data.balance;
   const managedQuantities = new Map<string, number>();
-  for (const position of data.managedPositions.items) {
+  for (const position of data.managedPositions?.items ?? []) {
     if (position.accountId === data.status.accountId && position.botOwned &&
       (position.status === 'OPEN' || position.status === 'EXIT_PENDING')) {
       managedQuantities.set(position.symbol, (managedQuantities.get(position.symbol) ?? 0) + position.quantity);
@@ -311,6 +313,7 @@ function LiveSummary({ data }: { data: OverviewData }) {
     ? balance.positions.reduce((sum, position) => sum + position.marketValueKrw, 0)
     : null;
   const observedAt = formatKstDateTime(balance?.observedAt ?? null);
+  const accountLinked = Boolean(data.status.accountId);
   const policy = data.status.policy;
   const instruments = instrumentMap(data.instruments.items);
   const remainingCapital =
@@ -320,7 +323,7 @@ function LiveSummary({ data }: { data: OverviewData }) {
     <div className="space-y-6">
       <Panel
         title="현재 연결된 계좌"
-        hint={observedAt ? `${observedAt} KST에 저장된 잔고입니다.` : '저장된 최신 잔고를 표시합니다.'}
+        hint={observedAt ? `${observedAt} KST에 저장된 잔고입니다.` : undefined}
       >
         {balance ? (
           <>
@@ -341,10 +344,14 @@ function LiveSummary({ data }: { data: OverviewData }) {
               </Tile>
             </div>
 
-            <ul className="mt-5 divide-y divide-line/60 border-t border-line">
+            {balance.positions.length === 0 ? (
+              <p className="mt-4 text-[13px] text-muted">보유 종목이 없습니다.</p>
+            ) : null}
+            <ul hidden={balance.positions.length === 0} className="mt-5 divide-y divide-line/60 border-t border-line">
               {balance.positions.map((position) => {
-                const ownership = holdingOwnership(position.quantity, managedQuantities.get(position.symbol) ?? 0);
-                const managed = ownership.managed > 0;
+                const botQuantity = data.managedPositions ? managedQuantities.get(position.symbol) ?? 0 : null;
+                const ownership = holdingOwnership(position.quantity, botQuantity);
+                const managed = (ownership?.managed ?? 0) > 0;
                 return (
                   <li
                     key={position.symbol}
@@ -357,7 +364,8 @@ function LiveSummary({ data }: { data: OverviewData }) {
                           managed ? 'bg-navy/10 text-navy' : 'bg-subtle text-muted'
                         }`}
                       >
-                        {ownership.mismatch ? '보유 수량 대사 필요' :
+                        {!ownership ? '자동매매 관리 여부를 확인할 수 없습니다.' :
+                          ownership.mismatch ? '보유 수량 대사 필요' :
                           managed && ownership.manual > 0 ? `자동매매 ${ownership.managed}주 · 직접 보유 ${ownership.manual}주` :
                           managed ? '자동매매 관리' : '직접 보유 · 매매 제외'}
                       </span>
@@ -374,28 +382,36 @@ function LiveSummary({ data }: { data: OverviewData }) {
                 );
               })}
             </ul>
-            <p className="mt-3 text-[12px] leading-5 text-muted">
-              직접 보유 종목도 운용 한도와 위험 계산에는 포함되지만, 자동매매가 임의로 매도하지 않습니다.
-            </p>
+            {data.managedPositions && balance.positions.length > 0 ? (
+              <p className="mt-3 text-[12px] leading-5 text-muted">
+                직접 보유 종목도 운용 한도와 위험 계산에는 포함되지만 자동매매가 임의로 매도하지 않습니다.
+              </p>
+            ) : null}
           </>
         ) : (
-          <p className="text-[13px] text-muted">계좌 상세 잔고를 불러오지 못했습니다.</p>
+          <p role="status" className="text-[13px] text-muted">
+            {accountLinked ? '계좌 상세 잔고를 불러오지 못했습니다.' : '연결된 계좌가 없습니다.'}
+          </p>
         )}
       </Panel>
 
       <Panel title="자동매매 운용 상태" hint="현재 제어 상태와 저장된 운용 정책을 그대로 표시합니다.">
-        {pendingRun ? (
+        {!data.runs ? (
+          <p role="status" className="mb-5 text-[13px] text-muted">최근 주문 진행 상태를 불러오지 못했습니다.</p>
+        ) : pendingRun ? (
           <div className="mb-5 border-l-2 border-hold pl-4">
             <p className="text-[12px] font-medium text-ink">진행 중인 주문</p>
             <p className="mt-0.5 text-[13px] text-muted">
               {pendingRun.selectedSymbol
-                ? (instrumentMap(data.instruments.items).get(pendingRun.selectedSymbol)?.nameKo ??
+                ? (instruments.get(pendingRun.selectedSymbol)?.nameKo ??
                   pendingRun.selectedSymbol)
                 : '종목 미상'}
             </p>
             <OrderProgress run={pendingRun} />
           </div>
-        ) : null}
+        ) : (
+          <p className="mb-5 text-[13px] text-muted">최근 조회한 주문 중 진행 중인 주문이 없습니다.</p>
+        )}
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
           <Tile label="자동주문">
             <Link href="/automation" className="text-[18px] font-semibold text-navy hover:underline">
@@ -437,7 +453,7 @@ function LiveSummary({ data }: { data: OverviewData }) {
               <SummaryPair label="운용 한도" value={formatKrw(policy.capitalLimitKrw)} />
               <SummaryPair
                 label="계좌 주식 반영"
-                value={stockValue === null ? '잔고 없음' : `-${formatKrw(stockValue)}`}
+                value={stockValue === null ? (accountLinked ? '잔고 확인 불가' : '연결된 계좌 없음') : `-${formatKrw(stockValue)}`}
               />
               <SummaryPair
                 label="남은 운용 한도"
@@ -450,7 +466,9 @@ function LiveSummary({ data }: { data: OverviewData }) {
           </div>
         ) : null}
 
-        {data.managedPositions.items.length > 0 ? (
+        {!data.managedPositions ? (
+          <p role="status" className="mt-4 text-[13px] text-muted">자동매매 보유 내역을 불러오지 못했습니다.</p>
+        ) : data.managedPositions.items.length > 0 ? (
           <ul className="mt-5 divide-y divide-line/60 border-t border-line">
             {data.managedPositions.items.map((position) => (
               <li key={position.positionId} className="grid gap-2 py-3 text-[13px] lg:grid-cols-[minmax(0,1fr)_auto] lg:items-center">

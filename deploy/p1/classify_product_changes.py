@@ -18,6 +18,7 @@ class Rule:
     prefix: str
     category: str
     owner: str
+    exact: bool = False
 
 
 RULES = (
@@ -80,9 +81,14 @@ RULES = (
     Rule("workspaces/experience-dashboard/", "FULL-only", "full-product-owner"),
     Rule("deploy/p1/mars-release-gate.json", "FULL-only", "full-product-owner"),
     Rule("deploy/p1/docker/", "FULL-only", "full-product-owner"),
+    Rule("infra/init/01-extensions.sql", "FULL-only", "full-product-owner", exact=True),
+    Rule("infra/init/02-application-roles.sh", "FULL-only", "full-product-owner", exact=True),
     Rule("deploy/p1/sync_mars_public_operator_env.py", "FULL-only", "full-product-owner"),
     Rule("CHANGELOG.md", "FULL-only", "full-product-owner"),
     Rule(".github/", "deployment-only", "release-contract-owner"),
+    Rule(".githooks/", "deployment-only", "release-contract-owner"),
+    Rule(".gitleaks.toml", "deployment-only", "release-contract-owner", exact=True),
+    Rule("CONTRIBUTING.md", "deployment-only", "release-contract-owner", exact=True),
     Rule(".dockerignore", "shared-ui/contract", "release-contract-owner"),
     Rule(".gitignore", "deployment-only", "release-contract-owner"),
     Rule("deploy/p1/render_mars_release_compose.py", "deployment-only", "release-contract-owner"),
@@ -94,6 +100,7 @@ RULES = (
     Rule("deploy/p1/compose.public-full.yml", "deployment-only", "release-contract-owner"),
     Rule("deploy/p1/assemble_mars_public_secrets.py", "deployment-only", "release-contract-owner"),
     Rule("deploy/p1/", "deployment-only", "release-contract-owner"),
+    Rule("capstone", "deployment-only", "release-contract-owner", exact=True),
     Rule("docs/", "deployment-only", "release-contract-owner"),
     Rule("README.md", "deployment-only", "release-contract-owner"),
 )
@@ -114,7 +121,14 @@ def classify_paths(paths: Iterable[str]) -> dict[str, object]:
     owners: dict[str, list[str]] = {}
     unclassified: list[str] = []
     for path in normalized_paths:
-        matching = next((rule for rule in RULES if path == rule.prefix or (not rule.prefix.startswith("capstone-rag/ocr/") and path.startswith(rule.prefix))), None)
+        matching = next(
+            (
+                rule for rule in RULES
+                if path == rule.prefix
+                or (not rule.exact and not rule.prefix.startswith("capstone-rag/ocr/") and path.startswith(rule.prefix))
+            ),
+            None,
+        )
         if matching is None:
             unclassified.append(path)
             continue

@@ -349,3 +349,114 @@ def test_the_asking_price_endpoint_is_approved_and_mock_supported() -> None:
     assert ASKING_PRICE_PATH.endswith("/inquire-asking-price-exp-ccn")
     assert KISSettings(kis_mode="mock").asking_price_tr_id == "FHKST01010200"
     assert KISSettings(kis_mode="live").asking_price_tr_id == "FHKST01010200"
+
+
+def _restart_execution(state: str, ordinal: int = 1) -> dict[str, object]:
+    return {
+        "exactIntent": {
+            "side": "BUY",
+            "symbol": "005930",
+            "orderType": "LIMIT",
+            "quantity": 3,
+            "estimatedPrice": 50_000,
+            "estimatedAmount": 150_000,
+            "strategyId": "strategy_rule_lstm_v1",
+            "timeframe": "1d",
+        },
+        "idempotencyKeyHash": "sha256:" + "1" * 64,
+        "ordinal": ordinal,
+        "quantity": 3,
+        "state": state,
+    }
+
+
+def _restart_claim() -> RuntimeClaim:
+    return RuntimeClaim(
+        "usr_demo_user",
+        "auto_run_" + "a" * 32,
+        14,
+        "acct_" + "b" * 32,
+        "prc_" + "c" * 32,
+        "strategy_rule_lstm_v1",
+        "d" * 64,
+        True,
+        date(2026, 9, 9),
+        "sha256:" + "e" * 64,
+    )
+
+
+def test_restart_reconciles_saved_order_without_submitting_next_ordinal_after_cutoff() -> None:
+    class TwoOrders(Repository):
+        def finish(self, *, state, order_id=None, **kwargs):
+            assert (state, order_id) == ("FILLED", "saved-order")
+            self.execution = _restart_execution("PLANNED", ordinal=2)
+
+    class ReadOnlyPort(Port):
+        reads = 0
+
+        def portfolio_reconcile(self, order_id):
+            assert order_id == "saved-order"
+            self.reads += 1
+            return super().portfolio_reconcile(order_id)
+
+        def portfolio_evaluate(self, intent, ordinal):
+            raise AssertionError("new order evaluation after cutoff")
+
+    repository = TwoOrders()
+    repository.execution = _restart_execution("PENDING_RECONCILIATION") | {"orderId": "saved-order"}
+    port = ReadOnlyPort()
+    result = PortfolioContinuationRunner(repository).continue_session(
+        claim=_restart_claim(), state={}, port=port, allow_new_orders=False
+    )
+
+    assert (result.status, result.completed_orders, port.reads) == ("BUY_WINDOW_CLOSED", 1, 1)
+    assert repository.execution == _restart_execution("PLANNED", ordinal=2)
+
+
+def test_restart_preserves_submitting_without_order_reference() -> None:
+    class LostResponsePort(Port):
+        submissions = 0
+
+        def portfolio_submit(self, intent, *, decision_id, ordinal):
+            self.submissions += 1
+            raise TimeoutError("synthetic broker accepted the order but lost its response")
+
+    repository = Repository()
+    repository.execution = _restart_execution("PLANNED")
+    port = LostResponsePort()
+    claim = _restart_claim()
+
+    first = PortfolioContinuationRunner(repository).continue_session(
+        claim=claim,
+        state={},
+        port=port,
+    )
+    resumed = PortfolioContinuationRunner(repository).continue_session(
+        claim=claim,
+        state={},
+        port=port,
+    )
+
+    assert first.status == resumed.status == "SUBMIT_RESPONSE_UNRESOLVED"
+    assert repository.execution == _restart_execution("SUBMITTING")
+    assert resumed.completed_orders == 0
+    assert port.submissions == 1
+
+
+def test_transient_reconcile_error_preserves_pending_order_for_retry() -> None:
+    import psycopg
+    import pytest
+
+    class TemporarilyUnavailablePort(Port):
+        def portfolio_reconcile(self, order_id):
+            raise psycopg.OperationalError("DB connection lost")
+
+    repository = Repository()
+    pending = _restart_execution("PENDING_RECONCILIATION") | {"orderId": "saved-order"}
+    repository.execution = pending.copy()
+
+    with pytest.raises(psycopg.OperationalError):
+        PortfolioContinuationRunner(repository).continue_session(
+            claim=_restart_claim(), state={}, port=TemporarilyUnavailablePort()
+        )
+    assert repository.execution == pending

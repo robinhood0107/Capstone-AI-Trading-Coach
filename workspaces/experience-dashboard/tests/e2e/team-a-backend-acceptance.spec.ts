@@ -65,7 +65,6 @@ function key(purpose: string): string {
 test('owner backend satisfies the exact Team A 45-operation live Spring catalog', async () => {
   const dashboardUrl = process.env.P1_DASHBOARD_URL ?? 'http://127.0.0.1:3000';
   const userPassword = secret(process.env.P1_USER_PASSWORD_FILE, 'user password');
-  const adminPassword = secret(process.env.P1_ADMIN_PASSWORD_FILE, 'admin password');
   const client = new TeamAClient({ baseUrl: dashboardUrl });
   const tracker = new AcceptanceTracker();
   let userToken: string | null = null;
@@ -86,6 +85,7 @@ test('owner backend satisfies the exact Team A 45-operation live Spring catalog'
     const login = await call('login', { body: { username: 'demo-user', password: userPassword } });
     const loggedIn = data<Components['LoginResponse']>(login.body, 'login');
     expect(loggedIn.user?.userId).toBe(USER_ID);
+    expect(loggedIn.user?.role).toBe('ADMIN');
     if (typeof loggedIn.accessToken !== 'string') throw new Error('login omitted its access token.');
     userToken = loggedIn.accessToken;
     client.setAccessToken(userToken);
@@ -127,11 +127,6 @@ test('owner backend satisfies the exact Team A 45-operation live Spring catalog'
       idempotencyKey: key('killon'),
     });
 
-    client.clearAccessToken();
-    const adminLogin = await call('login', { body: { username: 'demo-admin', password: adminPassword } });
-    const admin = data<Components['LoginResponse']>(adminLogin.body, 'login');
-    if (typeof admin.accessToken !== 'string') throw new Error('admin login omitted its access token.');
-    client.setAccessToken(userToken);
     await call('changeOwnerKillSwitch', {
       body: { active: false },
       idempotencyKey: key('killoff'),

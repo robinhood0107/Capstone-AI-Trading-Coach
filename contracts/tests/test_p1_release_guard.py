@@ -76,6 +76,44 @@ class P1ReleaseGuardTest(unittest.TestCase):
             self.assertEqual((state / "runtime.env").read_bytes(), b"safe\n")
             self.assertEqual((state / "runtime.env").stat().st_mode & 0o777, 0o600)
 
+    def test_large_backup_streams_without_raising_the_state_file_limit(self) -> None:
+        with tempfile.TemporaryDirectory(dir="/tmp") as directory:
+            root = Path(directory)
+            state = root / "state"
+            self.run_guard("state-init", str(state))
+            self.run_guard("state-mkdir", str(state), "backups")
+            name = "capstone-p1-20261128T000000Z.dump"
+            payload = b"x" * (4 * 1024 * 1024 + 1)
+
+            rejected = self.run_guard(
+                "state-write", str(state), "runtime.env", "0600", input_bytes=payload, check=False
+            )
+            self.assertNotEqual(rejected.returncode, 0)
+            self.assertFalse((state / "runtime.env").exists())
+
+            self.run_guard("state-write-backup", str(state), name, input_bytes=payload)
+            duplicate = self.run_guard(
+                "state-write-backup", str(state), name, input_bytes=b"duplicate", check=False
+            )
+            self.assertNotEqual(duplicate.returncode, 0)
+            staged = root / name
+            self.run_guard("state-export", str(state), f"backups/{name}", str(staged), "0600")
+            self.assertEqual(staged.read_bytes(), payload)
+            self.assertEqual(staged.stat().st_mode & 0o777, 0o600)
+            self.assertEqual((state / "backups" / name).stat().st_mode & 0o777, 0o600)
+
+            digest = hashlib.sha256(payload).hexdigest()
+            self.run_guard(
+                "state-write", str(state), f"backups/{name}.sha256", "0600",
+                input_bytes=f"{digest}  {name}\n".encode(),
+            )
+            self.run_guard(
+                "state-write-backup", str(state), "capstone-p1-20261128T000001Z.dump",
+                input_bytes=b"orphan",
+            )
+            latest = self.run_guard("state-latest-backup", str(state))
+            self.assertEqual(latest.stdout.decode().strip(), name)
+
     def test_release_accept_is_monotonic_and_requires_exact_rollback_approval(self) -> None:
         with tempfile.TemporaryDirectory(dir="/tmp") as directory:
             root = Path(directory)

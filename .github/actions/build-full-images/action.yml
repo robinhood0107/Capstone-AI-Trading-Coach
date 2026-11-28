@@ -1,0 +1,85 @@
+name: Build MARS FULL images
+description: Load the four FULL images into the runner with a separate cache for each.
+inputs:
+  revision:
+    required: true
+    description: Source revision label
+  version:
+    required: true
+    description: Image version label
+  repository:
+    required: true
+    description: Local image repository
+  write-cache:
+    default: 'true'
+    description: Export a GitHub Actions cache for trusted runs
+runs:
+  using: composite
+  steps:
+    - uses: docker/setup-buildx-action@e468171a9de216ec08956ac3ada2f0791b6bd435 # v3.11.1
+    - name: Build FULL api
+      uses: docker/build-push-action@263435318d21b8e681c14492fe198d362a7d2c83 # v6.18.0
+      with:
+        context: .
+        file: deploy/p1/docker/decision-platform.Dockerfile
+        platforms: linux/amd64
+        load: true
+        tags: ${{ inputs.repository }}:api
+        build-args: |
+          SOURCE_REVISION=${{ inputs.revision }}
+          RELEASE_VERSION=${{ inputs.version }}
+        cache-from: type=gha,scope=mars-full-api,timeout=1m
+        cache-to: ${{ inputs.write-cache == 'true' && 'type=gha,scope=mars-full-api,mode=max,ignore-error=true,timeout=1m' || '' }}
+    - name: Build FULL postgres
+      uses: docker/build-push-action@263435318d21b8e681c14492fe198d362a7d2c83 # v6.18.0
+      with:
+        context: .
+        file: deploy/p1/docker/postgres-pgvector.Dockerfile
+        platforms: linux/amd64
+        load: true
+        tags: ${{ inputs.repository }}:postgres
+        build-args: |
+          SOURCE_REVISION=${{ inputs.revision }}
+          RELEASE_VERSION=${{ inputs.version }}
+        cache-from: type=gha,scope=mars-full-postgres,timeout=1m
+        cache-to: ${{ inputs.write-cache == 'true' && 'type=gha,scope=mars-full-postgres,mode=max,ignore-error=true,timeout=1m' || '' }}
+    - name: Build FULL redis
+      uses: docker/build-push-action@263435318d21b8e681c14492fe198d362a7d2c83 # v6.18.0
+      with:
+        context: .
+        file: deploy/p1/docker/redis.Dockerfile
+        platforms: linux/amd64
+        load: true
+        tags: ${{ inputs.repository }}:redis
+        build-args: |
+          SOURCE_REVISION=${{ inputs.revision }}
+          RELEASE_VERSION=${{ inputs.version }}
+        cache-from: type=gha,scope=mars-full-redis,timeout=1m
+        cache-to: ${{ inputs.write-cache == 'true' && 'type=gha,scope=mars-full-redis,mode=max,ignore-error=true,timeout=1m' || '' }}
+    - name: Build FULL web
+      uses: docker/build-push-action@263435318d21b8e681c14492fe198d362a7d2c83 # v6.18.0
+      with:
+        context: workspaces/experience-dashboard
+        file: workspaces/experience-dashboard/Dockerfile
+        platforms: linux/amd64
+        load: true
+        tags: ${{ inputs.repository }}:web
+        build-args: |
+          SOURCE_REVISION=${{ inputs.revision }}
+          RELEASE_VERSION=${{ inputs.version }}
+          MARS_PRODUCT=full
+        cache-from: type=gha,scope=mars-full-web,timeout=1m
+        cache-to: ${{ inputs.write-cache == 'true' && 'type=gha,scope=mars-full-web,mode=max,ignore-error=true,timeout=1m' || '' }}
+    - name: Verify FULL image identity
+      shell: bash
+      env:
+        SHA: ${{ inputs.revision }}
+        VERSION: ${{ inputs.version }}
+        IMAGES: ${{ inputs.repository }}
+      run: |
+        set -Eeuo pipefail
+        for part in api postgres redis web; do
+          [[ $(docker image inspect "$IMAGES:$part" --format '{{index .Config.Labels "org.opencontainers.image.revision"}}') == "$SHA" ]]
+          [[ $(docker image inspect "$IMAGES:$part" --format '{{index .Config.Labels "org.opencontainers.image.version"}}') == "$VERSION" ]]
+        done
+        [[ $(docker image inspect "$IMAGES:web" --format '{{index .Config.Env}}') == *"NEXT_PUBLIC_MARS_PRODUCT=full"* ]]

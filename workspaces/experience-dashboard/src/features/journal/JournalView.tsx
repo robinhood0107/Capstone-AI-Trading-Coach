@@ -11,6 +11,8 @@ import { Panel } from '@/shared/ui/Panel';
 import type { JournalEntry, JournalLinks } from '@/shared/api/wire';
 import { FillsPanel } from '@/features/order-review/FillsPanel';
 import { takeJournalHandoff } from '@/shared/lib/journalHandoff';
+import { DecisionEvidence } from '@/features/order-review/DecisionEvidence';
+import { loadRiskResultView } from '@/features/order-review/viewModel';
 
 interface Draft {
   title: string;
@@ -26,6 +28,8 @@ export function JournalView() {
     return ready(data.items, data.items[0]?.updatedAt ?? null);
   }, []);
   const [selected, setSelected] = useState<JournalEntry | null>(null);
+  const linkedDecisionId = selected?.links.decisionId ?? '';
+  const linkedDecision = useResource(() => loadRiskResultView(linkedDecisionId), [linkedDecisionId], Boolean(linkedDecisionId));
   const [draft, setDraft] = useState<Draft>(EMPTY);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
@@ -42,7 +46,10 @@ export function JournalView() {
     const handoff = takeJournalHandoff();
     if (!handoff) return;
     setDraft({ title: handoff.title, content: handoff.content, tags: '' });
-    if (handoff.ragAnswerId) setHandoffLinks({ ragAnswerId: handoff.ragAnswerId });
+    setHandoffLinks({
+      ...(handoff.decisionId ? { decisionId: handoff.decisionId } : {}),
+      ...(handoff.ragAnswerId ? { ragAnswerId: handoff.ragAnswerId } : {}),
+    });
   }, []);
 
   function notify(text: string, tone: 'ok' | 'error') {
@@ -122,10 +129,13 @@ export function JournalView() {
 
   return (
     <div className="grid gap-6 xl:grid-cols-[minmax(0,0.8fr)_minmax(0,1.2fr)]">
-      <div className="xl:col-span-2">
-        <FillsPanel />
-        <p className="mt-2 text-[12px] text-muted">체결 내역은 원장 기록이며, 아래 학습일지는 직접 작성하는 기록입니다.</p>
-      </div>
+      {linkedDecisionId ? (
+        <div className="xl:col-span-2">
+          <AsyncBoundary state={linkedDecision.state} onRetry={linkedDecision.reload}>
+            {(view) => view.decisionId === linkedDecisionId ? <DecisionEvidence view={view} title="연결된 판정 근거" /> : null}
+          </AsyncBoundary>
+        </div>
+      ) : null}
       <AsyncBoundary state={resource.state} onRetry={resource.reload}>
         {(items) => (
           <Panel title="최근 기록" hint="최신 20개 기록입니다.">
@@ -211,6 +221,10 @@ export function JournalView() {
           </div>
         </div>
       </Panel>
+      <div className="xl:col-span-2">
+        <FillsPanel />
+        <p className="mt-2 text-[12px] text-muted">체결 내역은 원장 기록이며, 학습일지는 직접 작성하는 기록입니다.</p>
+      </div>
     </div>
   );
 }

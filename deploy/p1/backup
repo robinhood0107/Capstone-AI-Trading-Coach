@@ -6,6 +6,7 @@ STATE_DIR=${P1_STATE_DIR:-$SCRIPT_DIR/.state}
 RUNTIME_ENV=$STATE_DIR/runtime.env
 BACKUP_DIR=$STATE_DIR/backups
 RELEASE_GUARD=$SCRIPT_DIR/release_guard.py
+[[ $# == 0 || ( $# == 1 && $1 == --full ) ]] || { echo 'P1_ERROR=backup_arguments' >&2; exit 1; }
 PROJECT_NAME=${P1_PROJECT_NAME:-capstone-p1-offline-demo}
 [[ $PROJECT_NAME =~ ^[a-z0-9][a-z0-9_-]{2,62}$ ]] || { echo 'P1_ERROR=invalid_project_name' >&2; exit 1; }
 python3 "$RELEASE_GUARD" state-check "$STATE_DIR" || {
@@ -26,11 +27,16 @@ output=$BACKUP_DIR/$name
 temporary=$(mktemp)
 cleanup() { rm -f -- "$temporary"; }
 trap cleanup EXIT
-compose=(docker compose --project-name "$PROJECT_NAME" --env-file "$RUNTIME_ENV" -f "$SCRIPT_DIR/compose.db.yml")
-[[ ! -f $SCRIPT_DIR/release.env ]] || compose+=(-f "$SCRIPT_DIR/compose.offline.db.yml")
+compose=("${P1_DOCKER_BIN:-docker}" compose --project-name "$PROJECT_NAME" --env-file "$RUNTIME_ENV")
+if [[ ${1:-} == --full ]]; then
+  compose+=(-f "$SCRIPT_DIR/compose.yml")
+else
+  compose+=(-f "$SCRIPT_DIR/compose.db.yml")
+  [[ ! -f $SCRIPT_DIR/release.env ]] || compose+=(-f "$SCRIPT_DIR/compose.offline.db.yml")
+fi
 "${compose[@]}" exec -T postgres pg_dump --username postgres --dbname capstone_p1 --format=custom > "$temporary"
 [[ -s $temporary ]] || { echo 'P1_ERROR=empty_backup' >&2; exit 1; }
-python3 "$RELEASE_GUARD" state-write "$STATE_DIR" "backups/$name" 0600 < "$temporary"
+python3 "$RELEASE_GUARD" state-write-backup "$STATE_DIR" "$name" < "$temporary"
 digest=$(sha256sum "$temporary" | awk '{print $1}')
 printf '%s  %s\n' "$digest" "$name" | python3 "$RELEASE_GUARD" state-write "$STATE_DIR" "backups/$name.sha256" 0600
 rm -f -- "$temporary"

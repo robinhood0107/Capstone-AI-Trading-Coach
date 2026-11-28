@@ -14,9 +14,15 @@ concurrency:
 
 jobs:
   classify:
-    if: github.event.pull_request.head.repo.full_name == github.repository
+    if: github.event.pull_request.base.ref == 'develop' || github.event.pull_request.head.repo.full_name == github.repository
     name: Product Impact Classification
     runs-on: ubuntu-24.04
+    outputs:
+      full_required: ${{ steps.impact.outputs.full_image_required }}
+      demo_required: ${{ steps.impact.outputs.demo_candidate_required }}
+      locks_required: ${{ steps.develop.outputs.locks_required }}
+      lock_projects: ${{ steps.develop.outputs.lock_projects }}
+      backup_required: ${{ steps.develop.outputs.backup_required }}
     steps:
       - name: Checkout pull request source
         uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
@@ -45,6 +51,16 @@ jobs:
           print(json.dumps(result, ensure_ascii=False, sort_keys=True, indent=2))
           PY
 
+      - name: Select additional develop checks
+        id: develop
+        if: github.event.pull_request.base.ref == 'develop'
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          python3 .github/scripts/test-develop-checks.py
+          python3 .github/scripts/develop-checks.py route "$BASE_SHA" "$HEAD_SHA" >> "$GITHUB_OUTPUT"
+
       - name: Upload impact manifest
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
@@ -52,3 +68,90 @@ jobs:
           path: product-impact.json
           if-no-files-found: error
           retention-days: 30
+
+  locks:
+    name: Changed Python lockfiles
+    needs: classify
+    if: github.event.pull_request.base.ref == 'develop' && needs.classify.outputs.locks_required == 'true'
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@d31148d669074a8d0a63714ba94f3201e7020bc3 # v8.3.0
+        with:
+          version: "0.11.26"
+          python-version: "3.12"
+      - name: Check each changed project
+        env:
+          LOCK_PROJECTS: ${{ needs.classify.outputs.lock_projects }}
+        run: |
+          set -Eeuo pipefail
+          read -ra projects <<< "$LOCK_PROJECTS"
+          (( ${#projects[@]} > 0 ))
+          for project in "${projects[@]}"; do
+            uv lock --check --project "$project"
+          done
+
+  backup:
+    name: P1 backup and restore
+    needs: classify
+    if: github.event.pull_request.base.ref == 'develop' && needs.classify.outputs.backup_required == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+      - run: python3 -m unittest discover -s contracts/tests -p 'test_p1*.py'
+      - uses: docker/setup-buildx-action@e468171a9de216ec08956ac3ada2f0791b6bd435 # v3.11.1
+      - name: Build PostgreSQL for restore rehearsal
+        uses: docker/build-push-action@263435318d21b8e681c14492fe198d362a7d2c83 # v6.18.0
+        with:
+          context: .
+          file: deploy/p1/docker/postgres-pgvector.Dockerfile
+          platforms: linux/amd64
+          load: true
+          tags: mars-backup-qa:postgres
+          cache-from: type=gha,scope=mars-full-postgres,timeout=1m
+      - name: Rehearse backup and restore
+        run: bash .github/scripts/test-p1-backup.sh mars-backup-qa:postgres
+
+  full-candidate:
+    needs: classify
+    if: github.event.pull_request.base.ref == 'develop' && needs.classify.outputs.full_required == 'true'
+    uses: ./.github/workflows/mars-product-image-build.yml
+
+  demo-candidate:
+    needs: classify
+    if: github.event.pull_request.base.ref == 'develop' && needs.classify.outputs.demo_required == 'true'
+    uses: ./.github/workflows/mars-demo-candidate-build.yml
+
+  develop-gate:
+    name: MARS develop gate
+    if: always() && github.event.pull_request.base.ref == 'develop'
+    needs: [classify, locks, backup, full-candidate, demo-candidate]
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+      - name: Require every selected check
+        env:
+          CLASSIFY: ${{ needs.classify.result }}
+          LOCKS_REQUIRED: ${{ needs.classify.outputs.locks_required }}
+          LOCKS: ${{ needs.locks.result }}
+          BACKUP_REQUIRED: ${{ needs.classify.outputs.backup_required }}
+          BACKUP: ${{ needs.backup.result }}
+          FULL_REQUIRED: ${{ needs.classify.outputs.full_required }}
+          FULL: ${{ needs.full-candidate.result }}
+          DEMO_REQUIRED: ${{ needs.classify.outputs.demo_required }}
+          DEMO: ${{ needs.demo-candidate.result }}
+        run: |
+          set -Eeuo pipefail
+          python3 .github/scripts/develop-checks.py verify \
+            classify true "$CLASSIFY" locks "$LOCKS_REQUIRED" "$LOCKS" \
+            backup "$BACKUP_REQUIRED" "$BACKUP" full "$FULL_REQUIRED" "$FULL" demo "$DEMO_REQUIRED" "$DEMO"

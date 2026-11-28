@@ -2,7 +2,8 @@ name: MARS DEMO candidate build
 
 on:
   pull_request:
-    branches: [develop, main]
+    branches: [main]
+  workflow_call:
 
 permissions:
   contents: read
@@ -13,7 +14,7 @@ concurrency:
 
 jobs:
   classify:
-    if: github.event.pull_request.head.repo.full_name == github.repository
+    if: github.event.pull_request.base.ref == 'develop' || github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-24.04
     outputs:
       demo_candidate_required: ${{ steps.impact.outputs.demo_candidate_required }}
@@ -36,9 +37,10 @@ jobs:
           python3 deploy/p1/classify_product_changes.py --base "$BASE_SHA" --head "$HEAD_SHA" --format github
       - name: Read DEMO candidate version
         id: identity
-        if: steps.impact.outputs.demo_candidate_required == 'true'
+        if: github.event.pull_request.base.ref == 'develop' || steps.impact.outputs.demo_candidate_required == 'true'
         run: |
           set -Eeuo pipefail
+          [[ "${{ steps.impact.outputs.demo_candidate_required }}" == true ]]
           version=$(jq -r '.version' deploy/p1/mars-demo-release.json)
           [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]
           echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
@@ -46,7 +48,7 @@ jobs:
 
   build-scan:
     needs: classify
-    if: needs.classify.outputs.demo_candidate_required == 'true'
+    if: github.event.pull_request.base.ref == 'develop' || needs.classify.outputs.demo_candidate_required == 'true'
     name: MARS DEMO candidate build
     runs-on: ubuntu-24.04
     permissions:
@@ -75,16 +77,24 @@ jobs:
       - name: Set up Buildx
         uses: docker/setup-buildx-action@e468171a9de216ec08956ac3ada2f0791b6bd435 # v3.11.1
       - name: Build standalone DEMO image without provider secrets
+        uses: docker/build-push-action@263435318d21b8e681c14492fe198d362a7d2c83 # v6.18.0
+        with:
+          context: .
+          file: workspaces/mars-demo/Dockerfile
+          platforms: linux/amd64
+          load: true
+          tags: mars-demo-candidate:web
+          build-args: |
+            SOURCE_REVISION=${{ needs.classify.outputs.sha }}
+            RELEASE_VERSION=${{ needs.classify.outputs.version }}-candidate
+          cache-from: type=gha,scope=mars-demo-web,timeout=1m
+          cache-to: ${{ github.event.pull_request.head.repo.full_name == github.repository && 'type=gha,scope=mars-demo-web,mode=max,ignore-error=true,timeout=1m' || '' }}
+      - name: Verify DEMO image identity
         env:
           SHA: ${{ needs.classify.outputs.sha }}
           VERSION: ${{ needs.classify.outputs.version }}
         run: |
           set -Eeuo pipefail
-          docker buildx build --platform linux/amd64 --load \
-            --file workspaces/mars-demo/Dockerfile \
-            --build-arg SOURCE_REVISION="$SHA" \
-            --build-arg RELEASE_VERSION="${VERSION}-candidate" \
-            --tag mars-demo-candidate:web .
           [[ $(docker image inspect mars-demo-candidate:web --format '{{index .Config.Labels "org.opencontainers.image.revision"}}') == "$SHA" ]]
           [[ $(docker image inspect mars-demo-candidate:web --format '{{index .Config.Labels "org.opencontainers.image.version"}}') == "${VERSION}-candidate" ]]
       - name: Install pinned Trivy release asset

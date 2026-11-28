@@ -103,6 +103,7 @@ jobs:
     needs: classify-full-merge
     if: needs.classify-full-merge.outputs.full_image_required == 'true'
     runs-on: ubuntu-24.04
+    timeout-minutes: 25
     permissions:
       contents: read
     outputs:
@@ -117,39 +118,14 @@ jobs:
           ref: ${{ needs.classify-full-merge.outputs.sha }}
           fetch-depth: 0
           persist-credentials: false
-      - name: Set up Buildx
-        uses: docker/setup-buildx-action@e468171a9de216ec08956ac3ada2f0791b6bd435 # v3.11.1
-      - name: Build FULL API and shared infrastructure from one SHA
-        env:
-          SHA: ${{ needs.classify-full-merge.outputs.sha }}
-          VERSION: ${{ needs.classify-full-merge.outputs.version }}
-        run: |
-          set -Eeuo pipefail
-          for part in api postgres redis; do
-            case "$part" in
-              api) file=deploy/p1/docker/decision-platform.Dockerfile ;;
-              postgres) file=deploy/p1/docker/postgres-pgvector.Dockerfile ;;
-              redis) file=deploy/p1/docker/redis.Dockerfile ;;
-            esac
-            docker buildx build --platform linux/amd64 --load \
-              --file "$file" \
-              --build-arg SOURCE_REVISION="$SHA" --build-arg RELEASE_VERSION="$VERSION" \
-              --tag "mars-full-build:$part" .
-            [[ $(docker image inspect "mars-full-build:$part" --format '{{index .Config.Labels "org.opencontainers.image.revision"}}') == "$SHA" ]]
-          done
-      - name: Build FULL dashboard from the FULL entrypoint
-        env:
-          SHA: ${{ needs.classify-full-merge.outputs.sha }}
-          VERSION: ${{ needs.classify-full-merge.outputs.version }}
-        run: |
-          set -Eeuo pipefail
-          docker buildx build --platform linux/amd64 --load \
-            --file workspaces/experience-dashboard/Dockerfile \
-            --build-arg MARS_PRODUCT=full \
-            --build-arg SOURCE_REVISION="$SHA" --build-arg RELEASE_VERSION="$VERSION" \
-            --tag mars-full-build:web workspaces/experience-dashboard
-          [[ $(docker image inspect mars-full-build:web --format '{{index .Config.Labels "org.opencontainers.image.revision"}}') == "$SHA" ]]
-          [[ $(docker image inspect mars-full-build:web --format '{{index .Config.Env}}') == *"NEXT_PUBLIC_MARS_PRODUCT=full"* ]]
+      - name: Build the FULL image set
+        uses: ./.github/actions/build-full-images
+        with:
+          revision: ${{ needs.classify-full-merge.outputs.sha }}
+          version: ${{ needs.classify-full-merge.outputs.version }}
+          repository: mars-full-build
+      - name: Smoke-test the built FULL images
+        run: bash .github/scripts/smoke-full-images.sh mars-full-build
       - name: Scan FULL API image
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
@@ -202,6 +178,12 @@ jobs:
           set -Eeuo pipefail
           for part in postgres redis web; do
             syft "docker:mars-full-build:$part" -o spdx-json="release-assets/mars-${part}.spdx.json"
+          done
+      - name: Verify SBOMs before registry access
+        run: |
+          set -Eeuo pipefail
+          for part in api web postgres redis; do
+            jq -e '(.spdxVersion | startswith("SPDX-")) and (.packages | length > 0)' "release-assets/mars-$part.spdx.json" >/dev/null
           done
       - name: Login to Docker Hub after FULL scans
         uses: docker/login-action@184bdaa0721073962dff0199f1fb9940f07167d1 # v3.5.0

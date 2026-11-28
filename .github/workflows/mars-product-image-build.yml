@@ -2,7 +2,8 @@ name: MARS product image build
 
 on:
   pull_request:
-    branches: [develop, main]
+    branches: [main]
+  workflow_call:
 
 permissions:
   contents: read
@@ -13,7 +14,7 @@ concurrency:
 
 jobs:
   classify:
-    if: github.event.pull_request.head.repo.full_name == github.repository
+    if: github.event.pull_request.base.ref == 'develop' || github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-24.04
     outputs:
       full_image_required: ${{ steps.impact.outputs.full_image_required }}
@@ -37,12 +38,13 @@ jobs:
           python3 deploy/p1/classify_product_changes.py --base "$BASE_SHA" --head "$HEAD_SHA" --format github
       - name: Validate FULL candidate release gate
         id: identity
-        if: steps.impact.outputs.full_image_required == 'true'
+        if: github.event.pull_request.base.ref == 'develop' || steps.impact.outputs.full_image_required == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
         run: |
           set -Eeuo pipefail
+          [[ "${{ steps.impact.outputs.full_image_required }}" == true ]]
           [[ $(git rev-parse HEAD) == "${{ github.event.pull_request.head.sha }}" ]]
           [[ $(jq -r '.imagePublicationReady' deploy/p1/mars-release-gate.json) == true ]]
           version=$(jq -r '.version' deploy/p1/mars-release-gate.json)
@@ -60,7 +62,7 @@ jobs:
 
   full-images:
     needs: classify
-    if: needs.classify.outputs.full_image_required == 'true'
+    if: github.event.pull_request.base.ref == 'develop' || needs.classify.outputs.full_image_required == 'true'
     name: MARS product image build
     runs-on: ubuntu-24.04
     steps:
@@ -70,41 +72,13 @@ jobs:
           ref: ${{ needs.classify.outputs.sha }}
           fetch-depth: 0
           persist-credentials: false
-      - name: Set up Buildx
-        uses: docker/setup-buildx-action@e468171a9de216ec08956ac3ada2f0791b6bd435 # v3.11.1
-      - name: Build FULL API and shared infrastructure images
-        env:
-          SHA: ${{ needs.classify.outputs.sha }}
-          VERSION: ${{ needs.classify.outputs.version }}
-        run: |
-          set -Eeuo pipefail
-          for part in api postgres redis; do
-            case "$part" in
-              api) file=deploy/p1/docker/decision-platform.Dockerfile ;;
-              postgres) file=deploy/p1/docker/postgres-pgvector.Dockerfile ;;
-              redis) file=deploy/p1/docker/redis.Dockerfile ;;
-            esac
-            docker buildx build --platform linux/amd64 --load \
-              --file "$file" \
-              --build-arg SOURCE_REVISION="$SHA" \
-              --build-arg RELEASE_VERSION="${VERSION}-candidate" \
-              --tag "mars-full-candidate:$part" .
-            [[ $(docker image inspect "mars-full-candidate:$part" --format '{{index .Config.Labels "org.opencontainers.image.revision"}}') == "$SHA" ]]
-          done
-      - name: Build FULL dashboard image
-        env:
-          SHA: ${{ needs.classify.outputs.sha }}
-          VERSION: ${{ needs.classify.outputs.version }}
-        run: |
-          set -Eeuo pipefail
-          docker buildx build --platform linux/amd64 --load \
-            --file workspaces/experience-dashboard/Dockerfile \
-            --build-arg MARS_PRODUCT=full \
-            --build-arg SOURCE_REVISION="$SHA" \
-            --build-arg RELEASE_VERSION="${VERSION}-candidate" \
-            --tag mars-full-candidate:web workspaces/experience-dashboard
-          [[ $(docker image inspect mars-full-candidate:web --format '{{index .Config.Labels "org.opencontainers.image.revision"}}') == "$SHA" ]]
-          [[ $(docker image inspect mars-full-candidate:web --format '{{index .Config.Env}}') == *"NEXT_PUBLIC_MARS_PRODUCT=full"* ]]
+      - name: Build the FULL image set
+        uses: ./.github/actions/build-full-images
+        with:
+          revision: ${{ needs.classify.outputs.sha }}
+          version: ${{ needs.classify.outputs.version }}-candidate
+          repository: mars-full-candidate
+          write-cache: ${{ github.event.pull_request.head.repo.full_name == github.repository }}
       - name: Install pinned Trivy release asset
         env:
           GH_TOKEN: ${{ github.token }}

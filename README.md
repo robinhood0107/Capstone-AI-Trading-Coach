@@ -295,7 +295,14 @@ export P1_API_PORT=28080
 
 Team A 인수 테스트는 Node.js, npm, Playwright Chromium을 준비한 뒤 폐기 가능한 합성 스택에서 `./capstone team-a acceptance`를 실행합니다. 이 명령은 시험 계정의 일지와 주문 등 기존 행을 지우고 시험 데이터를 넣습니다. 저장한 원칙이나 정책 일부가 남을 수 있습니다.
 
-Spring API만 실행하는 개발자는 [결정 플랫폼 개발 안내](workspaces/decision-platform/README.md)를 따릅니다. 기존 인프라 DB를 업그레이드할 때는 Flyway보다 먼저 Compose의 `role-bootstrap`을 실행합니다.
+Spring API만 실행하는 개발자는 [결정 플랫폼 개발 안내](workspaces/decision-platform/README.md)에 따라 `.env`를 준비합니다. 기존 인프라 DB를 업그레이드할 때는 Flyway보다 먼저 Compose에서 DB 역할을 초기화합니다.
+
+```bash
+docker compose --env-file .env -f infra/docker-compose.infra.yml run --rm role-bootstrap
+cd workspaces/decision-platform/spring-api && ./gradlew bootRun
+```
+
+KIS 모의 체결 관측은 `decision_fill_writer` 역할로 적재합니다. 관련 마이그레이션 경계는 `V6/V9/V14`입니다.
 
 ### FULL 릴리스 이미지 사용
 

@@ -9,6 +9,7 @@ import json
 import os
 import re
 import secrets
+import shutil
 import stat
 import sys
 import tarfile
@@ -18,6 +19,7 @@ from typing import Any, BinaryIO, NoReturn, cast
 _DIGEST = re.compile(r"[0-9a-f]{64}")
 _VERSION = re.compile(r"(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)")
 _SAFE_ARCHIVE_PATH = re.compile(r"[A-Za-z0-9][A-Za-z0-9._/-]{0,239}")
+_BACKUP_NAME = re.compile(r"capstone-p1-[0-9]{8}T[0-9]{6}Z\.dump")
 _MAX_STATE_BYTES = 4 * 1024 * 1024
 _MAX_BUNDLE_BYTES = 32 * 1024 * 1024 * 1024
 _MAX_BUNDLE_ENTRIES = 50_000
@@ -106,7 +108,9 @@ def _read_all(stream: BinaryIO, limit: int = _MAX_STATE_BYTES) -> bytes:
     return data
 
 
-def _atomic_write(state_descriptor: int, relative: str, data: bytes, mode: int) -> None:
+def _atomic_write(
+    state_descriptor: int, relative: str, data: bytes | BinaryIO, mode: int
+) -> None:
     parent, name = _open_relative_parent(state_descriptor, relative)
     temporary = f".p1-{secrets.token_hex(16)}"
     descriptor = -1
@@ -118,13 +122,20 @@ def _atomic_write(state_descriptor: int, relative: str, data: bytes, mode: int) 
             dir_fd=parent,
         )
         with os.fdopen(descriptor, "wb", closefd=False) as handle:
-            handle.write(data)
+            if isinstance(data, bytes):
+                handle.write(data)
+            else:
+                shutil.copyfileobj(data, handle, length=1024 * 1024)
             handle.flush()
             os.fsync(handle.fileno())
         os.fchmod(descriptor, mode)
         os.close(descriptor)
         descriptor = -1
-        os.replace(temporary, name, src_dir_fd=parent, dst_dir_fd=parent)
+        if isinstance(data, bytes):
+            os.replace(temporary, name, src_dir_fd=parent, dst_dir_fd=parent)
+        else:
+            # Backups are immutable, including concurrent runs in the same second.
+            os.link(temporary, name, src_dir_fd=parent, dst_dir_fd=parent, follow_symlinks=False)
         os.fsync(parent)
         check = os.open(name, os.O_RDONLY | _NOFOLLOW, dir_fd=parent)
         try:
@@ -219,6 +230,16 @@ def state_write(path: Path, relative: str, mode: int) -> None:
         os.close(descriptor)
 
 
+def state_write_backup(path: Path, name: str) -> None:
+    if _BACKUP_NAME.fullmatch(name) is None:
+        _fail("backup name")
+    descriptor = _open_state(path)
+    try:
+        _atomic_write(descriptor, f"backups/{name}", sys.stdin.buffer, 0o600)
+    finally:
+        os.close(descriptor)
+
+
 def state_append(path: Path, relative: str, mode: int) -> None:
     if mode not in {0o600, 0o640}:
         _fail("state file mode")
@@ -253,13 +274,17 @@ def state_latest_backup(path: Path) -> None:
         backups = os.open("backups", os.O_RDONLY | _DIRECTORY | _NOFOLLOW, dir_fd=descriptor)
         try:
             _require_owned_directory(backups)
-            pattern = re.compile(r"capstone-p1-[0-9]{8}T[0-9]{6}Z\.dump")
             candidates: list[str] = []
             for name in os.listdir(backups):
-                if pattern.fullmatch(name) is None:
+                if _BACKUP_NAME.fullmatch(name) is None:
                     continue
-                metadata = os.stat(name, dir_fd=backups, follow_symlinks=False)
-                if stat.S_ISREG(metadata.st_mode) and metadata.st_uid == os.geteuid():
+                try:
+                    files = [os.stat(entry, dir_fd=backups, follow_symlinks=False)
+                             for entry in (name, f"{name}.sha256")]
+                except FileNotFoundError:
+                    continue
+                if all(stat.S_ISREG(item.st_mode) and item.st_uid == os.geteuid()
+                       and stat.S_IMODE(item.st_mode) == 0o600 for item in files):
                     candidates.append(name)
             if not candidates:
                 _fail("backup not found")
@@ -737,6 +762,9 @@ def main() -> None:
     write.add_argument("state", type=Path)
     write.add_argument("relative")
     write.add_argument("mode", type=lambda value: int(value, 8))
+    backup = subparsers.add_parser("state-write-backup")
+    backup.add_argument("state", type=Path)
+    backup.add_argument("name")
     append = subparsers.add_parser("state-append")
     append.add_argument("state", type=Path)
     append.add_argument("relative")
@@ -782,6 +810,8 @@ def main() -> None:
         state_mkdir(args.state, args.relative)
     elif args.command == "state-write":
         state_write(args.state, args.relative, args.mode)
+    elif args.command == "state-write-backup":
+        state_write_backup(args.state, args.name)
     elif args.command == "state-append":
         state_append(args.state, args.relative, args.mode)
     elif args.command == "state-latest-backup":

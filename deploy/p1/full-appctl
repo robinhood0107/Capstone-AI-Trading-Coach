@@ -41,6 +41,8 @@ usage() {
 Usage:
   ./capstone up [--models] [--mock]
   ./capstone status|logs|smoke|down|doctor
+  ./capstone backup
+  [P1_BACKUP_FILE=<dump-name>] ./capstone restore-test
   ./capstone demo create
   ./capstone credential rotate <user|admin> /absolute/password-file
   ./capstone mock <configure|doctor|certify|readiness|gate-author|start|stop|resume> [--symbol 005930] [--quantity 1]
@@ -1630,6 +1632,11 @@ case $command in
   logs) [[ $# == 0 ]] || die UNEXPECTED_ARGUMENT; logs ;;
   smoke) [[ $# == 0 ]] || die UNEXPECTED_ARGUMENT; smoke ;;
   down) [[ $# == 0 ]] || die UNEXPECTED_ARGUMENT; down ;;
+  backup|restore-test)
+    [[ $# == 0 ]] || die UNEXPECTED_ARGUMENT
+    P1_STATE_DIR=$STATE_DIR P1_PROJECT_NAME=$PROJECT_NAME P1_DOCKER_BIN=$DOCKER_BIN \
+      "$SCRIPT_DIR/$command" --full
+    ;;
   demo)
     subcommand=${1:-}; [[ -n $subcommand ]] || die DEMO_COMMAND_REQUIRED; shift
     [[ $# == 0 ]] || die UNEXPECTED_ARGUMENT

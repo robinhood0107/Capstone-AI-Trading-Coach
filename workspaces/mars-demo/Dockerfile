@@ -56,18 +56,20 @@ WORKDIR /repo/workspaces/mars-demo
 RUN npm run typecheck && npm test && python3 scripts/validate_fixture.py data/scenario.v1.json && python3 scripts/validate_reports.py data/reports.v1.json data/scenario.v1.json && python3 scripts/validate_signals.py data/signals.v1.json data/scenario.v1.json data/krx-calendar.v1.json && npm run build
 
 FROM node:22-bookworm-slim AS runner
-# Debian Bookworm은 PAM 보안 업데이트에서 CVE-2025-6020을 수정했다.
+# Debian Bookworm의 PAM 및 Zstandard 보안 수정을 적용한다.
 RUN set -eu; \
     fixed_version=1.5.2-6+deb12u3; \
     set -- libpam0g libpam-modules libpam-modules-bin libpam-runtime; \
     apt-get update; \
-    DEBIAN_FRONTEND=noninteractive apt-get install -y --only-upgrade --no-install-recommends --no-remove "$@"; \
+    DEBIAN_FRONTEND=noninteractive apt-get install -y --only-upgrade --no-install-recommends --no-remove "$@" libzstd1; \
     for package in "$@"; do \
       version="$(dpkg-query -W -f='${Version}' "$package")"; \
       dpkg --compare-versions "$version" ge "$fixed_version" || { \
         echo "$package must be at least $fixed_version (found $version)" >&2; exit 1; \
       }; \
     done; \
+    zstd_version="$(dpkg-query -W -f='${Version}' libzstd1)"; \
+    dpkg --compare-versions "$zstd_version" ge 1.5.4+dfsg2-5+deb12u1; \
     rm -rf /var/lib/apt/lists/*
 RUN rm -rf /usr/local/lib/node_modules/npm /usr/local/bin/npm /usr/local/bin/npx
 ENV NODE_ENV=production \

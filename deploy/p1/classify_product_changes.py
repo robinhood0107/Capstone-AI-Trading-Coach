@@ -81,6 +81,7 @@ RULES = (
     Rule("workspaces/experience-dashboard/", "FULL-only", "full-product-owner"),
     Rule("deploy/p1/mars-release-gate.json", "FULL-only", "full-product-owner"),
     Rule("deploy/p1/docker/", "FULL-only", "full-product-owner"),
+    Rule("infra/init/01-extensions.sql", "FULL-only", "full-product-owner", exact=True),
     Rule("infra/init/02-application-roles.sh", "FULL-only", "full-product-owner", exact=True),
     Rule("deploy/p1/sync_mars_public_operator_env.py", "FULL-only", "full-product-owner"),
     Rule("CHANGELOG.md", "FULL-only", "full-product-owner"),
@@ -96,6 +97,7 @@ RULES = (
     Rule("deploy/p1/compose.public-full.yml", "deployment-only", "release-contract-owner"),
     Rule("deploy/p1/assemble_mars_public_secrets.py", "deployment-only", "release-contract-owner"),
     Rule("deploy/p1/", "deployment-only", "release-contract-owner"),
+    Rule("capstone", "deployment-only", "release-contract-owner", exact=True),
     Rule("docs/", "deployment-only", "release-contract-owner"),
     Rule("README.md", "deployment-only", "release-contract-owner"),
 )

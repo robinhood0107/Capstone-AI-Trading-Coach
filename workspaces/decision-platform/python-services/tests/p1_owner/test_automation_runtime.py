@@ -2080,7 +2080,9 @@ def test_full_order_schedule_advances_while_a_report_is_blocked(
     try:
         service.serve()
         assert signals == [friday, friday, tuesday]
-        claim_times = [(owner, day, timestamp.strftime("%H:%M:%S")) for owner, day, timestamp, _ in claims]
+        claim_times = [
+            (owner, day, timestamp.strftime("%H:%M:%S")) for owner, day, timestamp, _ in claims
+        ]
         assert claim_times == [
             (owners[0], friday, "09:30:00"),
             (owners[1], friday, "09:30:00"),
@@ -2173,9 +2175,10 @@ def test_release_can_retry_if_db_drops_after_resume_lookup(monkeypatch: pytest.M
         outage.setattr(repository, "read_state", connection_lost)
         with pytest.raises(psycopg.OperationalError):
             service._resume_continuations(claim.user_id, claim.session_date, claim.claim_token_hash)
-    assert service._resume_continuations(
-        claim.user_id, claim.session_date, claim.claim_token_hash
-    ) == "DONE"
+    assert (
+        service._resume_continuations(claim.user_id, claim.session_date, claim.claim_token_hash)
+        == "DONE"
+    )
     assert len(runner.calls) == 1
 
 
@@ -2226,15 +2229,20 @@ def test_resume_without_order_reference_stops_owner_without_marking_done(
     stop_calls = []
     monkeypatch.setattr(service._repository, "resume_continuation", lambda *_: claim, raising=False)
     monkeypatch.setattr(
-        service._repository, "stop_full_owner_after_order_failure",
-        lambda _claim, reason: stop_calls.append(reason), raising=False,
+        service._repository,
+        "stop_full_owner_after_order_failure",
+        lambda _claim, reason: stop_calls.append(reason),
+        raising=False,
     )
     monkeypatch.setattr(
-        runner, "continue_session",
+        runner,
+        "continue_session",
         lambda **kwargs: PortfolioContinuationResult("SUBMIT_RESPONSE_UNRESOLVED", 0, 0),
     )
 
-    outcome = service._resume_continuations(claim.user_id, claim.session_date, claim.claim_token_hash)
+    outcome = service._resume_continuations(
+        claim.user_id, claim.session_date, claim.claim_token_hash
+    )
     assert outcome == "STOPPED"
     assert stop_calls == ["KIS_ORDER_RESULT_UNCERTAIN"]
     assert (claim.user_id, claim.session_date) not in service._resumed_continuations
@@ -2253,6 +2261,7 @@ def test_preflight_retries_db_connection_before_serving(monkeypatch: pytest.Monk
 
     monkeypatch.setattr(service._repository, "preflight", preflight, raising=False)
     monkeypatch.setattr(service._stop, "wait", lambda _delay: False)
+
     class Inference:
         def close(self) -> None:
             calls.append("close")

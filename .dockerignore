@@ -1,5 +1,6 @@
 .git
 .github
+**/.work
 .env
 .env.*
 !.env.example
@@ -8,6 +9,7 @@ deploy/p1/.state/**
 deploy/p1/.state-app
 deploy/p1/.state-app/**
 **/.state
+**/.state-app
 private?reference
 private-reference/
 private-reference/**

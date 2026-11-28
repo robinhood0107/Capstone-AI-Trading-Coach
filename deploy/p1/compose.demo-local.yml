@@ -1,0 +1,44 @@
+name: mars-demo-local
+
+x-demo-image: &demo-image ${MARS_DEMO_IMAGE:-pjjpjj111/mars-demo:v2.1.2-web}
+
+services:
+  session-key:
+    image: *demo-image
+    platform: linux/amd64
+    network_mode: none
+    read_only: true
+    volumes:
+      - demo-state:/data
+    entrypoint: [node, -e]
+    command:
+      - |
+        const fs = require('node:fs');
+        const { randomBytes } = require('node:crypto');
+        const path = '/data/session-signing-key';
+        try {
+          fs.writeFileSync(path, randomBytes(32), { flag: 'wx', mode: 0o600 });
+        } catch (error) {
+          if (error.code !== 'EEXIST') throw error;
+        }
+
+  web:
+    image: *demo-image
+    platform: linux/amd64
+    depends_on:
+      session-key:
+        condition: service_completed_successfully
+    environment:
+      MARS_DEMO_SESSION_SIGNING_KEY_FILE: /data/session-signing-key
+    ports:
+      - "127.0.0.1:${MARS_DEMO_PORT:-3001}:3000"
+    volumes:
+      - demo-state:/data
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    tmpfs:
+      - /tmp:size=64m,mode=1777,uid=1000,gid=1000
+
+volumes:
+  demo-state: {}

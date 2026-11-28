@@ -223,7 +223,7 @@ jobs:
           [[ $(docker image inspect mars-demo-build:web --format '{{index .Config.Labels "org.opencontainers.image.version"}}') == "$VERSION" ]]
           container=$(docker run --detach --rm --pull never --network none --health-interval=2s mars-demo-build:web)
           trap 'docker stop "$container" >/dev/null 2>&1 || true' EXIT
-          for attempt in {1..20}; do
+          for _ in {1..20}; do
             status=$(docker inspect --format '{{.State.Health.Status}}' "$container")
             if [[ $status == healthy ]]; then exit 0; fi
             if [[ $status == unhealthy ]]; then break; fi

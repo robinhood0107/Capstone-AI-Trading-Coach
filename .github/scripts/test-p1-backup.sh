@@ -5,7 +5,8 @@ umask 077
 export P1_POSTGRES_IMAGE=$1
 scratch=$(mktemp -d)
 export P1_STATE_DIR=$scratch/state TMPDIR=$scratch/staging
-export P1_PROJECT_NAME=mars-backup-qa-$(openssl rand -hex 6)
+P1_PROJECT_NAME=mars-backup-qa-$(openssl rand -hex 6)
+export P1_PROJECT_NAME
 mkdir "$TMPDIR"
 python3 deploy/p1/release_guard.py state-init "$P1_STATE_DIR"
 {
@@ -22,7 +23,7 @@ cleanup() { "${compose[@]}" down --remove-orphans >/dev/null 2>&1 || true; }
 trap cleanup EXIT
 "${compose[@]}" up -d --wait --wait-timeout 90 --no-build --pull never postgres
 sql() {
-  "${compose[@]}" exec -T postgres psql -X -v ON_ERROR_STOP=1 -U postgres -d capstone_p1 "$@"
+  "${compose[@]}" exec -T postgres psql -X -v ON_ERROR_STOP=1 -U postgres -d capstone_p1
 }
 sql <<'SQL'
 create table public.flyway_schema_history (installed_rank int, version text, success bool);

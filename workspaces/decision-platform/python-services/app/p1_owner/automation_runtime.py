@@ -1449,9 +1449,7 @@ class AutomationRuntimeService:
             except psycopg.OperationalError as error:
                 if attempt == _PREFLIGHT_DB_RETRIES:
                     raise
-                print(
-                    f"AUTOMATION_PREFLIGHT=RETRY error={type(error).__name__}", flush=True
-                )
+                print(f"AUTOMATION_PREFLIGHT=RETRY error={type(error).__name__}", flush=True)
                 if self._stop.wait(5.0):
                     return
         daily_inference = self._daily_inference or DailyInferenceService.from_environment()
@@ -1716,7 +1714,11 @@ class AutomationRuntimeService:
                             continue
                     else:
                         report_pending = report_refresh is not None
-                        if report_pending and report_worker is not None and report_worker.is_alive():
+                        if (
+                            report_pending
+                            and report_worker is not None
+                            and report_worker.is_alive()
+                        ):
                             print(
                                 f"AUTOMATION_PERFORMANCE_REPORT_BATCH=DEFERRED session={session_date}",
                                 flush=True,
@@ -1725,8 +1727,10 @@ class AutomationRuntimeService:
                     finished_owners.clear()
                     next_attempt.clear()
                     catchup_session = None
-                if report_refresh is not None and report_pending and (
-                    report_worker is None or not report_worker.is_alive()
+                if (
+                    report_refresh is not None
+                    and report_pending
+                    and (report_worker is None or not report_worker.is_alive())
                 ):
                     report_pending = False
                     # Report publication owns its DB transaction. Shutdown can end this optional work.
@@ -1940,14 +1944,13 @@ class AutomationRuntimeService:
         if claim is None:
             return None
         print(
-            f"AUTOMATION_CONTINUATION_RESUME=RESUMING session={session_date.isoformat()}", flush=True
+            f"AUTOMATION_CONTINUATION_RESUME=RESUMING session={session_date.isoformat()}",
+            flush=True,
         )
         state = self._repository.read_state(claim)
         port = self._port_factory.build(claim, state)
         try:
-            outcome = self._drive_continuations(
-                claim=claim, state=state, port=port, resume=True
-            )
+            outcome = self._drive_continuations(claim=claim, state=state, port=port, resume=True)
         finally:
             port.close()
         if outcome == "DONE":

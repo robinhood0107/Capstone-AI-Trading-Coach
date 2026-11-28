@@ -4,7 +4,8 @@ umask 077
 
 images=$1
 scratch=$(mktemp -d)
-export P1_STATE_DIR=$scratch/state P1_PROJECT_NAME=mars-ci-smoke-$(openssl rand -hex 6)
+P1_PROJECT_NAME=mars-ci-smoke-$(openssl rand -hex 6)
+export P1_PROJECT_NAME P1_STATE_DIR=$scratch/state
 export P1_SPRING_IMAGE=$images:api P1_PYTHON_IMAGE=$images:api
 export P1_POSTGRES_IMAGE=$images:postgres P1_REDIS_IMAGE=$images:redis P1_DASHBOARD_IMAGE=$images:web
 export MARS_PUBLIC_SURFACE_MODE=LOCAL

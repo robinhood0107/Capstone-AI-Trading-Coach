@@ -427,10 +427,14 @@ def test_restart_preserves_submitting_without_order_reference() -> None:
     claim = _restart_claim()
 
     first = PortfolioContinuationRunner(repository).continue_session(
-        claim=claim, state={}, port=port,
+        claim=claim,
+        state={},
+        port=port,
     )
     resumed = PortfolioContinuationRunner(repository).continue_session(
-        claim=claim, state={}, port=port,
+        claim=claim,
+        state={},
+        port=port,
     )
 
     assert first.status == resumed.status == "SUBMIT_RESPONSE_UNRESOLVED"

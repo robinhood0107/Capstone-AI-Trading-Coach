@@ -2,6 +2,8 @@
 
 국내 주식, 금 ETF의 시세, 공시, 뉴스, 모델 신호를 근거로 후보를 만들고 사용자가 정한 투자 원칙과 위험 검사를 통과한 주문만 **본인의 한국투자증권(KIS) 모의투자 계좌**에서 실행하는 서비스입니다. 후보 생성, 판단, 주문 접수, 체결, 잔고 대사를 서로 다른 기록으로 남겨 왜 그 주문이 나갔는지(또는 막혔는지)를 끝까지 추적할 수 있습니다.
 
+Docker로 실행하려면 [빠른 시작](#빠른-시작)에서 DEMO 체험이나 FULL 빌드 경로를 고르세요.
+
 ## 목차
 
 - [프로젝트 소개와 문제](#프로젝트-소개와-문제)
@@ -188,124 +190,157 @@ flowchart LR
 
 ## 빠른 시작
 
-### 설치절차 및 실행 방법
-
-#### 준비 사항
-
-| 항목 | 내용 |
+| 하고 싶은 일 | 실행 경로 |
 |---|---|
-| OS | Linux `amd64` 또는 Windows WSL2(Ubuntu). 저장소와 상태 파일은 Linux 홈에 둡니다. |
-| 필수 도구 | Docker Engine(또는 WSL 통합을 켠 Docker Desktop), Docker Compose v2 이상, Git, Python 3, OpenSSL |
-| 선택 도구 | Team A 인수 테스트를 실행할 때는 Node.js, npm, Playwright Chromium이 필요합니다. |
+| 계좌 없이 화면을 둘러보기 | [Docker Hub 이미지로 DEMO 실행](#docker-hub-이미지로-demo-실행) |
+| 소스를 바꿔 DEMO 화면에 반영하기 | [DEMO를 직접 빌드](#demo를-직접-빌드) |
+| API와 DB를 포함한 FULL을 직접 실행하기 | [FULL을 소스에서 빌드](#full을-소스에서-빌드) |
+| 공개된 FULL 이미지를 확인하거나 서버에 설치하기 | [FULL 릴리스 이미지 사용](#full-릴리스-이미지-사용) |
 
-#### 최초 실행
+Linux 터미널이나 Windows의 WSL2 Ubuntu 터미널에서 실행합니다. 아래 예시는 `linux/amd64` 기준입니다. Windows에서 Docker Desktop을 사용한다면 [Ubuntu의 WSL 통합](https://docs.docker.com/desktop/features/wsl/)을 켜고 저장소를 Ubuntu 홈에 둡니다. 먼저 `docker version`과 `docker compose version`으로 Docker 엔진과 Compose를 확인합니다. 소스 빌드에는 Git과 Docker Buildx가 필요합니다. FULL 스크립트는 호스트의 Python 3와 OpenSSL도 사용합니다.
+
+### Docker Hub 이미지로 DEMO 실행
+
+기본 설정에서 Compose는 공개된 `pjjpjj111/mars-demo:v2.1.2-web` 이미지를 받습니다. Compose가 로컬 방문자 세션 키와 SQLite 데이터 볼륨을 만들기 때문에 계좌나 API 키를 입력할 필요가 없습니다.
 
 ```bash
 git clone https://github.com/robinhood0107/Capstone-AI-Trading-Coach.git
 cd Capstone-AI-Trading-Coach
+
+docker compose -f deploy/p1/compose.demo-local.yml up -d --wait
+docker compose -f deploy/p1/compose.demo-local.yml ps
+curl -fsS http://localhost:3001/healthz
+```
+
+웹 컨테이너가 `healthy`이고 헬스 응답의 상태가 `ok`이면 브라우저에서 [http://localhost:3001](http://localhost:3001)을 열고 **로그인**을 누릅니다. 방문자 계정이 바로 만들어집니다. 대시보드나 학습일지에서 내장된 시나리오를 확인할 수 있습니다. 외부 모델을 호출하는 Agent는 별도 운영 설정이 필요합니다.
+
+```bash
+docker compose -f deploy/p1/compose.demo-local.yml logs --tail=60 web
+docker compose -f deploy/p1/compose.demo-local.yml down
+```
+
+종료한 뒤 같은 프로젝트를 다시 올리면 기존 SQLite 데이터와 방문자 세션 키를 사용합니다. 3001 포트가 사용 중이라면 `MARS_DEMO_PORT=13001 docker compose -f deploy/p1/compose.demo-local.yml up -d --wait`로 실행하고 브라우저의 포트도 13001로 바꿉니다.
+
+### DEMO를 직접 빌드
+
+저장소 루트에서 실행합니다. DEMO Dockerfile은 대시보드와 공유하는 화면 코드도 빌드에 사용합니다. Dockerfile 경로와 빌드 컨텍스트인 마지막 `.`을 확인하세요.
+
+```bash
+docker buildx build --platform linux/amd64 --load \
+  -f workspaces/mars-demo/Dockerfile -t mars-demo:local .
+
+MARS_DEMO_IMAGE=mars-demo:local MARS_DEMO_PORT=13001 \
+  docker compose -p mars-demo-from-source \
+  -f deploy/p1/compose.demo-local.yml up -d --wait --pull never
+
+curl -fsS http://localhost:13001/healthz
+```
+
+[http://localhost:13001](http://localhost:13001)에서 로컬 소스로 빌드한 화면을 확인합니다. 다른 프로젝트 이름을 써서 공개 DEMO를 실행할 때 만든 볼륨과 분리합니다. 종료할 때는 같은 프로젝트 이름을 지정합니다.
+
+```bash
+docker compose -p mars-demo-from-source -f deploy/p1/compose.demo-local.yml down
+```
+
+### FULL을 소스에서 빌드
+
+DEMO 화면 외에 Spring API, Python 서비스, PostgreSQL, Redis까지 함께 실행하려면 저장소 루트에서 아래 명령을 사용합니다. `./capstone up`은 [로컬 FULL Compose](deploy/p1/compose.yml)를 사용해 이미지 빌드, DB 역할·마이그레이션, 운영자 초기화를 순서대로 처리합니다. 기본 실행에는 `.env`와 KIS 계좌가 필요 없습니다.
+
+```bash
 ./capstone doctor
 ./capstone up
 ./capstone smoke
 ```
 
-기본 실행에는 `.env`나 KIS 모의투자 계좌가 필요 없습니다. 첫 `up`에서 이미지를 빌드하고 DB 마이그레이션과 운영자 초기화를 마칩니다. `CAPSTONE_UP=PASS`와 `KIS_BROKERAGE_MODE=PROVIDER_FREE`를 확인한 뒤 웹 화면을 엽니다. 자동운용은 대기 상태이며, 활성 투자 원칙이 없으면 `policy=DEFERRED_NO_ACTIVE_PRINCIPLE`이 표시됩니다. 원칙을 활성화한 뒤 정책을 설정할 수 있습니다.
+`CAPSTONE_UP=PASS`가 나오면 웹 화면을 열 수 있습니다. `CAPSTONE_SMOKE=PASS`는 API 헬스, 로컬 운영자 로그인, 합성 작업 검사가 통과했다는 뜻입니다.
 
-| 주소 | 설명 |
+| 확인할 곳 | 주소 또는 값 |
 |---|---|
-| http://127.0.0.1:3000 | 웹 화면 |
-| http://127.0.0.1:18080/swagger-ui.html | API 문서 |
+| 웹 화면 | [http://127.0.0.1:3000](http://127.0.0.1:3000) |
+| API 문서 | [http://127.0.0.1:18080/swagger-ui.html](http://127.0.0.1:18080/swagger-ui.html) |
+| 로컬 운영자 | `demo-user`, `ADMIN` |
+| 비밀번호 | 첫 실행에 표시된 `P1_LOGIN_PASSWORD_FILES`의 첫 파일. 기본 경로는 `deploy/p1/.state-app/secrets/demo-user.password`입니다. |
 
-로컬 운영자는 `demo-user` 한 계정이며 역할은 `ADMIN`입니다. 첫 실행에서 출력한 `P1_LOGIN_PASSWORD_FILES`의 첫 파일(`secrets/demo-user.password`)을 읽어 로그인합니다. 각 스택의 암호와 상태는 비공개로 관리합니다. 공개 FULL의 운영자는 배포용 비밀 파일을 별도로 관리하며 공개 DEMO는 원클릭 방문자 세션을 사용합니다.
+기본 실행의 주문 경로는 외부 계좌를 사용하지 않습니다. 자동운용은 대기 상태에서 시작합니다. 활성 투자 원칙이 없어 `DEFERRED_NO_ACTIVE_PRINCIPLE`이 나오면 원칙을 설정하는 단계부터 진행합니다.
 
 ```bash
 ./capstone status
 ./capstone logs
-./capstone down  # 컨테이너를 종료하고 볼륨을 보존합니다.
+./capstone backup
+./capstone restore-test
+./capstone down
 ```
+
+`backup`은 상태 디렉터리 아래 `backups/`에 DB 덤프와 체크섬을 저장합니다. `restore-test`는 새 프로젝트와 볼륨에 복원합니다. DB 안의 암호화 데이터를 다른 서버에서 사용하려면 해당 키도 별도로 백업해야 합니다. `down`으로 종료하면 데이터 볼륨은 보존됩니다.
 
 #### 별도 로컬 스택과 사용자 지정 포트
 
-스택마다 Compose 프로젝트 이름과 절대 상태 디렉터리를 다르게 정합니다. 새 스택은 아직 존재하지 않는 상태 경로에서 시작합니다. 같은 스택을 재기동하거나 종료할 때는 아래 네 값을 그대로 사용합니다.
+기존 FULL 스택이 있다면 프로젝트 이름, 상태 디렉터리, 두 포트를 따로 지정합니다. 이미 시작한 스택에서 `smoke`, `backup`, `down`을 실행할 때도 같은 값을 사용합니다.
 
 ```bash
 install -d -m 700 "$HOME/.local/state"
-export P1_PROJECT_NAME=mars-local-alt
-export P1_STATE_DIR="$HOME/.local/state/mars-local-alt"
+export P1_PROJECT_NAME=mars-full-local-alt
+export P1_STATE_DIR="$HOME/.local/state/mars-full-local-alt"
 export P1_DASHBOARD_PORT=13000
 export P1_API_PORT=28080
-./capstone doctor
 ./capstone up
 ./capstone smoke
 ```
 
-이 예에서는 웹이 `http://127.0.0.1:13000`, API가 `http://127.0.0.1:28080`으로 열립니다. 로그인에는 이 스택의 `$P1_STATE_DIR/secrets/demo-user.password`를 사용합니다. 프로젝트별 DB·Redis 볼륨과 상태 디렉터리를 함께 보존하면 재기동 때 기존 암호와 데이터가 유지됩니다.
+웹은 [http://127.0.0.1:13000](http://127.0.0.1:13000), API는 [http://127.0.0.1:28080](http://127.0.0.1:28080)입니다. 로그인에는 새 스택의 `$P1_STATE_DIR/secrets/demo-user.password`를 사용합니다.
 
-Team A 인수 테스트는 폐기 가능한 격리 스택의 합성 DB에서 실행합니다. 대시보드 의존성과 Playwright Chromium을 준비한 뒤 같은 프로젝트·상태·포트 값으로 `./capstone team-a acceptance`를 실행합니다. 이 명령은 시험 데이터를 넣기 전에 대상 사용자의 일지와 주문 등 기존 행을 삭제합니다. 시험이 끝나면 자동운용을 해제하고 기존 잔고 관측 상태를 복구합니다. 시험에서 만든 원칙과 정책은 DB에 남을 수 있습니다.
+#### 외부 서비스와 개발 도구
 
-#### 외부 서비스 연결 (선택)
+외부 서비스가 필요할 때만 `install -m 600 .env.example .env`로 설정 파일을 만들고 값을 입력합니다. KIS 모의투자는 키와 모의계좌를 등록하고 인증을 마친 뒤 `./capstone up --mock`으로 시작합니다. 외부 계좌 없이 실행하는 기본 경로는 OpenDART 공시와 yfinance 일봉 수집을 건너뜁니다. Google·Kakao 연동은 공개 HTTPS 주소와 제공자별 키, `<MARS_PUBLIC_ORIGIN>/api/v1/auth/oidc/callback/{google,kakao}`의 리디렉션 등록이 필요합니다.
 
-`install -m 600 .env.example .env`로 설정 파일을 만들고 필요한 값만 입력합니다. KIS 모의 자동운용은 `KIS_MOCK_APP_KEY`, `KIS_MOCK_APP_SECRET`, `KIS_MOCK_ACCOUNT_NO`를 준비하고 모의계좌 인증을 마친 뒤 `./capstone up --mock`으로 시작합니다. 기본 실행에서는 OpenDART 공시와 yfinance 일봉 수집을 건너뜁니다.
+Team A 인수 테스트는 Node.js, npm, Playwright Chromium을 준비한 뒤 폐기 가능한 합성 스택에서 `./capstone team-a acceptance`를 실행합니다. 이 명령은 시험 계정의 일지와 주문 등 기존 행을 지우고 시험 데이터를 넣습니다. 저장한 원칙이나 정책 일부가 남을 수 있습니다.
 
-Google·Kakao 로그인에는 공개 HTTPS 주소(`MARS_PUBLIC_ORIGIN`)와 두 제공자의 클라이언트 ID·비밀값이 필요합니다. 각 제공자 콘솔에 `<MARS_PUBLIC_ORIGIN>/api/v1/auth/oidc/callback/google` 또는 `<MARS_PUBLIC_ORIGIN>/api/v1/auth/oidc/callback/kakao`를 등록합니다. 이메일 가입자는 **설정 → 로그인 방법 → 비밀번호 변경**에서 현재 비밀번호를 확인하고 바꿀 수 있습니다. 변경하면 다른 기기의 로그인도 해제됩니다.
-
-#### 개인 서버로 옮기기
-
-데이터와 비밀값은 레지스트리를 거치지 않고 서버로 직접 복사합니다. 현재 PC에서 출력한 커밋 SHA를 기록한 뒤 서버 명령의 `기록한_SHA`를 그 값으로 바꿉니다.
-
-```bash
-# 1) 현재 PC: 커밋 SHA를 기록하고 스택을 내린 뒤 DB 볼륨과 state를 묶는다
-git rev-parse HEAD
-./capstone down
-docker run --rm -v capstone-p1_p1-postgres-current:/from:ro -v "$PWD":/to alpine \
-  tar czf /to/p1-postgres.tgz -C /from .
-tar czf p1-state.tgz -C deploy/p1 .state-app
-chmod 600 p1-postgres.tgz p1-state.tgz
-scp p1-postgres.tgz p1-state.tgz .env <user>@<server>:~/
-
-# 2) 서버: 같은 커밋을 받고 데이터를 복원한다
-git clone https://github.com/robinhood0107/Capstone-AI-Trading-Coach.git && cd Capstone-AI-Trading-Coach
-git checkout --detach "기록한_SHA"
-install -m 600 ~/.env .env
-tar xzf ~/p1-state.tgz -C deploy/p1
-docker volume create capstone-p1_p1-postgres-current
-docker run --rm -v capstone-p1_p1-postgres-current:/to -v ~:/from:ro alpine \
-  tar xzf /from/p1-postgres.tgz -C /to
-
-# 3) 서버: 인증서를 두고 서버용 오버레이로 기동한다
-install -m 640 fullchain.pem deploy/p1/.state-app/secrets/proxy-tls.crt
-install -m 640 privkey.pem  deploy/p1/.state-app/secrets/proxy-tls.key
-P1_COMPOSE_OVERLAY=deploy/p1/compose.server.yml ./capstone up --mock
-```
-
-서버에서는 `compose.server.yml`이 TLS 프록시를 443/80으로 공개하고 앱 포트는 서버 안(127.0.0.1)에만 둡니다.
-
-#### 개발 환경에서 API 직접 실행
-
-인증용 DB 역할을 Flyway보다 먼저 준비한 뒤 Spring API를 실행합니다. KIS 모의 체결 관측은 `decision_fill_writer` 역할로 적재하며 관련 마이그레이션 경계는 `V6/V9/V14`입니다.
+Spring API만 실행하는 개발자는 [결정 플랫폼 개발 안내](workspaces/decision-platform/README.md)에 따라 `.env`를 준비합니다. 기존 인프라 DB를 업그레이드할 때는 Flyway보다 먼저 Compose에서 DB 역할을 초기화합니다.
 
 ```bash
 docker compose --env-file .env -f infra/docker-compose.infra.yml run --rm role-bootstrap
 cd workspaces/decision-platform/spring-api && ./gradlew bootRun
 ```
 
-#### 공개 체험판 이미지 (선택)
+KIS 모의 체결 관측은 `decision_fill_writer` 역할로 적재합니다. 관련 마이그레이션 경계는 `V6/V9/V14`입니다.
 
-계좌 기능 FULL은 [Docker Hub](https://hub.docker.com/r/pjjpjj111/mars-full)와 [GitHub Release](https://github.com/robinhood0107/Capstone-AI-Trading-Coach/releases/latest)의 digest 고정 Compose로도 실행할 수 있습니다. 이미지에는 코드만 들어 있고 사용자 데이터는 포함되지 않습니다. NAS에서 Portainer 스택 하나로 운영하는 방법과 기존 배포를 옮기는 절차는 [deploy/p1/portainer/README.md](https://github.com/robinhood0107/Capstone-AI-Trading-Coach/blob/main/deploy/p1/portainer/README.md)에 있습니다.
+### FULL 릴리스 이미지 사용
 
-### 오류 발생 시 해결 방법
+[Docker Hub FULL](https://hub.docker.com/r/pjjpjj111/mars-full/tags?name=v1.0.22)에서 API·웹·PostgreSQL·Redis 이미지를 받을 수 있습니다. [FULL v1.0.22 릴리스](https://github.com/robinhood0107/Capstone-AI-Trading-Coach/releases/tag/v1.0.22)에 이미지 digest 목록, digest가 고정된 Compose, SBOM을 함께 제공합니다.
 
-| 증상 | 해결 |
+공개 이미지를 대상으로 로컬 스모크만 실행하려면 작업 중인 브랜치가 있다면 별도 복제본에서 릴리스 태그를 열고 다음 명령을 실행합니다. 스크립트는 격리 프로젝트에서 DB를 초기화한 뒤 로그인과 합성 작업을 검사합니다. 검사가 끝나면 시험용 컨테이너를 종료합니다. 웹 포트 23000과 API 포트 28080이 비어 있어야 합니다.
+
+```bash
+git switch --detach v1.0.22
+for part in api web postgres redis; do
+  docker pull --platform linux/amd64 "pjjpjj111/mars-full:v1.0.22-$part"
+  docker tag "pjjpjj111/mars-full:v1.0.22-$part" "mars-full-smoke:$part"
+done
+bash .github/scripts/smoke-full-images.sh mars-full-smoke
+```
+
+공개 서버용으로 설치할 때는 릴리스에서 `mars-public-full.compose.yml`을 내려받습니다. 서비스용 비밀 파일과 암호화 키, 공개 HTTPS 및 소셜 로그인 설정을 따로 준비합니다. 공개 서버의 환경 파일에는 `MARS_FULL_SECRETS_DIR`, `MARS_FULL_SECRET_GID`, `MARS_FULL_BROKERAGE_KEK_DIR`와 공개 주소·OIDC·Vertex 설정을 둡니다. `MARS_BROKERAGE_DB_CAPABILITY_TOKEN_SHA256`는 준비한 DB 자격증명과 같은 구성에서 가져옵니다. 릴리스 Compose의 필수 값은 아래 config 단계에서 확인할 수 있습니다.
+
+```bash
+docker compose --env-file /absolute/path/mars-full.env -f mars-public-full.compose.yml config --quiet
+docker compose --env-file /absolute/path/mars-full.env -f mars-public-full.compose.yml pull
+docker compose --env-file /absolute/path/mars-full.env -f mars-public-full.compose.yml up -d --wait
+```
+
+NAS의 Portainer 스택과 기존 PC 데이터를 옮기는 절차는 [FULL 운영 가이드](deploy/p1/portainer/README.md)를 참조합니다. DB와 자격증명 암호화 키는 한 세트로 옮깁니다. 공개 DEMO 운영자는 [DEMO v2.1.2 릴리스](https://github.com/robinhood0107/Capstone-AI-Trading-Coach/releases/tag/mars-demo-v2.1.2)와 [DEMO 운영 가이드](deploy/p1/portainer/README-demo.md)를 따릅니다.
+
+새 이미지 버전을 공개할 때는 [버전과 릴리스 절차](CONTRIBUTING.md#버전과-릴리스)를 따릅니다.
+
+### 실행이 막힐 때
+
+| 증상 | 확인할 곳 |
 |---|---|
-| `up`이 `CAPSTONE_UP=PASS` 없이 끝남 | 마지막 `P1_ERROR=` 값을 확인. 종료코드 0이어도 중간 실패일 수 있음 |
-| `P1_ERROR=root_env_boundary` | `.env` 권한을 `chmod 600 .env`로 맞춤 |
-| `P1_ERROR=secret_inventory` | `deploy/p1/.state-app/secrets`에 예상 밖 파일이 있음. 해당 파일을 secrets 밖으로 옮김 |
-| `bind source path does not exist` (WSL) | Docker Desktop의 Ubuntu WSL integration 확인, 레포를 `/mnt/c`가 아닌 Linux 홈에 둠 |
-| 로그인 화면에 Google, Kakao 버튼이 없음 | `.env`의 `MARS_PUBLIC_ORIGIN`(https)과 두 제공자 값을 모두 넣고 다시 `up` |
-| 로그인 401 반복 | 아이디, 비밀번호 확인. 반복 실패 시 잠시 후 재시도(시도 제한) |
-| 주문 0건 | 후보, 시세, 계좌, 원칙, RiskEngine 단계별 차단 사유 확인. 0건 자체는 장애가 아님 |
-| 수집 0건 | 거래일 여부, GDELT 발행 여부, OpenDART 일일 한도 확인 |
-
-DB 볼륨은 지우지 마세요. 종료는 `./capstone down`만 사용하고 `docker volume rm`, `down -v`는 쓰지 않습니다.
+| Docker에 연결할 수 없음 | Docker Desktop 기동 여부와 Ubuntu WSL 통합을 확인합니다. 소스와 상태 파일은 WSL의 Linux 홈 경로에 둡니다. |
+| 포트가 이미 사용 중 | DEMO는 `MARS_DEMO_PORT`, FULL은 `P1_DASHBOARD_PORT`와 `P1_API_PORT`를 바꿉니다. |
+| `all predefined address pools have been fully subnetted` | Docker 네트워크 주소 풀이 부족합니다. 기존 네트워크를 확인한 뒤 호스트나 VPN과 겹치지 않는 별도 서브넷으로 스택을 기동합니다. |
+| DEMO의 `session-key`가 `Exited (0)` | 키를 준비하는 일회성 컨테이너입니다. `web`의 상태와 로그를 확인합니다. |
+| FULL `up`이 `CAPSTONE_UP=PASS` 없이 끝남 | `./capstone logs`와 마지막 `P1_ERROR=`를 확인합니다. `root_env_boundary`는 `.env` 권한을 `0600`으로 맞춥니다. |
+| FULL 로그인 401 | 해당 Compose 프로젝트의 `demo-user.password`와 입력한 아이디를 확인합니다. |
 
 ## 저장소 구조
 
